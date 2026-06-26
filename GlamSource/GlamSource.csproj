@@ -2,9 +2,14 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
     <Version>0.0.0.1</Version>
-    <PackageProjectUrl>https://github.com/goatcorp/SamplePlugin</PackageProjectUrl>
+    <Name>GlamSource</Name>
+    <Author>TF</Author>
+    <Punchline>Zeigt woher Glams und Mounts kommen.</Punchline>
+    <Description>Hover über ein Item oder Mount und sieh sofort die Quelle — Dungeon, Shop, Craft, Event. Kein Wiki mehr nötig.</Description>
+    <PackageProjectUrl>https://github.com/TF/GlamSource</PackageProjectUrl>
     <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>
     <IsPackable>false</IsPackable>
+    <Tags>glamour;mounts;source;qol</Tags>
   </PropertyGroup>
 
   <ItemGroup>
