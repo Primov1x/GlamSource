@@ -1,4 +1,4 @@
-name: Build and Release GlamSource
+﻿name: Build and Release GlamSource
 on:
   push:
     branches:
@@ -22,10 +22,14 @@ jobs:
       - name: Build
         run: dotnet build GlamSource.sln --configuration Release --no-restore
 
+      - name: Find DLL
+        run: Get-ChildItem -Recurse -Filter "GlamSource.dll" | Select-Object FullName
+
       - name: Package
         run: |
           New-Item -ItemType Directory -Force -Path dist
-          Copy-Item "GlamSource\bin\Release\net10.0\GlamSource.dll" "dist\GlamSource.dll"
+          $dll = Get-ChildItem -Recurse -Filter "GlamSource.dll" | Select-Object -First 1
+          Copy-Item $dll.FullName "dist\GlamSource.dll"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
