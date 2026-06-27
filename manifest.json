@@ -1,0 +1,15 @@
+{
+  "author": "Primov1x",
+  "name": "GlamSource",
+  "internal_name": "GlamSource",
+  "description": "Zeigt Herkunft von Glams und Mounts in FFXIV an.",
+  "icon_url": "https://raw.githubusercontent.com/Primov1x/GlamSource/main/Data/goat.png",
+  "repository_url": "https://github.com/Primov1x/GlamSource",
+  "tags": ["glamour", "mounts", "items", "sources"],
+  "download_url": "https://github.com/Primov1x/GlamSource/releases/download/v0.0.0.1/GlamSource.zip",
+  "assembly_version": "0.0.0.1",
+  "testing_assembly_version": "0.0.0.1",
+  "dalamud_api_level": 14,
+  "load_required_state": 0,
+  "load_sync": false
+}

@@ -1,0 +1,12 @@
+[submodule "ponytail"]
+	path = ponytail
+	url = https://github.com/DietrichGebert/ponytail.git
+[submodule "claude-council"]
+	path = claude-council
+	url = https://github.com/hex/claude-council.git
+[submodule "ECC"]
+	path = ECC
+	url = https://github.com/affaan-m/ECC.git
+[submodule "eve"]
+	path = eve
+	url = https://github.com/vercel/eve.git

@@ -1,0 +1,68 @@
+# Git ignore for GlamSource Plugin
+
+# Build outputs
+.vs/
+obj/
+bin/
+GlamSource/bin/**
+GlamSource/obj/**
+
+# Sensitive documentation files
+CLAUDE.md
+AGENTS.md
+
+# Logs and caches
+*.log
+*.cache
+*.tlog
+*.tmp
+
+# Build artifacts
+*.exe
+*.dll
+*.pdb
+*.so
+*.dylib
+
+# IDE files
+.vscode/
+.idea/
+
+# Editor backups
+*~
+*.swp
+*.swo
+*.orig
+
+# Windows temporary files
+Thumbs.db
+Desktop.ini
+
+# Plugin directories
+Plugins/
+code-analysis/
+benchmarks/
+
+# Git submodules
+.gitmodules
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+
+# Node
+node_modules/
+
+# Temporary files
+temp/
+
+# System files
+.DS_Store
+
+# Downloaded dependencies
+*.zip
+*.tar.gz
+*.nupkg
+*.tgz
