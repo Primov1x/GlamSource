@@ -4,7 +4,7 @@
     <TargetFramework>net10.0-windows7.0</TargetFramework>
     <TargetPlatformIdentifier>windows</TargetPlatformIdentifier>
     <TargetPlatformVersion>7.0</TargetPlatformVersion>
-    <Version>0.0.0.1</Version>
+    <Version>0.0.0.2</Version>
     <Name>GlamSource</Name>
     <Author>TF</Author>
     <Punchline>Zeigt woher Glams und Mounts kommen.</Punchline>
@@ -18,6 +18,8 @@
     <PackageReference Include="ImGui.NET" Version="1.91.6" />
     <PackageReference Include="Lumina.Excel" Version="7.4.3" />
     <PackageReference Include="Lumina" Version="7.4.3" />
+    <PackageReference Include="Dalamud.Game" Version="14.0.3" />
+    <PackageReference Include="Dalamud.Interface" Version="14.0.3" />
   </ItemGroup>
 
   <ItemGroup>

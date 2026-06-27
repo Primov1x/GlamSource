@@ -4,7 +4,6 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
 using Dalamud.Interface.Windowing;
 using GlamSource.Windows.Helpers;
-using GlamSource.Windows.Constants;
 
 namespace GlamSource.Windows;
 
@@ -45,7 +44,7 @@ public class MainWindow : Window, IDisposable
                 return;
 
             ImGui.Text("Have a goat:");
-            var goatImage = plugin.TextureProvider.GetFromFile(goatImagePath).GetWrapOrDefault();
+            var goatImage = Plugin.TextureProvider.GetFromFile(goatImagePath).GetWrapOrDefault();
             if (goatImage != null)
             {
                 using (ImRaii.PushIndent(55f))
