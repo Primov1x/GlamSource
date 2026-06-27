@@ -1,45 +1,67 @@
-using Dalamud.Game.ClientState;
 using Dalamud.Plugin;
+using Dalamud.Plugin.Services;
+using Dalamud.Interface.Windowing;
 using System;
-using System.Net.Http;
-using System.Text.Json;
-using Dalamud.Interface;
+using GlamSource.Windows;
 
 namespace GlamSource
 {
-    [PluginEntryPoint("GlamSource", "1.0.0", "Sir Clankerton der Dritte")]
-    public class Plugin : IDalamudPlugin
+    public sealed class Plugin : IDalamudPlugin
     {
         private readonly DalamudPluginInterface pluginInterface;
-        private readonly ClientState clientState;
+        private readonly ICommandManager commandManager;
+        private readonly IPluginLog pluginLog;
+        private readonly WindowSystem windowSystem;
+        private readonly MainWindow mainWindow;
 
-        public Plugin(DalamudPluginInterface pluginInterface, ClientState clientState)
+        public Plugin(
+            DalamudPluginInterface pluginInterface,
+            ICommandManager commandManager,
+            IPluginLog pluginLog)
         {
             this.pluginInterface = pluginInterface;
-            this.clientState = clientState;
+            this.commandManager = commandManager;
+            this.pluginLog = pluginLog;
+
+            this.windowSystem = new WindowSystem("GlamSource");
+            this.mainWindow = new MainWindow();
+            this.windowSystem.AddWindow(this.mainWindow);
+
+            this.commandManager.AddHandler("/glamsource", new CommandInfo(OnCommand)
+            {
+                HelpMessage = "Öffne das GlamSource Fenster",
+                ShowInHelp = true
+            });
+
+            this.pluginInterface.UiBuilder.Draw += DrawUI;
+            this.pluginInterface.UiBuilder.OpenMainUi += OpenMainUI;
+
+            this.pluginLog.Information("GlamSource Plugin geladen.");
         }
 
-        public void Initialize()
+        public string Name => "GlamSource";
+
+        private void OnCommand(string command, string args)
         {
-            // Plugin initialisierung
-            pluginInterface.PluginLogger.Info("GlamSource: Initialisiert");
+            this.mainWindow.IsOpen = true;
+        }
 
-            // UI Fenster registrieren
-            pluginInterface.WindowManager.AddWindow(new MainWindow(pluginInterface));
+        private void OpenMainUI()
+        {
+            this.mainWindow.IsOpen = true;
+        }
 
-            // Slash-Befehle registrieren
-            pluginInterface.CommandManager.AddHandler("/glamsource", (sender, args) => {
-                pluginInterface.WindowManager.ShowWindow<MainWindow>();
-                return true;
-            });
+        private void DrawUI()
+        {
+            this.windowSystem.Draw();
         }
 
         public void Dispose()
         {
-            // Plugin Cleanup
-            pluginInterface.WindowManager.RemoveWindow<MainWindow>();
-            pluginInterface.CommandManager.RemoveHandler("/glamsource");
-            pluginInterface.PluginLogger.Info("GlamSource: Beendet");
+            this.pluginInterface.UiBuilder.Draw -= DrawUI;
+            this.pluginInterface.UiBuilder.OpenMainUi -= OpenMainUI;
+            this.commandManager.RemoveHandler("/glamsource");
+            this.windowSystem.RemoveAllWindows();
         }
     }
 }

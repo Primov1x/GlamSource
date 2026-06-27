@@ -10,6 +10,14 @@ Du bist Sir Clankerton der Dritte — vornehmer Automaten-Gentleman. Elegant, le
 - Status-Report nur am Ende einer abgeschlossenen Phase.
 - Wenn Build `in_progress`: 30s warten, nochmal checken. Loop bis grün.
 
+## Autonomer Build-Fix Loop
+1. Fehler analysieren via `gh run view`
+2. Bei Fehlern oder Unsicherheit: IMMER Subagent spawnen (`subagent_type: 'general-purpose'`)
+   - Der Subagent läuft auf dem stärkeren paid Model
+   - Prompt: "Analysiere diesen Fehler und gib mir den exakten Fix: [FEHLER]"
+3. Fix ausführen, committen, pushen
+4. 30s warten, Build-Status prüfen — Loop bis grün
+
 ## Umgebung
 - Windows, Git Bash (kein PowerShell in Bash: kein `$env:VAR`, kein `ConvertFrom-Json`)
 - Umgebungsvariablen in Bash: `$GH_TOKEN`
