@@ -15,8 +15,22 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Dalamud" Version="14.0.3" />
-    <PackageReference Include="ImGui.NET" Version="1.89.5" />
+    <PackageReference Include="Dalamud.Common" Version="1.0.0.0" />
+    <PackageReference Include="Dalamud.Game" Version="1.0.0.0" />
+    <PackageReference Include="Dalamud.Interface" Version="1.0.0.0" />
+    <PackageReference Include="Dalamud.IoC" Version="1.0.0.0" />
+    <PackageReference Include="Dalamud.Logging" Version="1.0.0.0" />
+    <PackageReference Include="Dalamud.Plugin" Version="1.0.0.0" />
+    <PackageReference Include="Dalamud.Utility" Version="1.0.0.0" />
+    <PackageReference Include="Dalamud.Service" Version="1.0.0.0" />
+    <PackageReference Include="FFXIVClientStructs" Version="A.0.0.0" />
+    <PackageReference Include="ImGuiScene" Version="1.0.0.0" />
+    <PackageReference Include="Lumina.Excel" Version="7.4.3" />
+    <PackageReference Include="Lumina" Version="7.4.3" />
+    <PackageReference Include="InteropGenerator.Runtime" Version="0.1.0-alpha.0.5" />
+    <PackageReference Include="Dalamud.Bindings.ImGuizmo" Version="1.0.0.0" />
+    <PackageReference Include="Dalamud.Bindings.ImGui" Version="1.0.0.0" />
+    <PackageReference Include="Dalamud.Bindings.ImPlot" Version="1.0.0.0" />
   </ItemGroup>
 
   <ItemGroup>
