@@ -1,0 +1,12 @@
+bin/
+obj/
+*.dll
+*.pdb
+*.exe
+*.nupkg
+packages.lock.json
+Data/
+*.binlog
+*.user
+.vs/
+node_modules/
