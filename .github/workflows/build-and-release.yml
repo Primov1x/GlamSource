@@ -1,5 +1,4 @@
-name: Build and Release GlamSource
-
+﻿name: Build and Release GlamSource
 on:
   push:
     branches:
@@ -13,7 +12,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v2
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
 
@@ -21,26 +20,17 @@ jobs:
         run: dotnet restore GlamSource.sln
 
       - name: Build
-        run: dotnet build GlamSource.sln --configuration Release
+        run: dotnet build GlamSource.sln --configuration Release --no-restore
 
       - name: Package
         run: |
-          mkdir -p dist
-          copy /Y "GlamSource\bin\Release\net10\GlamSource.dll" dist\GlamSource.dll
+          New-Item -ItemType Directory -Force -Path dist
+          Copy-Item "GlamSource\bin\Release\net10.0-windows\GlamSource.dll" "dist\GlamSource.dll"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
-        id: release
         with:
-          tag_name: v${{ env.VERSION }}
-          release_name: v${{ env.VERSION }}
-          body: "Automatically generated release"
-          draft: false
-          prerelease: false
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: GlamSource
-          path: dist\GlamSource.dll
-
+          tag_name: v${{ github.run_number }}
+          name: v${{ github.run_number }}
+          body: "Automatisch generiertes Release"
+          files: dist\GlamSource.dll
