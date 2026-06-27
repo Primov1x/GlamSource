@@ -3,53 +3,64 @@ name: Build and Release GlamSource
 on:
   push:
     branches:
-    - main
+      - main
 
 jobs:
   build:
     runs-on: windows-2025
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v5
+      - name: Checkout code
+        uses: actions/checkout@v5
 
-    - name: Set Node.js 24
-      uses: actions/setup-node@v5
-      with:
-        node-version: 24
+      - name: Set Node.js 24
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
 
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v5
-      with:
-        dotnet-version: '10.0.x'
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
 
-    - name: Download Dalamud
-      run: |
-        Invoke-WebRequest -Uri "https://goatcorp.github.io/dalamud-distrib/latest.zip" -OutFile dalamud.zip
-        Expand-Archive dalamud.zip -DestinationPath "$env:APPDATA\XIVLauncher\addon\Hooks\dev"
+      - name: Download Dalamud
+        run: |
+          Invoke-WebRequest -Uri "https://goatcorp.github.io/dalamud-distrib/latest.zip" -OutFile dalamud.zip
+          Expand-Archive dalamud.zip -DestinationPath "$env:APPDATA\XIVLauncher\addon\Hooks\dev"
 
-    - name: Configure NuGet sources
-      run: |
-        dotnet nuget locals global-packages --clear
+      - name: Inject custom NuGet.Config
+        shell: pwsh
+        run: |
+          # Ensure NuGet directory exists
+          $nugetDir = "$env:APPDATA\NuGet"
+          if (!(Test-Path $nugetDir)) { New-Item -Path $nugetDir -ItemType Directory -Force }
+          # Copy repo NuGet.Config to user-wide location so dotnet restore picks it up
+          $repoConfig = ".github\NuGet.Config"
+          $globalConfig = "$nugetDir\NuGet.Config"
+          Copy-Item $repoConfig $globalConfig -Force
+          Write-Host "NuGet configured via: $globalConfig"
+          # List sources for debugging
+          dotnet nuget locals all --clear
+          dotnet nuget list source || true
 
-    - name: Restore dependencies
-      run: dotnet restore GlamSource.sln
+      - name: Restore dependencies
+        run: dotnet restore GlamSource.sln
 
-    - name: Build
-      run: dotnet build GlamSource.sln --configuration Release --no-restore
+      - name: Build
+        run: dotnet build GlamSource.sln --configuration Release --no-restore
 
-    - name: Find DLL
-      run: Get-ChildItem -Recurse -Filter "GlamSource.dll" | Select-Object FullName
+      - name: Find DLL
+        run: Get-ChildItem -Recurse -Filter "GlamSource.dll" | Select-Object FullName
 
-    - name: Package
-      run: |
-        New-Item -ItemType Directory -Force -Path dist
-        $dll = Get-ChildItem -Recurse -Filter "GlamSource.dll" | Select-Object -First 1
-        Copy-Item $dll.FullName "dist\GlamSource.dll"
+      - name: Package
+        run: |
+          New-Item -ItemType Directory -Force -Path dist
+          $dll = Get-ChildItem -Recurse -Filter "GlamSource.dll" | Select-Object -First 1
+          Copy-Item $dll.FullName "dist\GlamSource.dll"
 
-    - name: Create GitHub Release
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: v${{ github.run_number }}
-        name: v${{ github.run_number }}
-        body: "Automatisch generiertes Release"
-        files: dist\GlamSource.dll
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: v${{ github.run_number }}
+          body: "Automatisch generiertes Release"
+          files: dist\GlamSource.dll
