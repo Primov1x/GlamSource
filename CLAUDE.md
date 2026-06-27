@@ -59,22 +59,27 @@ VERHALTEN BEI FEHLERN:
 - Fehler explizit behandeln, nie stillschweigend schlucken.
 - IPluginLog.Error/Warning/Info nutzen — nie Console.WriteLine.
 
+## Build-System & Release
+- GitHub Actions baut automatisch bei jedem Push auf `main`.
+- DLL landet in `GlamSource/bin/Release/net10/GlamSource.dll`.
+- `repo.json` im Root muss nach jedem Release manuell mit neuer Version und SHA256-Checksum aktualisiert werden.
+- Dalamud Custom Repository URL: `https://raw.githubusercontent.com/Primov1x/GlamSource/main/repo.json`
+
 ## Git-Workflow
 - Commit nach jedem abgeschlossenen Feature.
 - Commit-Messages auf Deutsch, präzise.
 - Format: `feat: Item-Source Anzeige` / `fix: Mount-Tooltip Disposing`
+- Bei Sitzungsbeginn: ZUERST `git log --oneline -10` ausführen.
+- Nach jedem Task committen: `git add -A && git commit -m "feat: ..."`
 
 ## Was NICHT gemacht werden soll
 - Kein Plugin-Repository/Submission bis explizit angefragt.
 - Keine Wiki-Scraper — nur offizielle APIs (XIVAPI, Garland Tools JSON).
 - Keine direkten Spielspeicher-Writes — nur lesen via Dalamud API.
 - Nie `Console.WriteLine` — immer IPluginLog.
+- CLAUDE.md und AGENTS.md NIE ohne explizite Anweisung überschreiben oder löschen.
 
 ## Kritische Tool-Nutzungsregeln
 - Kein Text zwischen Tool-Aufrufen. Erst alle Tools, dann antworten.
 - Maximal 2-3 Dateien pro Tool-Call lesen.
 - Sequentiell arbeiten, nie parallel viele Dateien lesen.
-
-## Git & Orientierung
-## - Bei Sitzungsbeginn: ZUERST `git log --oneline -10` ausführen.
-## - Nach jedem Task committen: `git add -A && git commit -m "feat: ..."`

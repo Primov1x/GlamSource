@@ -1,0 +1,21 @@
+{
+  "plugins": [
+    {
+      "name": "GlamSource",
+      "version": "1.0.0",
+      "description": "Zeigt Herkunft von Glams und Mounts in FFXIV an.",
+      "dependencies": ["Dalamud 14.0.0", "ImGui.NET 5.0.0"],
+      "checksums": {
+        "GlamSource.dll": "sha256:abc123..."
+      },
+      "latest_release": "https://github.com/Primov1x/GlamSource/releases/latest/download/GlamSource.dll",
+      "releases": [
+        {
+          "version": "1.0.0",
+          "url": "https://github.com/Primov1x/GlamSource/releases/download/v1.0.0/GlamSource.dll"
+        }
+      ]
+    }
+  ],
+  "authors": ["Primov1x"]
+}
