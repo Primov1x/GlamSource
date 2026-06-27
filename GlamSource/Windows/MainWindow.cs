@@ -3,6 +3,8 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
 using Dalamud.Interface.Windowing;
+using Dalamud.Interface.Utility;
+using Dalamud.Interface.Utility.Raii;
 using GlamSource.Windows.Helpers;
 
 namespace GlamSource.Windows;
