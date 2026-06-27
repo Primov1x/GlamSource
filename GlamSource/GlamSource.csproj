@@ -17,9 +17,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Dalamud" Version="15.0.0" PrivateAssets="All" />
-    <PackageReference Include="Dalamud.NET.Sdk" Version="15.0.0" />
-    <PackageReference Include="Dalamud.Interface" Version="15.0.0" PrivateAssets="All" />
+    <PackageReference Include="Dalamud" Version="14.0.3" PrivateAssets="All" />
+    <PackageReference Include="Dalamud.NET.Sdk" Version="14.0.3" />
+    <PackageReference Include="Dalamud.Interface" Version="14.0.3" PrivateAssets="All" />
     <PackageReference Include="ImGui.NET" Version="1.89.5" />
   </ItemGroup>
 
