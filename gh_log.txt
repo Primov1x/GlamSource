@@ -1,0 +1,164 @@
+build	UNKNOWN STEP	﻿2026-06-27T01:16:16.9343713Z Current runner version: '2.335.1'
+build	UNKNOWN STEP	2026-06-27T01:16:16.9380160Z ##[group]Runner Image Provisioner
+build	UNKNOWN STEP	2026-06-27T01:16:16.9381358Z Hosted Compute Agent
+build	UNKNOWN STEP	2026-06-27T01:16:16.9382172Z Version: 20260611.554
+build	UNKNOWN STEP	2026-06-27T01:16:16.9383043Z Commit: 5e0782fdc9014723d3be820dd114dd31555c2bd1
+build	UNKNOWN STEP	2026-06-27T01:16:16.9384048Z Build Date: 2026-06-11T21:40:46Z
+build	UNKNOWN STEP	2026-06-27T01:16:16.9385070Z Worker ID: {8fef6900-57ee-421d-8181-28d57554539b}
+build	UNKNOWN STEP	2026-06-27T01:16:16.9386157Z Azure Region: westcentralus
+build	UNKNOWN STEP	2026-06-27T01:16:16.9387010Z ##[endgroup]
+build	UNKNOWN STEP	2026-06-27T01:16:16.9389134Z ##[group]Operating System
+build	UNKNOWN STEP	2026-06-27T01:16:16.9390057Z Microsoft Windows Server 2025
+build	UNKNOWN STEP	2026-06-27T01:16:16.9390957Z 10.0.26100
+build	UNKNOWN STEP	2026-06-27T01:16:16.9391659Z Datacenter
+build	UNKNOWN STEP	2026-06-27T01:16:16.9392355Z ##[endgroup]
+build	UNKNOWN STEP	2026-06-27T01:16:16.9393431Z ##[group]Runner Image
+build	UNKNOWN STEP	2026-06-27T01:16:16.9394310Z Image: windows-2025-vs2026
+build	UNKNOWN STEP	2026-06-27T01:16:16.9395205Z Version: 20260622.153.1
+build	UNKNOWN STEP	2026-06-27T01:16:16.9397787Z Included Software: https://github.com/actions/runner-images/blob/win25-vs2026/20260622.153/images/windows/Windows2025-VS2026-Readme.md
+build	UNKNOWN STEP	2026-06-27T01:16:16.9400597Z Image Release: https://github.com/actions/runner-images/releases/tag/win25-vs2026%2F20260622.153
+build	UNKNOWN STEP	2026-06-27T01:16:16.9402139Z ##[endgroup]
+build	UNKNOWN STEP	2026-06-27T01:16:16.9404178Z ##[group]GITHUB_TOKEN Permissions
+build	UNKNOWN STEP	2026-06-27T01:16:16.9407000Z Contents: read
+build	UNKNOWN STEP	2026-06-27T01:16:16.9407900Z Metadata: read
+build	UNKNOWN STEP	2026-06-27T01:16:16.9408743Z Packages: read
+build	UNKNOWN STEP	2026-06-27T01:16:16.9409456Z ##[endgroup]
+build	UNKNOWN STEP	2026-06-27T01:16:16.9412530Z Secret source: Actions
+build	UNKNOWN STEP	2026-06-27T01:16:16.9413497Z Prepare workflow directory
+build	UNKNOWN STEP	2026-06-27T01:16:16.9901173Z Prepare all required actions
+build	UNKNOWN STEP	2026-06-27T01:16:16.9955883Z Getting action download info
+build	UNKNOWN STEP	2026-06-27T01:16:17.2985762Z Download action repository 'actions/checkout@v4' (SHA:34e114876b0b11c390a56381ad16ebd13914f8d5)
+build	UNKNOWN STEP	2026-06-27T01:16:17.4889664Z Download action repository 'actions/setup-dotnet@v4' (SHA:67a3573c9a986a3f9c594539f4ab511d57bb3ce9)
+build	UNKNOWN STEP	2026-06-27T01:16:18.1089151Z Download action repository 'softprops/action-gh-release@v2' (SHA:3bb12739c298aeb8a4eeaf626c5b8d85266b0e65)
+build	UNKNOWN STEP	2026-06-27T01:16:18.6877993Z Complete job name: build
+build	UNKNOWN STEP	2026-06-27T01:16:18.8386018Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+build	UNKNOWN STEP	2026-06-27T01:16:18.8397524Z ##[group]Run actions/checkout@v4
+build	UNKNOWN STEP	2026-06-27T01:16:18.8398663Z with:
+build	UNKNOWN STEP	2026-06-27T01:16:18.8399486Z   repository: Primov1x/GlamSource
+build	UNKNOWN STEP	2026-06-27T01:16:18.8408707Z   token: ***
+build	UNKNOWN STEP	2026-06-27T01:16:18.8409563Z   ssh-strict: true
+build	UNKNOWN STEP	2026-06-27T01:16:18.8410382Z   ssh-user: git
+build	UNKNOWN STEP	2026-06-27T01:16:18.8411214Z   persist-credentials: true
+build	UNKNOWN STEP	2026-06-27T01:16:18.8412115Z   clean: true
+build	UNKNOWN STEP	2026-06-27T01:16:18.8412940Z   sparse-checkout-cone-mode: true
+build	UNKNOWN STEP	2026-06-27T01:16:18.8413916Z   fetch-depth: 1
+build	UNKNOWN STEP	2026-06-27T01:16:18.8414793Z   fetch-tags: false
+build	UNKNOWN STEP	2026-06-27T01:16:18.8415766Z   show-progress: true
+build	UNKNOWN STEP	2026-06-27T01:16:18.8416610Z   lfs: false
+build	UNKNOWN STEP	2026-06-27T01:16:18.8417429Z   submodules: false
+build	UNKNOWN STEP	2026-06-27T01:16:18.8418266Z   set-safe-directory: true
+build	UNKNOWN STEP	2026-06-27T01:16:18.8419529Z ##[endgroup]
+build	UNKNOWN STEP	2026-06-27T01:16:19.1121632Z Syncing repository: Primov1x/GlamSource
+build	UNKNOWN STEP	2026-06-27T01:16:19.1124630Z ##[group]Getting Git version info
+build	UNKNOWN STEP	2026-06-27T01:16:19.1125774Z Working directory is 'D:\a\GlamSource\GlamSource'
+build	UNKNOWN STEP	2026-06-27T01:16:21.2154870Z [command]"C:\Program Files\Git\bin\git.exe" version
+build	UNKNOWN STEP	2026-06-27T01:16:21.2155697Z git version 2.54.0.windows.1
+build	UNKNOWN STEP	2026-06-27T01:16:21.2159617Z ##[endgroup]
+build	UNKNOWN STEP	2026-06-27T01:16:21.2170369Z Temporarily overriding HOME='D:\a\_temp\4e562900-097c-4144-ac5f-4236d0a21d28' before making global git config changes
+build	UNKNOWN STEP	2026-06-27T01:16:21.2175530Z Adding repository directory to the temporary git global config as a safe directory
+build	UNKNOWN STEP	2026-06-27T01:16:21.2201073Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add safe.directory D:\a\GlamSource\GlamSource
+build	UNKNOWN STEP	2026-06-27T01:16:21.2374335Z Deleting the contents of 'D:\a\GlamSource\GlamSource'
+build	UNKNOWN STEP	2026-06-27T01:16:21.2383030Z ##[group]Initializing the repository
+build	UNKNOWN STEP	2026-06-27T01:16:21.2385927Z [command]"C:\Program Files\Git\bin\git.exe" init D:\a\GlamSource\GlamSource
+build	UNKNOWN STEP	2026-06-27T01:16:21.2387244Z Initialized empty Git repository in D:/a/GlamSource/GlamSource/.git/
+build	UNKNOWN STEP	2026-06-27T01:16:21.2390718Z [command]"C:\Program Files\Git\bin\git.exe" remote add origin https://github.com/Primov1x/GlamSource
+build	UNKNOWN STEP	2026-06-27T01:16:21.2510346Z ##[endgroup]
+build	UNKNOWN STEP	2026-06-27T01:16:21.2511632Z ##[group]Disabling automatic garbage collection
+build	UNKNOWN STEP	2026-06-27T01:16:21.2512881Z [command]"C:\Program Files\Git\bin\git.exe" config --local gc.auto 0
+build	UNKNOWN STEP	2026-06-27T01:16:21.2515069Z ##[endgroup]
+build	UNKNOWN STEP	2026-06-27T01:16:21.2515843Z ##[group]Setting up auth
+build	UNKNOWN STEP	2026-06-27T01:16:21.2516761Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+build	UNKNOWN STEP	2026-06-27T01:16:21.2519951Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+build	UNKNOWN STEP	2026-06-27T01:16:21.6339314Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+build	UNKNOWN STEP	2026-06-27T01:16:21.6900084Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+build	UNKNOWN STEP	2026-06-27T01:16:22.4897535Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+build	UNKNOWN STEP	2026-06-27T01:16:22.5390682Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+build	UNKNOWN STEP	2026-06-27T01:16:23.3511646Z [command]"C:\Program Files\Git\bin\git.exe" config --local http.https://github.com/.extraheader "AUTHORIZATION: basic ***"
+build	UNKNOWN STEP	2026-06-27T01:16:23.4013070Z ##[endgroup]
+build	UNKNOWN STEP	2026-06-27T01:16:23.4016467Z ##[group]Fetching the repository
+build	UNKNOWN STEP	2026-06-27T01:16:23.4018249Z [command]"C:\Program Files\Git\bin\git.exe" -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +8206a7fecb7b7342e2ba624b20c5881cf29b7181:refs/remotes/origin/main
+build	UNKNOWN STEP	2026-06-27T01:16:24.7688826Z From https://github.com/Primov1x/GlamSource
+build	UNKNOWN STEP	2026-06-27T01:16:24.7690036Z  * [new ref]         8206a7fecb7b7342e2ba624b20c5881cf29b7181 -> origin/main
+build	UNKNOWN STEP	2026-06-27T01:16:24.8091084Z ##[endgroup]
+build	UNKNOWN STEP	2026-06-27T01:16:24.8091846Z ##[group]Determining the checkout info
+build	UNKNOWN STEP	2026-06-27T01:16:24.8098146Z ##[endgroup]
+build	UNKNOWN STEP	2026-06-27T01:16:24.8110232Z [command]"C:\Program Files\Git\bin\git.exe" sparse-checkout disable
+build	UNKNOWN STEP	2026-06-27T01:16:24.8613334Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset-all extensions.worktreeConfig
+build	UNKNOWN STEP	2026-06-27T01:16:24.8951991Z ##[group]Checking out the ref
+build	UNKNOWN STEP	2026-06-27T01:16:24.8953881Z [command]"C:\Program Files\Git\bin\git.exe" checkout --progress --force -B main refs/remotes/origin/main
+build	UNKNOWN STEP	2026-06-27T01:16:25.0037715Z Switched to a new branch 'main'
+build	UNKNOWN STEP	2026-06-27T01:16:25.0063675Z branch 'main' set up to track 'origin/main'.
+build	UNKNOWN STEP	2026-06-27T01:16:25.0187864Z ##[endgroup]
+build	UNKNOWN STEP	2026-06-27T01:16:25.0725387Z [command]"C:\Program Files\Git\bin\git.exe" log -1 --format=%H
+build	UNKNOWN STEP	2026-06-27T01:16:25.1024334Z 8206a7fecb7b7342e2ba624b20c5881cf29b7181
+build	UNKNOWN STEP	2026-06-27T01:16:25.1483022Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+build	UNKNOWN STEP	2026-06-27T01:16:25.1484989Z ##[group]Run actions/setup-dotnet@v4
+build	UNKNOWN STEP	2026-06-27T01:16:25.1485243Z with:
+build	UNKNOWN STEP	2026-06-27T01:16:25.1485434Z   dotnet-version: 10.0.x
+build	UNKNOWN STEP	2026-06-27T01:16:25.1485671Z   cache: false
+build	UNKNOWN STEP	2026-06-27T01:16:25.1486708Z ##[endgroup]
+build	UNKNOWN STEP	2026-06-27T01:16:25.3389890Z (node:7904) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+build	UNKNOWN STEP	2026-06-27T01:16:25.3391336Z (Use `node --trace-deprecation ...` to show where the warning was created)
+build	UNKNOWN STEP	2026-06-27T01:16:25.5281691Z [command]"C:\Program Files\PowerShell\7\pwsh.exe" -NoLogo -Sta -NoProfile -NonInteractive -ExecutionPolicy Unrestricted -Command & 'D:\a\_actions\actions\setup-dotnet\v4\externals\install-dotnet.ps1' -SkipNonVersionedFiles -Runtime dotnet -Channel LTS
+build	UNKNOWN STEP	2026-06-27T01:16:32.8703271Z dotnet-install: .NET Core Runtime with version '10.0.9' is already installed.
+build	UNKNOWN STEP	2026-06-27T01:16:33.0514169Z [command]"C:\Program Files\PowerShell\7\pwsh.exe" -NoLogo -Sta -NoProfile -NonInteractive -ExecutionPolicy Unrestricted -Command & 'D:\a\_actions\actions\setup-dotnet\v4\externals\install-dotnet.ps1' -SkipNonVersionedFiles -Channel 10.0
+build	UNKNOWN STEP	2026-06-27T01:16:34.2148956Z dotnet-install: .NET Core SDK with version '10.0.301' is already installed.
+build	UNKNOWN STEP	2026-06-27T01:16:34.3326196Z ##[group]Run Invoke-WebRequest -Uri "https://goatcorp.github.io/dalamud-distrib/latest.zip" -OutFile dalamud.zip
+build	UNKNOWN STEP	2026-06-27T01:16:34.3327206Z ^[[36;1mInvoke-WebRequest -Uri "https://goatcorp.github.io/dalamud-distrib/latest.zip" -OutFile dalamud.zip^[[0m
+build	UNKNOWN STEP	2026-06-27T01:16:34.3328133Z ^[[36;1mExpand-Archive dalamud.zip -DestinationPath "$env:APPDATA\XIVLauncher\addon\Hooks\dev"^[[0m
+build	UNKNOWN STEP	2026-06-27T01:16:34.3674924Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+build	UNKNOWN STEP	2026-06-27T01:16:34.3675318Z env:
+build	UNKNOWN STEP	2026-06-27T01:16:34.3675547Z   DOTNET_ROOT: C:\Program Files\dotnet
+build	UNKNOWN STEP	2026-06-27T01:16:34.3675824Z ##[endgroup]
+build	UNKNOWN STEP	2026-06-27T01:16:38.2177436Z ##[group]Run dotnet restore GlamSource.sln
+build	UNKNOWN STEP	2026-06-27T01:16:38.2177847Z ^[[36;1mdotnet restore GlamSource.sln^[[0m
+build	UNKNOWN STEP	2026-06-27T01:16:38.2235020Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+build	UNKNOWN STEP	2026-06-27T01:16:38.2235372Z env:
+build	UNKNOWN STEP	2026-06-27T01:16:38.2235571Z   DOTNET_ROOT: C:\Program Files\dotnet
+build	UNKNOWN STEP	2026-06-27T01:16:38.2235853Z ##[endgroup]
+build	UNKNOWN STEP	2026-06-27T01:16:47.0257396Z   Determining projects to restore...
+build	UNKNOWN STEP	2026-06-27T01:16:48.4298126Z   Restored D:\a\GlamSource\GlamSource\GlamSource\GlamSource.csproj (in 925 ms).
+build	UNKNOWN STEP	2026-06-27T01:16:48.5963086Z ##[group]Run dotnet build GlamSource.sln --configuration Release --no-restore
+build	UNKNOWN STEP	2026-06-27T01:16:48.5964460Z ^[[36;1mdotnet build GlamSource.sln --configuration Release --no-restore^[[0m
+build	UNKNOWN STEP	2026-06-27T01:16:48.6030945Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+build	UNKNOWN STEP	2026-06-27T01:16:48.6031296Z env:
+build	UNKNOWN STEP	2026-06-27T01:16:48.6031497Z   DOTNET_ROOT: C:\Program Files\dotnet
+build	UNKNOWN STEP	2026-06-27T01:16:48.6031757Z ##[endgroup]
+build	UNKNOWN STEP	2026-06-27T01:16:50.4792698Z   Dalamud.NET.Sdk: root at C:\Users\runneradmin\AppData\Roaming\XIVLauncher\addon\Hooks\dev\
+build	UNKNOWN STEP	2026-06-27T01:16:57.0118238Z ##[error]D:\a\GlamSource\GlamSource\GlamSource\GlamSource.cs(6,37): error CS0246: The type or namespace name 'Plugin' could not be found (are you missing a using directive or an assembly reference?) [D:\a\GlamSource\GlamSource\GlamSource\GlamSource.csproj]
+build	UNKNOWN STEP	2026-06-27T01:16:57.0132752Z ##[error]D:\a\GlamSource\GlamSource\GlamSource\GlamSource.cs(5,6): error CS0246: The type or namespace name 'PluginNameAttribute' could not be found (are you missing a using directive or an assembly reference?) [D:\a\GlamSource\GlamSource\GlamSource\GlamSource.csproj]
+build	UNKNOWN STEP	2026-06-27T01:16:57.0139270Z ##[error]D:\a\GlamSource\GlamSource\GlamSource\GlamSource.cs(5,6): error CS0246: The type or namespace name 'PluginName' could not be found (are you missing a using directive or an assembly reference?) [D:\a\GlamSource\GlamSource\GlamSource\GlamSource.csproj]
+build	UNKNOWN STEP	2026-06-27T01:16:57.0155804Z ##[error]D:\a\GlamSource\GlamSource\GlamSource\GlamSource.cs(7,26): error CS0246: The type or namespace name 'ImGuiWindow' could not be found (are you missing a using directive or an assembly reference?) [D:\a\GlamSource\GlamSource\GlamSource\GlamSource.csproj]
+build	UNKNOWN STEP	2026-06-27T01:16:57.0161715Z ##[error]D:\a\GlamSource\GlamSource\GlamSource\GlamSource.cs(9,33): error CS0122: 'DalamudPluginInterface' is inaccessible due to its protection level [D:\a\GlamSource\GlamSource\GlamSource\GlamSource.csproj]
+build	UNKNOWN STEP	2026-06-27T01:16:57.0376404Z 
+build	UNKNOWN STEP	2026-06-27T01:16:57.0379614Z Build FAILED.
+build	UNKNOWN STEP	2026-06-27T01:16:57.0384713Z 
+build	UNKNOWN STEP	2026-06-27T01:16:57.0391559Z ##[error]D:\a\GlamSource\GlamSource\GlamSource\GlamSource.cs(6,37): error CS0246: The type or namespace name 'Plugin' could not be found (are you missing a using directive or an assembly reference?) [D:\a\GlamSource\GlamSource\GlamSource\GlamSource.csproj]
+build	UNKNOWN STEP	2026-06-27T01:16:57.0408808Z ##[error]D:\a\GlamSource\GlamSource\GlamSource\GlamSource.cs(5,6): error CS0246: The type or namespace name 'PluginNameAttribute' could not be found (are you missing a using directive or an assembly reference?) [D:\a\GlamSource\GlamSource\GlamSource\GlamSource.csproj]
+build	UNKNOWN STEP	2026-06-27T01:16:57.0416636Z ##[error]D:\a\GlamSource\GlamSource\GlamSource\GlamSource.cs(5,6): error CS0246: The type or namespace name 'PluginName' could not be found (are you missing a using directive or an assembly reference?) [D:\a\GlamSource\GlamSource\GlamSource\GlamSource.csproj]
+build	UNKNOWN STEP	2026-06-27T01:16:57.0424095Z ##[error]D:\a\GlamSource\GlamSource\GlamSource\GlamSource.cs(7,26): error CS0246: The type or namespace name 'ImGuiWindow' could not be found (are you missing a using directive or an assembly reference?) [D:\a\GlamSource\GlamSource\GlamSource\GlamSource.csproj]
+build	UNKNOWN STEP	2026-06-27T01:16:57.0440498Z ##[error]D:\a\GlamSource\GlamSource\GlamSource\GlamSource.cs(9,33): error CS0122: 'DalamudPluginInterface' is inaccessible due to its protection level [D:\a\GlamSource\GlamSource\GlamSource\GlamSource.csproj]
+build	UNKNOWN STEP	2026-06-27T01:16:57.0451396Z     0 Warning(s)
+build	UNKNOWN STEP	2026-06-27T01:16:57.0453954Z     5 Error(s)
+build	UNKNOWN STEP	2026-06-27T01:16:57.0458776Z 
+build	UNKNOWN STEP	2026-06-27T01:16:57.0460939Z Time Elapsed 00:00:07.73
+build	UNKNOWN STEP	2026-06-27T01:16:57.5277683Z ##[error]Process completed with exit code 1.
+build	UNKNOWN STEP	2026-06-27T01:16:57.5642378Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+build	UNKNOWN STEP	2026-06-27T01:16:57.5643729Z Post job cleanup.
+build	UNKNOWN STEP	2026-06-27T01:16:58.1648276Z [command]"C:\Program Files\Git\bin\git.exe" version
+build	UNKNOWN STEP	2026-06-27T01:16:58.2108341Z git version 2.54.0.windows.1
+build	UNKNOWN STEP	2026-06-27T01:16:58.2395510Z Temporarily overriding HOME='D:\a\_temp\4e354947-3f92-460c-8337-3025c6ff1ecd' before making global git config changes
+build	UNKNOWN STEP	2026-06-27T01:16:58.2426363Z Adding repository directory to the temporary git global config as a safe directory
+build	UNKNOWN STEP	2026-06-27T01:16:58.2445525Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add safe.directory D:\a\GlamSource\GlamSource
+build	UNKNOWN STEP	2026-06-27T01:16:58.2817705Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+build	UNKNOWN STEP	2026-06-27T01:16:58.3133655Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+build	UNKNOWN STEP	2026-06-27T01:16:58.8855332Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+build	UNKNOWN STEP	2026-06-27T01:16:58.9136326Z http.https://github.com/.extraheader
+build	UNKNOWN STEP	2026-06-27T01:16:58.9188330Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset-all http.https://github.com/.extraheader
+build	UNKNOWN STEP	2026-06-27T01:16:58.9516102Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+build	UNKNOWN STEP	2026-06-27T01:16:59.6049101Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+build	UNKNOWN STEP	2026-06-27T01:16:59.6417621Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+build	UNKNOWN STEP	2026-06-27T01:17:00.3737882Z Cleaning up orphan processes
+build	UNKNOWN STEP	2026-06-27T01:17:00.4089533Z Terminate orphan process: pid (7304) (VBCSCompiler)
+build	UNKNOWN STEP	2026-06-27T01:17:00.4376535Z Terminate orphan process: pid (7280) (conhost)
+build	UNKNOWN STEP	2026-06-27T01:17:00.4436833Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-dotnet@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

@@ -1,39 +1,45 @@
-name: Sample PR Builder for SamplePlugin
+name: Build GlamSource Pull Request
 
 on:
   pull_request:
-    branches: [ master ]
+    branches: [ main ]
 
 jobs:
 
   build:
-    runs-on: windows-2022
-
+    runs-on: windows-2025
     env:
-      Solution_Name: SamplePlugin
+      Solution_Name: GlamSource
 
     steps:
     - name: Checkout
       uses: actions/checkout@v5
 
-    - name: Install .NET
+    - name: Set Node.js 24
+      uses: actions/setup-node@v5
+      with:
+        node-version: 24
+
+    - name: Install .NET 10.0
       uses: actions/setup-dotnet@v5
       with:
         dotnet-version: 10.0.x
 
-    - name: Download Dalamud
+    - name: Download Dalamud Dev
       run: |
         Invoke-WebRequest -Uri https://goatcorp.github.io/dalamud-distrib/latest.zip -OutFile latest.zip
         Expand-Archive -Force latest.zip "$env:AppData\XIVLauncher\addon\Hooks\dev"
 
+    - name: Restore NuGet packages
+      run: dotnet restore GlamSource.sln
+
     - name: Build with dotnet
-      run: dotnet build --configuration Release
+      run: dotnet build GlamSource.sln --configuration Release --no-restore
 
     - name: Store artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: SamplePlugin
-        path: .\SamplePlugin\bin\x64\Release\SamplePlugin\*
+        name: GlamSource
+        path: .\GlamSource\bin\Release\net10.0\GlamSource.dll
         if-no-files-found: error
         retention-days: 1
-

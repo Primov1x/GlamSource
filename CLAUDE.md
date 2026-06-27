@@ -65,21 +65,31 @@ VERHALTEN BEI FEHLERN:
 - `repo.json` im Root muss nach jedem Release manuell mit neuer Version und SHA256-Checksum aktualisiert werden.
 - Dalamud Custom Repository URL: `https://raw.githubusercontent.com/Primov1x/GlamSource/main/repo.json`
 
-## Git-Workflow
-- Commit nach jedem abgeschlossenen Feature.
-- Commit-Messages auf Deutsch, präzise.
-- Format: `feat: Item-Source Anzeige` / `fix: Mount-Tooltip Disposing`
-- Bei Sitzungsbeginn: ZUERST `git log --oneline -10` ausführen.
-- Nach jedem Task committen: `git add -A && git commit -m "feat: ..."`
+## GitHub Actions Debugging
+- `gh` CLI ist installiert und authentifiziert als Primov1x
+- Letzten Run anzeigen: `gh run list --repo Primov1x/GlamSource --limit 1`
+- Run-Log anzeigen: `gh run view {RUN_ID} --log --repo Primov1x/GlamSource`
+- Bei Build-Fehlern: IMMER zuerst `gh run view` ausführen bevor Änderungen gemacht werden
+- Fehler analysieren, dann direkt fixen, committen und pushen
+- Windows-Runner: PowerShell-Syntax (New-Item, Copy-Item), nie Linux-Befehle
+- Bash in Claude Code ist Git Bash — kein $env:VAR, kein ConvertFrom-Json
+- DLL-Pfad nach Build: irgendwo unter `bin\Release\` — mit `find . -name "GlamSource.dll"` suchen
 
 ## Was NICHT gemacht werden soll
 - Kein Plugin-Repository/Submission bis explizit angefragt.
 - Keine Wiki-Scraper — nur offizielle APIs (XIVAPI, Garland Tools JSON).
 - Keine direkten Spielspeicher-Writes — nur lesen via Dalamud API.
 - Nie `Console.WriteLine` — immer IPluginLog.
-- CLAUDE.md und AGENTS.md NIE ohne explizite Anweisung überschreiben oder löschen.
+- CLAUDE.md und AGENTS.md NIE ohne explizite Anweisung überschrcceiben oder löschen.
 
 ## Kritische Tool-Nutzungsregeln
 - Kein Text zwischen Tool-Aufrufen. Erst alle Tools, dann antworten.
 - Maximal 2-3 Dateien pro Tool-Call lesen.
 - Sequentiell arbeiten, nie parallel viele Dateien lesen.
+
+## Shell-Regeln (KRITISCH)
+- Claude Code nutzt intern BASH, nicht PowerShell
+- KEINE PowerShell-Befehle in Bash: kein ConvertFrom-Json, Select-Object, $env:VAR
+- Umgebungsvariablen in Bash: $GH_TOKEN (nicht $env:GH_TOKEN)
+- curl Output parsen: mit `| python3 -c "import sys,json; data=json.load(sys.stdin); print(data['key'])"`
+- PowerShell nur wenn explizit mit `powershell -Command "..."` aufgerufen

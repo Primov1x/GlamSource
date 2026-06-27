@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<Project Sdk="Dalamud.NET.Sdk/15.0.0">
+<Project Sdk="Microsoft.NET.Sdk">
+
   <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
     <Version>0.0.0.1</Version>
     <Name>GlamSource</Name>
     <Author>TF</Author>
@@ -8,9 +10,23 @@
     <Description>Hover über ein Item oder Mount und sieh sofort die Quelle — Dungeon, Shop, Craft, Event. Kein Wiki mehr nötig.</Description>
     <PackageProjectUrl>https://github.com/TF/GlamSource</PackageProjectUrl>
     <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>
+    <GenerateProgramFile>false</GenerateProgramFile>
     <IsPackable>false</IsPackable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <Tags>glamour;mounts;source;qol</Tags>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Dalamud" Version="15.0.0" PrivateAssets="All" />
+    <PackageReference Include="Dalamud.NET.Sdk" Version="15.0.0" />
+    <PackageReference Include="Dalamud.Interface" Version="15.0.0" PrivateAssets="All" />
+    <PackageReference Include="ImGui.NET" Version="1.89.4.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="GlamSourceWindow.cs" />
+    <Compile Include="GlamSource.cs" />
+  </ItemGroup>
 
   <ItemGroup>
     <Content Include="..\Data\goat.png">
@@ -18,4 +34,5 @@
       <Visible>false</Visible>
     </Content>
   </ItemGroup>
+
 </Project>

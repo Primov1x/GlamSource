@@ -1,33 +1,49 @@
+using Dalamud.Game.Command;
 using Dalamud.Plugin;
 using Dalamud.Interface.Windowing;
+using ImGuiNET;
 
 namespace GlamSource {
     [PluginName("GlamSource")]
-    public class GlamSourcePlugin : Plugin {
-        private readonly ImGuiWindow window;
+    [PluginDescription("Zeigt woher Glams und Mounts kommen.")]
+    public sealed class GlamSourcePlugin : IDalamudPlugin {
+        private readonly string name = "GlamSource";
+        private readonly WindowSystem windowSystem;
+        private readonly DalamudPluginInterface pluginInterface;
 
         public GlamSourcePlugin(DalamudPluginInterface pluginInterface) {
-            this.window = new ImGuiWindow("GlamSource");
-            pluginInterface.CommandManager.AddHandler("/glamsource", this.OnSlashCommand);
+            this.pluginInterface = pluginInterface;
+            windowSystem = new WindowSystem(name);
+
+            // Register our custom window using Dalamud.Interface.Windowing.Window
+            var window = new GlamSourceWindow();
+            windowSystem.AddWindow(window);
+
+            pluginInterface.UiBuilder.Draw += this.OnDraw;
+            pluginInterface.UiBuilder.OpenMainUi += this.OnOpenMainUi;
+            pluginInterface.CommandManager.AddHandler("/glamsource", new CommandInfo(OnCommand) {
+                HelpMessage = "Öffnet das GlamSource Fenster"
+            });
         }
 
-        public void OnSlashCommand(string command, string arguments) {
-            window.IsOpen = true;
+        public string Name => name;
+
+        private void OnCommand(CommandInfo info) {
+            windowSystem.GetWindow("GlamSourceWindow").IsOpen = true;
         }
 
-        public override void Draw() {
-            if (window.IsOpen) {
-                ImGui.Begin("GlamSource");
-                ImGui.Text("GlamSource läuft!");
-                ImGui.End();
-            }
+        private void OnOpenMainUi() {
+            windowSystem.GetWindow("GlamSourceWindow").IsOpen = true;
         }
 
-        protected override void Dispose(bool disposing) {
-            base.Dispose(disposing);
-            if (disposing) {
-                this.window?.Dispose();
-            }
+        private void OnDraw() {
+            windowSystem.Draw();
+        }
+
+        public void Dispose() {
+            pluginInterface?.CommandManager.RemoveHandler("/glamsource");
+            pluginInterface?.UiBuilder.Draw -= this.OnDraw;
+            pluginInterface?.UiBuilder.OpenMainUi -= this.OnOpenMainUi;
         }
     }
 }
