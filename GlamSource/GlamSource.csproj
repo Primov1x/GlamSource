@@ -1,29 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
-<Project Sdk="Microsoft.NET.Sdk">
-
+<Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net10.0-windows7.0</TargetFramework>
+    <TargetPlatformIdentifier>windows</TargetPlatformIdentifier>
+    <TargetPlatformVersion>7.0</TargetPlatformVersion>
     <Version>0.0.0.1</Version>
     <Name>GlamSource</Name>
     <Author>TF</Author>
     <Punchline>Zeigt woher Glams und Mounts kommen.</Punchline>
-    <Description>Hover über ein Item oder Mount und sieh sofort die Quelle — Dungeon, Shop, Craft, Event. Kein Wiki mehr nötig.</Description>
-    <PackageProjectUrl>https://github.com/TF/GlamSource</PackageProjectUrl>
+    <Description>Hover ueber ein Item oder Mount und sieh sofort die Quelle.</Description>
     <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>
     <GenerateProgramFile>false</GenerateProgramFile>
     <IsPackable>false</IsPackable>
-    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
-    <Tags>glamour;mounts;source;qol</Tags>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Dalamud.NET.Sdk" Version="14.0.3" />
+    <PackageReference Include="Dalamud" Version="14.0.3" />
     <PackageReference Include="ImGui.NET" Version="1.89.5" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Compile Include="GlamSourceWindow.cs" />
-    <Compile Include="GlamSource.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -32,5 +25,4 @@
       <Visible>false</Visible>
     </Content>
   </ItemGroup>
-
 </Project>
