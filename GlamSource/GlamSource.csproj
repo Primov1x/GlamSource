@@ -17,7 +17,6 @@
   <ItemGroup>
     <PackageReference Include="Lumina.Excel" Version="7.4.3" />
     <PackageReference Include="Lumina" Version="7.4.3" />
-    <PackageReference Include="InteropGenerator.Runtime" Version="0.1.0-alpha.0.5" />
   </ItemGroup>
 
   <ItemGroup>
