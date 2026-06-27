@@ -1,0 +1,179 @@
+build	Set up job	﻿2026-06-27T15:51:33.3348252Z Current runner version: '2.335.1'
+build	Set up job	2026-06-27T15:51:33.3414592Z ##[group]Runner Image Provisioner
+build	Set up job	2026-06-27T15:51:33.3416245Z Hosted Compute Agent
+build	Set up job	2026-06-27T15:51:33.3417177Z Version: 20260611.554
+build	Set up job	2026-06-27T15:51:33.3418190Z Commit: 5e0782fdc9014723d3be820dd114dd31555c2bd1
+build	Set up job	2026-06-27T15:51:33.3419540Z Build Date: 2026-06-11T21:40:46Z
+build	Set up job	2026-06-27T15:51:33.3420620Z Worker ID: {c987e096-84a0-468e-8e5e-1452cab9d022}
+build	Set up job	2026-06-27T15:51:33.3422000Z Azure Region: eastus
+build	Set up job	2026-06-27T15:51:33.3422958Z ##[endgroup]
+build	Set up job	2026-06-27T15:51:33.3425163Z ##[group]Operating System
+build	Set up job	2026-06-27T15:51:33.3426647Z Microsoft Windows Server 2025
+build	Set up job	2026-06-27T15:51:33.3427689Z 10.0.26100
+build	Set up job	2026-06-27T15:51:33.3428487Z Datacenter
+build	Set up job	2026-06-27T15:51:33.3429285Z ##[endgroup]
+build	Set up job	2026-06-27T15:51:33.3430232Z ##[group]Runner Image
+build	Set up job	2026-06-27T15:51:33.3431365Z Image: windows-2025-vs2026
+build	Set up job	2026-06-27T15:51:33.3432626Z Version: 20260622.153.1
+build	Set up job	2026-06-27T15:51:33.3435301Z Included Software: https://github.com/actions/runner-images/blob/win25-vs2026/20260622.153/images/windows/Windows2025-VS2026-Readme.md
+build	Set up job	2026-06-27T15:51:33.3438921Z Image Release: https://github.com/actions/runner-images/releases/tag/win25-vs2026%2F20260622.153
+build	Set up job	2026-06-27T15:51:33.3461633Z ##[endgroup]
+build	Set up job	2026-06-27T15:51:33.3465095Z ##[group]GITHUB_TOKEN Permissions
+build	Set up job	2026-06-27T15:51:33.3468090Z Contents: read
+build	Set up job	2026-06-27T15:51:33.3468990Z Metadata: read
+build	Set up job	2026-06-27T15:51:33.3469889Z Packages: read
+build	Set up job	2026-06-27T15:51:33.3470789Z ##[endgroup]
+build	Set up job	2026-06-27T15:51:33.3473599Z Secret source: Actions
+build	Set up job	2026-06-27T15:51:33.3474979Z Prepare workflow directory
+build	Set up job	2026-06-27T15:51:33.5192407Z Prepare all required actions
+build	Set up job	2026-06-27T15:51:33.5249163Z Getting action download info
+build	Set up job	2026-06-27T15:51:33.6968985Z Download action repository 'actions/checkout@v5' (SHA:93cb6efe18208431cddfb8368fd83d5badbf9bfd)
+build	Set up job	2026-06-27T15:51:33.8769180Z Download action repository 'actions/setup-node@v5' (SHA:a0853c24544627f65ddf259abe73b1d18a591444)
+build	Set up job	2026-06-27T15:51:34.0743896Z Download action repository 'actions/setup-dotnet@v5' (SHA:26b0ec14cb23fa6904739307f278c14f94c95bf1)
+build	Set up job	2026-06-27T15:51:34.3006278Z Download action repository 'softprops/action-gh-release@v2' (SHA:3bb12739c298aeb8a4eeaf626c5b8d85266b0e65)
+build	Set up job	2026-06-27T15:51:34.6416340Z Complete job name: build
+build	Checkout code	﻿2026-06-27T15:51:34.9355535Z ##[group]Run actions/checkout@v5
+build	Checkout code	2026-06-27T15:51:34.9356996Z with:
+build	Checkout code	2026-06-27T15:51:34.9357631Z   repository: Primov1x/GlamSource
+build	Checkout code	2026-06-27T15:51:34.9364175Z   token: ***
+build	Checkout code	2026-06-27T15:51:34.9364654Z   ssh-strict: true
+build	Checkout code	2026-06-27T15:51:34.9365054Z   ssh-user: git
+build	Checkout code	2026-06-27T15:51:34.9365477Z   persist-credentials: true
+build	Checkout code	2026-06-27T15:51:34.9365934Z   clean: true
+build	Checkout code	2026-06-27T15:51:34.9366344Z   sparse-checkout-cone-mode: true
+build	Checkout code	2026-06-27T15:51:34.9366837Z   fetch-depth: 1
+build	Checkout code	2026-06-27T15:51:34.9367228Z   fetch-tags: false
+build	Checkout code	2026-06-27T15:51:34.9367650Z   show-progress: true
+build	Checkout code	2026-06-27T15:51:34.9368069Z   lfs: false
+build	Checkout code	2026-06-27T15:51:34.9368442Z   submodules: false
+build	Checkout code	2026-06-27T15:51:34.9368858Z   set-safe-directory: true
+build	Checkout code	2026-06-27T15:51:34.9369689Z ##[endgroup]
+build	Checkout code	2026-06-27T15:51:37.6362318Z Syncing repository: Primov1x/GlamSource
+build	Checkout code	2026-06-27T15:51:37.6364513Z ##[group]Getting Git version info
+build	Checkout code	2026-06-27T15:51:37.6365215Z Working directory is 'D:\a\GlamSource\GlamSource'
+build	Checkout code	2026-06-27T15:51:37.6366272Z [command]"C:\Program Files\Git\bin\git.exe" version
+build	Checkout code	2026-06-27T15:51:37.6366930Z git version 2.54.0.windows.1
+build	Checkout code	2026-06-27T15:51:37.6368583Z ##[endgroup]
+build	Checkout code	2026-06-27T15:51:37.6373682Z Temporarily overriding HOME='D:\a\_temp\a9b40170-a1e9-4922-a37b-28e37da01605' before making global git config changes
+build	Checkout code	2026-06-27T15:51:37.6375021Z Adding repository directory to the temporary git global config as a safe directory
+build	Checkout code	2026-06-27T15:51:37.6376306Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add safe.directory D:\a\GlamSource\GlamSource
+build	Checkout code	2026-06-27T15:51:37.6378140Z Deleting the contents of 'D:\a\GlamSource\GlamSource'
+build	Checkout code	2026-06-27T15:51:37.6379610Z ##[group]Initializing the repository
+build	Checkout code	2026-06-27T15:51:37.6380488Z [command]"C:\Program Files\Git\bin\git.exe" init D:\a\GlamSource\GlamSource
+build	Checkout code	2026-06-27T15:51:37.6454059Z Initialized empty Git repository in D:/a/GlamSource/GlamSource/.git/
+build	Checkout code	2026-06-27T15:51:37.6466154Z [command]"C:\Program Files\Git\bin\git.exe" remote add origin https://github.com/Primov1x/GlamSource
+build	Checkout code	2026-06-27T15:51:37.6468474Z ##[endgroup]
+build	Checkout code	2026-06-27T15:51:37.6471598Z ##[group]Disabling automatic garbage collection
+build	Checkout code	2026-06-27T15:51:37.6472479Z [command]"C:\Program Files\Git\bin\git.exe" config --local gc.auto 0
+build	Checkout code	2026-06-27T15:51:37.6474320Z ##[endgroup]
+build	Checkout code	2026-06-27T15:51:37.6475001Z ##[group]Setting up auth
+build	Checkout code	2026-06-27T15:51:37.6475848Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+build	Checkout code	2026-06-27T15:51:37.6478300Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+build	Checkout code	2026-06-27T15:51:37.6481192Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+build	Checkout code	2026-06-27T15:51:37.6484322Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+build	Checkout code	2026-06-27T15:51:38.1292604Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+build	Checkout code	2026-06-27T15:51:38.1595759Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+build	Checkout code	2026-06-27T15:51:38.8007041Z [command]"C:\Program Files\Git\bin\git.exe" config --local http.https://github.com/.extraheader "AUTHORIZATION: basic ***"
+build	Checkout code	2026-06-27T15:51:38.8316400Z ##[endgroup]
+build	Checkout code	2026-06-27T15:51:38.8317442Z ##[group]Fetching the repository
+build	Checkout code	2026-06-27T15:51:38.8332691Z [command]"C:\Program Files\Git\bin\git.exe" -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +653be7a1254db7264ec51f4ec7148f82eaf3d826:refs/remotes/origin/main
+build	Checkout code	2026-06-27T15:51:39.6934554Z From https://github.com/Primov1x/GlamSource
+build	Checkout code	2026-06-27T15:51:39.6939327Z  * [new ref]         653be7a1254db7264ec51f4ec7148f82eaf3d826 -> origin/main
+build	Checkout code	2026-06-27T15:51:39.7313573Z ##[endgroup]
+build	Checkout code	2026-06-27T15:51:39.7316923Z ##[group]Determining the checkout info
+build	Checkout code	2026-06-27T15:51:39.7318813Z ##[endgroup]
+build	Checkout code	2026-06-27T15:51:39.7328086Z [command]"C:\Program Files\Git\bin\git.exe" sparse-checkout disable
+build	Checkout code	2026-06-27T15:51:39.7837751Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset-all extensions.worktreeConfig
+build	Checkout code	2026-06-27T15:51:39.8140667Z ##[group]Checking out the ref
+build	Checkout code	2026-06-27T15:51:39.8150713Z [command]"C:\Program Files\Git\bin\git.exe" checkout --progress --force -B main refs/remotes/origin/main
+build	Checkout code	2026-06-27T15:51:39.9241083Z Switched to a new branch 'main'
+build	Checkout code	2026-06-27T15:51:39.9266176Z branch 'main' set up to track 'origin/main'.
+build	Checkout code	2026-06-27T15:51:39.9310586Z ##[endgroup]
+build	Checkout code	2026-06-27T15:51:39.9720212Z [command]"C:\Program Files\Git\bin\git.exe" log -1 --format=%H
+build	Checkout code	2026-06-27T15:51:39.9982905Z 653be7a1254db7264ec51f4ec7148f82eaf3d826
+build	Set Node.js 24	﻿2026-06-27T15:51:40.1731031Z ##[group]Run actions/setup-node@v5
+build	Set Node.js 24	2026-06-27T15:51:40.1731368Z with:
+build	Set Node.js 24	2026-06-27T15:51:40.1731541Z   node-version: 24
+build	Set Node.js 24	2026-06-27T15:51:40.1731729Z   always-auth: false
+build	Set Node.js 24	2026-06-27T15:51:40.1731929Z   check-latest: false
+build	Set Node.js 24	2026-06-27T15:51:40.1735120Z   token: ***
+build	Set Node.js 24	2026-06-27T15:51:40.1735313Z   package-manager-cache: true
+build	Set Node.js 24	2026-06-27T15:51:40.1735538Z ##[endgroup]
+build	Set Node.js 24	2026-06-27T15:51:40.3794284Z Found in cache @ C:\hostedtoolcache\windows\node\24.17.0\x64
+build	Set Node.js 24	2026-06-27T15:51:40.3799585Z (node:6948) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+build	Set Node.js 24	2026-06-27T15:51:40.3801007Z (Use `node --trace-deprecation ...` to show where the warning was created)
+build	Set Node.js 24	2026-06-27T15:51:40.3805133Z ##[group]Environment details
+build	Set Node.js 24	2026-06-27T15:51:45.6024922Z node: v24.17.0
+build	Set Node.js 24	2026-06-27T15:51:45.6028868Z npm: 11.13.0
+build	Set Node.js 24	2026-06-27T15:51:45.6029523Z yarn: 1.22.22
+build	Set Node.js 24	2026-06-27T15:51:45.6032304Z ##[endgroup]
+build	Setup .NET	﻿2026-06-27T15:51:45.6567958Z ##[group]Run actions/setup-dotnet@v5
+build	Setup .NET	2026-06-27T15:51:45.6568306Z with:
+build	Setup .NET	2026-06-27T15:51:45.6568509Z   dotnet-version: 10.0.x
+build	Setup .NET	2026-06-27T15:51:45.6568752Z   cache: false
+build	Setup .NET	2026-06-27T15:51:45.6568927Z ##[endgroup]
+build	Setup .NET	2026-06-27T15:51:46.0029955Z [command]"C:\Program Files\PowerShell\7\pwsh.exe" -NoLogo -Sta -NoProfile -NonInteractive -ExecutionPolicy Unrestricted -Command & 'D:\a\_actions\actions\setup-dotnet\v5\externals\install-dotnet.ps1' -SkipNonVersionedFiles -Runtime dotnet -Channel LTS
+build	Setup .NET	2026-06-27T15:51:53.0825864Z dotnet-install: .NET Core Runtime with version '10.0.9' is already installed.
+build	Setup .NET	2026-06-27T15:51:53.2770984Z [command]"C:\Program Files\PowerShell\7\pwsh.exe" -NoLogo -Sta -NoProfile -NonInteractive -ExecutionPolicy Unrestricted -Command & 'D:\a\_actions\actions\setup-dotnet\v5\externals\install-dotnet.ps1' -SkipNonVersionedFiles -Channel 10.0
+build	Setup .NET	2026-06-27T15:51:54.1984089Z dotnet-install: .NET Core SDK with version '10.0.301' is already installed.
+build	Download Dalamud	﻿2026-06-27T15:51:54.3117036Z ##[group]Run Invoke-WebRequest -Uri "https://goatcorp.github.io/dalamud-distrib/latest.zip" -OutFile dalamud.zip
+build	Download Dalamud	2026-06-27T15:51:54.3118702Z ^[[36;1mInvoke-WebRequest -Uri "https://goatcorp.github.io/dalamud-distrib/latest.zip" -OutFile dalamud.zip^[[0m
+build	Download Dalamud	2026-06-27T15:51:54.3119479Z ^[[36;1mExpand-Archive dalamud.zip -DestinationPath "$env:APPDATA\XIVLauncher\addon\Hooks\dev"^[[0m
+build	Download Dalamud	2026-06-27T15:51:54.3591002Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+build	Download Dalamud	2026-06-27T15:51:54.3591482Z env:
+build	Download Dalamud	2026-06-27T15:51:54.3591728Z   DOTNET_ROOT: C:\Program Files\dotnet
+build	Download Dalamud	2026-06-27T15:51:54.3592065Z ##[endgroup]
+build	Inject custom NuGet.Config	﻿2026-06-27T15:51:57.2087784Z ##[group]Run # Ensure NuGet directory exists
+build	Inject custom NuGet.Config	2026-06-27T15:51:57.2088207Z ^[[36;1m# Ensure NuGet directory exists^[[0m
+build	Inject custom NuGet.Config	2026-06-27T15:51:57.2088507Z ^[[36;1m$nugetDir = "$env:APPDATA\NuGet"^[[0m
+build	Inject custom NuGet.Config	2026-06-27T15:51:57.2088937Z ^[[36;1mif (!(Test-Path $nugetDir)) { New-Item -Path $nugetDir -ItemType Directory -Force }^[[0m
+build	Inject custom NuGet.Config	2026-06-27T15:51:57.2089499Z ^[[36;1m# Copy repo NuGet.Config to user-wide location so dotnet restore picks it up^[[0m
+build	Inject custom NuGet.Config	2026-06-27T15:51:57.2089911Z ^[[36;1m$repoConfig = ".github\NuGet.Config"^[[0m
+build	Inject custom NuGet.Config	2026-06-27T15:51:57.2090205Z ^[[36;1m$globalConfig = "$nugetDir\NuGet.Config"^[[0m
+build	Inject custom NuGet.Config	2026-06-27T15:51:57.2090518Z ^[[36;1mCopy-Item $repoConfig $globalConfig -Force^[[0m
+build	Inject custom NuGet.Config	2026-06-27T15:51:57.2090850Z ^[[36;1mWrite-Host "NuGet configured via: $globalConfig"^[[0m
+build	Inject custom NuGet.Config	2026-06-27T15:51:57.2091149Z ^[[36;1m# List sources for debugging^[[0m
+build	Inject custom NuGet.Config	2026-06-27T15:51:57.2091397Z ^[[36;1mdotnet nuget locals all --clear^[[0m
+build	Inject custom NuGet.Config	2026-06-27T15:51:57.2091650Z ^[[36;1mdotnet nuget list source || true^[[0m
+build	Inject custom NuGet.Config	2026-06-27T15:51:57.2152106Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+build	Inject custom NuGet.Config	2026-06-27T15:51:57.2152484Z env:
+build	Inject custom NuGet.Config	2026-06-27T15:51:57.2152666Z   DOTNET_ROOT: C:\Program Files\dotnet
+build	Inject custom NuGet.Config	2026-06-27T15:51:57.2152916Z ##[endgroup]
+build	Inject custom NuGet.Config	2026-06-27T15:51:57.6864246Z NuGet configured via: C:\Users\runneradmin\AppData\Roaming\NuGet\NuGet.Config
+build	Inject custom NuGet.Config	2026-06-27T15:52:02.0299139Z Clearing NuGet HTTP cache: C:\Users\runneradmin\AppData\Local\NuGet\v3-cache
+build	Inject custom NuGet.Config	2026-06-27T15:52:02.0547126Z Clearing NuGet global packages folder: C:\Users\runneradmin\.nuget\packages
+build	Inject custom NuGet.Config	2026-06-27T15:52:02.0569028Z Clearing NuGet Temp cache: C:\Users\runneradmin\AppData\Local\Temp\NuGetScratch
+build	Inject custom NuGet.Config	2026-06-27T15:52:02.0570465Z Clearing NuGet plugins cache: C:\Users\runneradmin\AppData\Local\NuGet\plugins-cache
+build	Inject custom NuGet.Config	2026-06-27T15:52:02.0571412Z Local resources cleared.
+build	Inject custom NuGet.Config	2026-06-27T15:52:02.4361073Z Registered Sources:
+build	Inject custom NuGet.Config	2026-06-27T15:52:02.4373224Z   1.  goatcorp [Enabled]
+build	Inject custom NuGet.Config	2026-06-27T15:52:02.4380373Z       https://nuget.pkg.github.com/goatcorp/index.json
+build	Inject custom NuGet.Config	2026-06-27T15:52:02.4463854Z   2.  nuget.org [Enabled]
+build	Inject custom NuGet.Config	2026-06-27T15:52:02.4478031Z       https://api.nuget.org/v3/index.json
+build	Inject custom NuGet.Config	2026-06-27T15:52:02.4479427Z   3.  Microsoft Visual Studio Offline Packages [Enabled]
+build	Inject custom NuGet.Config	2026-06-27T15:52:02.4480757Z       C:\Program Files (x86)\Microsoft SDKs\NuGetPackages\
+build	Restore dependencies	﻿2026-06-27T15:52:03.3242833Z ##[group]Run dotnet restore GlamSource.sln
+build	Restore dependencies	2026-06-27T15:52:03.3243240Z ^[[36;1mdotnet restore GlamSource.sln^[[0m
+build	Restore dependencies	2026-06-27T15:52:03.3300616Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+build	Restore dependencies	2026-06-27T15:52:03.3300968Z env:
+build	Restore dependencies	2026-06-27T15:52:03.3301152Z   DOTNET_ROOT: C:\Program Files\dotnet
+build	Restore dependencies	2026-06-27T15:52:03.3301400Z ##[endgroup]
+build	Restore dependencies	2026-06-27T15:52:08.7113392Z   Determining projects to restore...
+build	Restore dependencies	2026-06-27T15:52:10.3381326Z D:\a\GlamSource\GlamSource\GlamSource\GlamSource.csproj : error NU1101: Unable to find package Dalamud.Interface. No packages exist with this id in source(s): C:\Program Files\dotnet\library-packs, goatcorp, Microsoft Visual Studio Offline Packages, nuget.org [D:\a\GlamSource\GlamSource\GlamSource.sln]
+build	Restore dependencies	2026-06-27T15:52:10.5350175Z   Failed to restore D:\a\GlamSource\GlamSource\GlamSource\GlamSource.csproj (in 1.28 sec).
+build	Restore dependencies	2026-06-27T15:52:10.6839032Z ##[error]Process completed with exit code 1.
+build	Post Checkout code	﻿2026-06-27T15:52:10.7666995Z Post job cleanup.
+build	Post Checkout code	2026-06-27T15:52:11.0295538Z [command]"C:\Program Files\Git\bin\git.exe" version
+build	Post Checkout code	2026-06-27T15:52:11.0726395Z git version 2.54.0.windows.1
+build	Post Checkout code	2026-06-27T15:52:11.0829009Z Temporarily overriding HOME='D:\a\_temp\88b96f2d-a68f-4e75-8072-df791e26e46f' before making global git config changes
+build	Post Checkout code	2026-06-27T15:52:11.0830535Z Adding repository directory to the temporary git global config as a safe directory
+build	Post Checkout code	2026-06-27T15:52:11.0840179Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add safe.directory D:\a\GlamSource\GlamSource
+build	Post Checkout code	2026-06-27T15:52:11.1150996Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+build	Post Checkout code	2026-06-27T15:52:11.1452328Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+build	Post Checkout code	2026-06-27T15:52:11.7444072Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+build	Post Checkout code	2026-06-27T15:52:11.7702966Z http.https://github.com/.extraheader
+build	Post Checkout code	2026-06-27T15:52:11.7746955Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset-all http.https://github.com/.extraheader
+build	Post Checkout code	2026-06-27T15:52:11.8146531Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+build	Post Checkout code	2026-06-27T15:52:12.3791545Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+build	Post Checkout code	2026-06-27T15:52:12.4091573Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+build	Complete job	﻿2026-06-27T15:52:12.9732125Z Cleaning up orphan processes
