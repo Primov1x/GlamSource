@@ -23,7 +23,7 @@
     <PackageReference Include="Dalamud.Plugin" Version="1.0.0.0" />
     <PackageReference Include="Dalamud.Utility" Version="1.0.0.0" />
     <PackageReference Include="Dalamud.Service" Version="1.0.0.0" />
-    <PackageReference Include="FFXIVClientStructs" Version="A.0.0.0" />
+    <PackageReference Include="FFXIVClientStructs" Version="1.0.0.0" />
     <PackageReference Include="ImGuiScene" Version="1.0.0.0" />
     <PackageReference Include="Lumina.Excel" Version="7.4.3" />
     <PackageReference Include="Lumina" Version="7.4.3" />
