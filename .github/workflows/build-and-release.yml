@@ -27,6 +27,10 @@ jobs:
         Invoke-WebRequest -Uri "https://goatcorp.github.io/dalamud-distrib/latest.zip" -OutFile dalamud.zip
         Expand-Archive dalamud.zip -DestinationPath "$env:APPDATA\XIVLauncher\addon\Hooks\dev"
 
+    - name: Configure NuGet sources
+      run: |
+        dotnet nuget locals global-packages --clear
+
     - name: Restore dependencies
       run: dotnet restore GlamSource.sln
 
