@@ -1,5 +1,6 @@
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
+using Lumina.Excel.GeneratedSheets;
 using System.Numerics;
 
 namespace GlamSource.Windows.Helpers;
@@ -10,7 +11,7 @@ public static class MainWindowHelpers
 
     public static void RenderJobInfo(Plugin plugin)
     {
-        if (plugin.ClientState.LocalPlayer == null)
+        if (Plugin.ClientState.LocalPlayer == null)
         {
             ImGui.Text("Our local player is currently not logged in.");
             return;
@@ -20,12 +21,7 @@ public static class MainWindowHelpers
         ImGui.Text("Current job:");
         ImGui.SameLine(LabelWidth * ImGuiHelpers.GlobalScale);
 
-        var playerState = plugin.ClientState.LocalPlayer;
-        var jobIconId = 62100 + playerState.ClassJob.RowId;
-        var iconTexture = plugin.TextureProvider.GetFromGameIcon(new GameIconLookup(jobIconId)).GetWrapOrEmpty();
-        ImGui.Image(iconTexture.Handle, new Vector2(28, 28) * ImGuiHelpers.GlobalScale);
-
-        ImGui.SameLine();
+        var playerState = Plugin.ClientState.LocalPlayer;
         ImGui.Text(playerState.ClassJob.Value.Abbreviation.ToString());
         ImGui.SameLine();
         ImGui.Text($" [Level {playerState.Level}]");
@@ -33,8 +29,8 @@ public static class MainWindowHelpers
 
     public static void RenderLocationInfo(Plugin plugin)
     {
-        var territoryId = plugin.ClientState.TerritoryType;
-        if (plugin.DataManager.GetExcelSheet<TerritoryType>().TryGetRow(territoryId, out var territoryRow))
+        var territoryId = Plugin.ClientState.TerritoryType;
+        if (Plugin.DataManager.GetExcelSheet<TerritoryType>().TryGetRow(territoryId, out var territoryRow))
         {
             ImGui.Text("Current location:");
             ImGui.SameLine(LabelWidth * ImGuiHelpers.GlobalScale);
