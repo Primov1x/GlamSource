@@ -2,15 +2,21 @@
   "version": 1,
   "dependencies": {
     "net10.0": {
+      "Dalamud": {
+        "type": "Direct",
+        "requested": "[14.0.3, )",
+        "resolved": "14.0.3",
+        "contentHash": "QCdiw0VXpVqNz/c7dwcvszKg/uc7O2ZYFsoWkoLkuYRbxJr9Y68Hw4iwJwuGtT2uuvocOSokHLoRCyqFuPuduQ=="
+      },
       "Dalamud.NET.Sdk": {
         "type": "Direct",
-        "requested": "[15.0.0, )",
+        "requested": "[14.0.3, )",
         "resolved": "15.0.0",
         "contentHash": "aNSEjVUGyycZnqWITyd/0jdpHM+qfH/2nYHLL2pwZP00CyHCS254jwe6nuH4hjOMxYIK+PbAapyWFS5MeOCDzQ=="
       },
       "ImGui.NET": {
         "type": "Direct",
-        "requested": "[1.89.4.1, )",
+        "requested": "[1.89.5, )",
         "resolved": "1.89.5",
         "contentHash": "HEFKtJv+Tu2bmFnFGHrzfbrX5XN7gdVQAS6REEMgF1qS0n3aTxiuLUGCRXDk1mW5iRCP4X+teqkyGGFoDR10zQ=="
       }
