@@ -53,10 +53,11 @@ jobs:
       - name: Package
         run: |
           New-Item -ItemType Directory -Force -Path dist
-          $dll = Get-ChildItem -Path "./GlamSource/bin/Release/GlamSource/" -Filter "GlamSource.dll" | Select-Object -First 1
+          # Find and copy the DLL from Release output
+          $dll = Get-ChildItem -Path "GlamSource/bin/Release/GlamSource/" -Filter "GlamSource.dll" -Recurse | Select-Object -First 1
           Copy-Item $dll.FullName "dist\GlamSource.dll"
           # Find and copy the GlamSource.json file from Release output
-          $json = Get-ChildItem -Path "./GlamSource/bin/Release/GlamSource/" -Filter "GlamSource.json" | Select-Object -First 1
+          $json = Get-ChildItem -Path "GlamSource/bin/Release/GlamSource/" -Filter "GlamSource.json" -Recurse | Select-Object -First 1
           Copy-Item $json.FullName "dist\GlamSource.json"
           # Create ZIP file with both DLL and JSON
           Compress-Archive -Path "dist\GlamSource.dll", "dist\GlamSource.json" -DestinationPath "dist\GlamSource.zip" -Force
