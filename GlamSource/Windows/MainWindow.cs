@@ -6,6 +6,7 @@ using Dalamud.Interface.Windowing;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using GlamSource.Windows.Helpers;
+using GlamSource;
 
 namespace GlamSource.Windows;
 
@@ -61,8 +62,8 @@ public class MainWindow : Window, IDisposable
 
             ImGuiHelpers.ScaledDummy(20.0f);
 
-            JobInfoRenderer.Render(plugin);
-            MainWindowHelpers.RenderLocationInfo(plugin);
+            JobInfoRenderer.Render();
+            MainWindowHelpers.RenderLocationInfo();
         }
     }
 }

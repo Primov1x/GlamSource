@@ -7,11 +7,11 @@ public class JobInfoRenderer
 {
     private const float LabelWidth = 120f;
 
-    public static void Render(Plugin plugin)
+    public static void Render()
     {
-        if (Plugin.ClientState.LocalPlayer == null)
+        if (Plugin.PlayerState == null)
         {
-            ImGui.Text("Our local player is currently not logged in.");
+            ImGui.Text("Player state not available.");
             return;
         }
 
@@ -19,7 +19,7 @@ public class JobInfoRenderer
         ImGui.Text("Current job:");
         ImGui.SameLine(LabelWidth * ImGuiHelpers.GlobalScale);
 
-        var playerState = Plugin.ClientState.LocalPlayer;
+        var playerState = Plugin.PlayerState;
         ImGui.Text(playerState.ClassJob.Value.Abbreviation.ToString());
         ImGui.SameLine();
         ImGui.Text($" [Level {playerState.Level}]");

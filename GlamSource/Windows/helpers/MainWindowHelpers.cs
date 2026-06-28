@@ -11,7 +11,7 @@ public static class MainWindowHelpers
 
     public static void RenderJobInfo()
     {
-        if (Plugin.PlayerState.LocalPlayer == null)
+        if (Plugin.PlayerState == null)
         {
             ImGui.Text("Our local player is currently not logged in.");
             return;
@@ -21,7 +21,7 @@ public static class MainWindowHelpers
         ImGui.Text("Current job:");
         ImGui.SameLine(LabelWidth * ImGuiHelpers.GlobalScale);
 
-        var playerState = Plugin.PlayerState.LocalPlayer;
+        var playerState = Plugin.PlayerState;
         ImGui.Text(playerState.ClassJob.Value.Abbreviation.ToString());
         ImGui.SameLine();
         ImGui.Text($" [Level {playerState.Level}]");
