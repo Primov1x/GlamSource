@@ -11,8 +11,8 @@
     "Punchline": "Item und Mount Quellen direkt im Spiel anzeigen.",
     "IsHide": false,
     "IsTestingExclusive": false,
-    "DownloadLinkInstall": "https://github.com/Primov1x/GlamSource/releases/download/v43/GlamSource.zip",
-    "DownloadLinkUpdate": "https://github.com/Primov1x/GlamSource/releases/download/v43/GlamSource.zip",
+    "DownloadLinkInstall": "https://github.com/Primov1x/GlamSource/releases/download/v${{ github.run_number }}/GlamSource.zip",
+    "DownloadLinkUpdate": "https://github.com/Primov1x/GlamSource/releases/download/v${{ github.run_number }}/GlamSource.zip",
     "LastUpdate": "1751068800"
   }
 ]
