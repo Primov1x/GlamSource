@@ -76,7 +76,7 @@ jobs:
 
       - name: Find DLL
         run: |
-          Get-ChildItem -Recurse -Filter "dist/GlamSource.zip" -Path "${{ github.workspace }}" | Select-Object FullName
+          Get-ChildItem -Recurse -Filter "GlamSource.zip" -Path "${{ github.workspace }}/dist" | Select-Object FullName
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
