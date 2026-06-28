@@ -48,36 +48,61 @@ jobs:
         run: dotnet restore GlamSource.sln
 
       - name: Build
-        run: dotnet build GlamSource.sln --configuration Release --no-restore
+        run: |
+          dotnet build GlamSource.sln --configuration Release --no-restore
+          # List Release directory contents for debugging - check all Release structures
+          Write-Host "Checking for Release directory structures:";
+          Get-ChildItem -Path "GlamSource/bin" -Recurse -Directory -Force | Where-Object { $_.Name -like "*Release*" } | ForEach-Object {
+            Write-Host "  Found Release directory: $($_.FullName)";
+            if (Test-Path "$_\GlamSource\") {
+              Write-Host "    Contains GlamSource subdirectory:";
+              Get-ChildItem -Path "$_\GlamSource" -Recurse -Force | ForEach-Object { Write-Host "      $($_.FullName)" };
+            };
+            Write-Host "    Contains files in this directory:";
+            Get-ChildItem -Path $_ -Recurse -Force | ForEach-Object { Write-Host "      $($_.FullName)" };
+          };
 
       - name: Package
         run: |
           New-Item -ItemType Directory -Force -Path dist
-          # Find and copy the DLL from Release output (look for GlamSource folder first, then fallback)
-          $dllFolder = Get-ChildItem -Path "GlamSource/bin/Release/GlamSource" -Directory -Force -ErrorAction SilentlyContinue
-          if ($dllFolder) {
-            Write-Host "Found GlamSource folder: $($dllFolder.FullName)"
-            $dll = Get-ChildItem -Path "$($dllFolder.FullName)" -Filter "GlamSource.dll" -Force -ErrorAction SilentlyContinue
-          } else {
-            Write-Host "GlamSource folder not found, searching in bin/Release root"
-            $dll = Get-ChildItem -Path "GlamSource/bin/Release" -Filter "GlamSource.dll" -Force -ErrorAction SilentlyContinue
+
+          # Find the Release directory - we know it's in GlamSource/bin/Release
+          $release_dir = "GlamSource/bin/Release"
+          Write-Host "Checking Release directory structure:";
+          Get-ChildItem -Path "$release_dir" -Recurse -Force | ForEach-Object {
+            if ($_.Name -like "*.dll" -or $_.Name -like "*.json") {
+              Write-Host "  $($_.FullName)"
+            }
+          };
+
+          # Find GlamSource.dll - SEARCH RECURSEIVELY THROUGH ALL SUBDIRECTORIES
+          $dll = Get-ChildItem -Path "GlamSource/bin" -Filter "*GlamSource.dll" -Recurse -Force
+          $dll = $dll | Select-Object -First 1
+
+          if (-not $dll) {
+            Write-Host "ERROR: GlamSource.dll not found. Listing all .dll files in GlamSource/bin/:";
+            Get-ChildItem -Path "GlamSource/bin" -Filter "*.dll" -Recurse -Force;
+            exit 1
           }
-          if (-not $dll) { Write-Error "DLL not found in Release output"; exit 1 }
           Write-Host "Found DLL: $($dll.FullName)"
           Copy-Item $dll.FullName "dist\\GlamSource.dll"
-          # Find and copy the GlamSource.json file from Release output
-          $jsonFolder = Get-ChildItem -Path "GlamSource/bin/Release/GlamSource" -Directory -Force -ErrorAction SilentlyContinue
-          if ($jsonFolder) {
-            $json = Get-ChildItem -Path "$($jsonFolder.FullName)" -Filter "GlamSource.json" -Force -ErrorAction SilentlyContinue
-          } else {
-            $json = Get-ChildItem -Path "GlamSource/bin/Release" -Filter "GlamSource.json" -Force -ErrorAction SilentlyContinue
+
+          # Find GlamSource.json - SEARCH RECURSEIVELY THROUGH ALL SUBDIRECTORIES
+          $json = Get-ChildItem -Path "GlamSource/bin" -Filter "*GlamSource.json" -Recurse -Force
+          $json = $json | Select-Object -First 1
+
+          if (-not $json) {
+            Write-Host "ERROR: GlamSource.json not found. Listing all .json files in GlamSource/bin/:";
+            Get-ChildItem -Path "GlamSource/bin" -Filter "*.json" -Recurse -Force;
+            exit 1
           }
-          if (-not $json) { Write-Error "JSON not found in Release output"; exit 1 }
           Write-Host "Found JSON: $($json.FullName)"
           Copy-Item $json.FullName "dist\\GlamSource.json"
+
           # Create ZIP file with both DLL and JSON
+          Write-Host "Creating ZIP archive..."
           Compress-Archive -Path "dist\\GlamSource.dll", "dist\\GlamSource.json" -DestinationPath "dist\\GlamSource.zip" -Force
-          Write-Host "Created ZIP: dist/GlamSource.zip"
+          Write-Host "Created ZIP: dist/GlamSource.zip";
 
       - name: Find DLL
         run: Get-ChildItem -Recurse -Filter "dist/GlamSource.zip" | Select-Object FullName
