@@ -2,6 +2,11 @@
   "enabledPlugins": {
     "ponytail@ponytail": true
   },
+  "permissions": {
+    "allow": [
+      "Bash(*)"
+    ]
+  },
   "hooks": {
     "PreToolUse": [
       {
@@ -9,12 +14,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash D:\\PluginProject\\GlamSource\\.claude\\hooks\\check-bash.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "bash D:\\PluginProject\\GlamSource\\.claude\\hooks\\remind-push.sh",
+            "command": "bash -c 'INPUT=$(cat); if echo \"$INPUT\" | grep -q \"gh run view\" && ! echo \"$INPUT\" | grep -q \"grep\"; then echo \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"PreToolUse\\\",\\\"permissionDecision\\\":\\\"deny\\\",\\\"additionalContext\\\":\\\"REGEL: gh run view IMMER mit grep nutzen!\\\"}}\"; exit 2; fi; exit 0'",
             "timeout": 5
           }
         ]
@@ -26,7 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"REMINDER: Task abgeschlossen? Committen UND pushen.\"}}'",
+            "command": "bash -c 'echo \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"PostToolUse\\\",\\\"additionalContext\\\":\\\"REMINDER: Committen UND pushen!\\\"}}\"; exit 0'",
             "timeout": 5
           }
         ]
@@ -37,7 +37,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo '{\"decision\":\"block\",\"reason\":\"Prüfe: Ist der Build grün? Wurde committed und gepusht? Falls nicht: weitermachen.\"}'",
+            "command": "bash -c 'echo \"{\\\"decision\\\":\\\"block\\\",\\\"reason\\\":\\\"Prüfe: Build grün? Committed und gepusht? Falls nicht: weitermachen.\\\"}\"'",
             "timeout": 5
           }
         ]
