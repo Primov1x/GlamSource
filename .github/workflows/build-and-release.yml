@@ -1,0 +1,93 @@
+name: Build and Release GlamSource
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    permissions:
+      contents: write
+    runs-on: windows-2025
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set Node.js 24
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Download Dalamud
+        run: |
+          Invoke-WebRequest -Uri "https://goatcorp.github.io/dalamud-distrib/latest.zip" -OutFile dalamud.zip
+          Expand-Archive dalamud.zip -DestinationPath "$env:APPDATA\XIVLauncher\addon\Hooks\dev"
+
+      - name: Inject custom NuGet.Config
+        shell: pwsh
+        run: |
+          # Ensure NuGet directory exists
+          $nugetDir = "$env:APPDATA\NuGet"
+          if (!(Test-Path $nugetDir)) { New-Item -Path $nugetDir -ItemType Directory -Force }
+          # Copy repo NuGet.Config to user-wide location so dotnet restore picks it up
+          $repoConfig = ".github\NuGet.Config"
+          $globalConfig = "$nugetDir\NuGet.Config"
+          Copy-Item $repoConfig $globalConfig -Force
+          Write-Host "NuGet configured via: $globalConfig"
+          # List sources for debugging
+          dotnet nuget locals all --clear
+          dotnet nuget list source || true
+
+      - name: Restore dependencies
+        run: dotnet restore GlamSource.sln
+
+      - name: Build
+        run: dotnet build GlamSource.sln --configuration Release --no-restore
+
+      - name: Package
+        run: |
+          New-Item -ItemType Directory -Force -Path dist
+          # Find and copy the DLL from Release output (look for GlamSource folder first, then fallback)
+          $dllFolder = Get-ChildItem -Path "GlamSource/bin/Release/GlamSource" -Directory -Force -ErrorAction SilentlyContinue
+          if ($dllFolder) {
+            Write-Host "Found GlamSource folder: $($dllFolder.FullName)"
+            $dll = Get-ChildItem -Path "$($dllFolder.FullName)" -Filter "GlamSource.dll" -Force -ErrorAction SilentlyContinue
+          } else {
+            Write-Host "GlamSource folder not found, searching in bin/Release root"
+            $dll = Get-ChildItem -Path "GlamSource/bin/Release" -Filter "GlamSource.dll" -Force -ErrorAction SilentlyContinue
+          }
+          if (-not $dll) { Write-Error "DLL not found in Release output"; exit 1 }
+          Write-Host "Found DLL: $($dll.FullName)"
+          Copy-Item $dll.FullName "dist\\GlamSource.dll"
+          # Find and copy the GlamSource.json file from Release output
+          $jsonFolder = Get-ChildItem -Path "GlamSource/bin/Release/GlamSource" -Directory -Force -ErrorAction SilentlyContinue
+          if ($jsonFolder) {
+            $json = Get-ChildItem -Path "$($jsonFolder.FullName)" -Filter "GlamSource.json" -Force -ErrorAction SilentlyContinue
+          } else {
+            $json = Get-ChildItem -Path "GlamSource/bin/Release" -Filter "GlamSource.json" -Force -ErrorAction SilentlyContinue
+          }
+          if (-not $json) { Write-Error "JSON not found in Release output"; exit 1 }
+          Write-Host "Found JSON: $($json.FullName)"
+          Copy-Item $json.FullName "dist\\GlamSource.json"
+          # Create ZIP file with both DLL and JSON
+          Compress-Archive -Path "dist\\GlamSource.dll", "dist\\GlamSource.json" -DestinationPath "dist\\GlamSource.zip" -Force
+          Write-Host "Created ZIP: dist/GlamSource.zip"
+
+      - name: Find DLL
+        run: Get-ChildItem -Recurse -Filter "dist/GlamSource.zip" | Select-Object FullName
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "LATEST"
+          name: "LATEST"
+          body: "Automatisch generiertes Release"
+          files: dist/GlamSource.zip
+          generate_release_notes: false
+          overwrite: true
