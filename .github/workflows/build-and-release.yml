@@ -86,4 +86,4 @@ jobs:
           body: "Automatisch generiertes Release"
           files: dist/GlamSource.zip
           generate_release_notes: false
-          overwrite: true
+          # overwrite: true  # removed – unsupported input
