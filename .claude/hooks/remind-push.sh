@@ -1,6 +1,6 @@
 ﻿#!/bin/bash
 INPUT=$(cat)
-if echo "$INPUT" | grep -q "git commit" && ! echo "$INPUT" | grep -q "git push"; then
-  echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"REMINDER: Nach git commit IMMER direkt git push ausführen!"}}'
+if echo "$INPUT" | grep -q "git commit"; then
+  echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"REMINDER: Nach git commit direkt git push ausfuehren!"}}'
 fi
 exit 0
