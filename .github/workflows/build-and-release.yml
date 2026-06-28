@@ -51,13 +51,10 @@ jobs:
 
       - name: Build
         run: |
-          # Show current working directory and list files
-          Write-Host "BUILD DEBUG: CWD: $(Get-Location)"
-          Get-ChildItem -Path . -Recurse -Filter "*.dll" | Select-Object FullName | Format-Table
-
           dotnet build GlamSource.sln --configuration Release --no-restore
 
-          # Show ALL DLL files in the entire project (debug step)
+          # Show current working directory and list files
+          Write-Host "BUILD DEBUG: CWD: $(Get-Location)"
           Write-Host "BUILD DEBUG: All DLL files found:"
           Get-ChildItem -Path . -Filter "*.dll" -Recurse | Select-Object FullName | Format-Table
 
@@ -73,8 +70,8 @@ jobs:
         run: |
           # Create dist directory in the project root
           New-Item -ItemType Directory -Force -Path "GlamSource/dist"
-          Copy-Item "GlamSource/bin/x64/Release/GlamSource/GlamSource.dll" "GlamSource/dist/GlamSource.dll"
-          Copy-Item "GlamSource/bin/x64/Release/GlamSource/GlamSource.json" "GlamSource/dist/GlamSource.json"
+          Copy-Item "GlamSource/bin/x64/Release/GlamSource.dll" "GlamSource/dist/GlamSource.dll"
+          Copy-Item "GlamSource/bin/x64/Release/GlamSource.json" "GlamSource/dist/GlamSource.json"
           Compress-Archive -Path "GlamSource/dist/GlamSource.dll", "GlamSource/dist/GlamSource.json" -DestinationPath "GlamSource/dist/GlamSource.zip" -Force
 
       - name: Find DLL
