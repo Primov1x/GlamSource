@@ -2,26 +2,6 @@
   "enabledPlugins": {
     "ponytail@ponytail": true
   },
-  "permissions": {
-    "allow": [
-      "Bash(gh *)",
-      "Bash(git *)",
-      "Bash(dotnet *)",
-      "Bash(find *)",
-      "Bash(grep *)",
-      "Bash(cat *)",
-      "Bash(ls *)",
-      "Bash(cp *)",
-      "Bash(mkdir *)",
-      "Bash(xcopy *)",
-      "Bash(cd *)",
-      "Bash(echo *)",
-      "Bash(sleep *)",
-      "Bash(ls *)",
-      "Bash(dir *)",
-      "Bash(*)"
-    ]
-  },
   "hooks": {
     "PreToolUse": [
       {
@@ -29,12 +9,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash /d/PluginProject/GlamSource/.claude/hooks/check-bash.sh",
+            "command": "bash D:\\PluginProject\\GlamSource\\.claude\\hooks\\check-bash.sh",
             "timeout": 5
           },
           {
             "type": "command",
-            "command": "bash /d/PluginProject/GlamSource/.claude/hooks/remind-push.sh",
+            "command": "bash D:\\PluginProject\\GlamSource\\.claude\\hooks\\remind-push.sh",
             "timeout": 5
           }
         ]
@@ -57,7 +37,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo '{\"decision\":\"block\",\"reason\":\"Prüfe: Ist Build grün? Committed und gepusht? Falls nicht: weitermachen.\"}'",
+            "command": "echo '{\"decision\":\"block\",\"reason\":\"Prüfe: Ist der Build grün? Wurde committed und gepusht? Falls nicht: weitermachen.\"}'",
             "timeout": 5
           }
         ]
