@@ -11,7 +11,7 @@
     <Description>Hover ueber ein Item oder Mount und sieh sofort die Quelle.</Description>
     <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>
     <GenerateProgramFile>false</GenerateProgramFile>
-    <IsPackable>false</GenerateProgramFile>
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>
