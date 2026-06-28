@@ -68,15 +68,15 @@ jobs:
 
       - name: Package
         run: |
-          # Create dist directory in the project root
-          New-Item -ItemType Directory -Force -Path "GlamSource/dist"
-          Copy-Item "GlamSource/bin/x64/Release/GlamSource.dll" "GlamSource/dist/GlamSource.dll"
-          Copy-Item "GlamSource/bin/x64/Release/GlamSource.json" "GlamSource/dist/GlamSource.json"
-          Compress-Archive -Path "GlamSource/dist/GlamSource.dll", "GlamSource/dist/GlamSource.json" -DestinationPath "GlamSource/dist/GlamSource.zip" -Force
+          # Create dist directory in the workspace root
+          New-Item -ItemType Directory -Force -Path "dist"
+          Copy-Item "GlamSource/bin/x64/Release/GlamSource.dll" "dist/GlamSource.dll"
+          Copy-Item "GlamSource/bin/x64/Release/GlamSource.json" "dist/GlamSource.json"
+          Compress-Archive -Path "dist/GlamSource.dll", "dist/GlamSource.json" -DestinationPath "dist/GlamSource.zip" -Force
 
       - name: Find DLL
         run: |
-          Get-ChildItem -Recurse -Filter "GlamSource/dist/GlamSource.zip" -Path "${{ github.workspace }}" | Select-Object FullName
+          Get-ChildItem -Recurse -Filter "dist/GlamSource.zip" -Path "${{ github.workspace }}" | Select-Object FullName
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
