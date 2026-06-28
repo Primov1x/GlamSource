@@ -4,7 +4,7 @@
     "Name": "GlamSource",
     "Description": "Zeigt Herkunft von Glams und Mounts in FFXIV an.",
     "InternalName": "GlamSource",
-    "AssemblyVersion": "0.0.0.2",
+    "AssemblyVersion": "0.0.0.3",
     "RepoUrl": "https://github.com/Primov1x/GlamSource",
     "ApplicableVersion": "any",
     "DalamudApiLevel": 14,
