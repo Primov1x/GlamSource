@@ -1,6 +1,6 @@
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
-using Lumina.Excel.GeneratedSheets;
+using Lumina.Excel.Sheets;
 using System.Numerics;
 
 namespace GlamSource.Windows.Helpers;
