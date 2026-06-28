@@ -54,10 +54,10 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path dist
           # Find and copy the DLL from Release output
-          $dll = Get-ChildItem -Path "GlamSource/bin/Release/GlamSource/" -Filter "GlamSource.dll" -Recurse | Select-Object -First 1
+          $dll = Get-ChildItem -Path "GlamSource/bin/Release" -Filter "GlamSource.dll" -Recurse | Select-Object -First 1
           Copy-Item $dll.FullName "dist\GlamSource.dll"
           # Find and copy the GlamSource.json file from Release output
-          $json = Get-ChildItem -Path "GlamSource/bin/Release/GlamSource/" -Filter "GlamSource.json" -Recurse | Select-Object -First 1
+          $json = Get-ChildItem -Path "GlamSource/bin/Release" -Filter "GlamSource.json" -Recurse | Select-Object -First 1
           Copy-Item $json.FullName "dist\GlamSource.json"
           # Create ZIP file with both DLL and JSON
           Compress-Archive -Path "dist\GlamSource.dll", "dist\GlamSource.json" -DestinationPath "dist\GlamSource.zip" -Force
@@ -68,8 +68,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ github.run_number }}
-          name: v${{ github.run_number }}
+          tag_name: "LATEST"
+          name: "LATEST"
           body: "Automatisch generiertes Release"
           files: dist/GlamSource.zip
           generate_release_notes: false
