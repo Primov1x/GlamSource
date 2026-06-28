@@ -40,6 +40,6 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: GlamSource
-        path: .\GlamSource\bin\Release\net10.0\GlamSource.dll
+        path: .\GlamSource\bin\Release\GlamSource\GlamSource.dll
         if-no-files-found: error
         retention-days: 1

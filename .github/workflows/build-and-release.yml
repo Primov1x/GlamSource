@@ -56,7 +56,7 @@ jobs:
       - name: Package
         run: |
           New-Item -ItemType Directory -Force -Path dist
-          $dll = Get-ChildItem -Recurse -Filter "GlamSource.dll" | Select-Object -First 1
+          $dll = Get-ChildItem -Path "./GlamSource/bin/Release/GlamSource/" -Filter "GlamSource.dll" | Select-Object -First 1
           Copy-Item $dll.FullName "dist\GlamSource.dll"
           # Find and copy the GlamSource.json file from Release output
           $json = Get-ChildItem -Path "./GlamSource/bin/Release/GlamSource/" -Filter "GlamSource.json" | Select-Object -First 1
