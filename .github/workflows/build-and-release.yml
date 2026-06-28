@@ -51,15 +51,23 @@ jobs:
 
       - name: Build
         run: |
+          # Show current working directory and list files
+          Write-Host "BUILD DEBUG: CWD: $(Get-Location)"
+          Get-ChildItem -Path . -Recurse -Filter "*.dll" | Select-Object FullName | Format-Table
+
           dotnet build GlamSource.sln --configuration Release --no-restore
 
           # Show ALL DLL files in the entire project (debug step)
           Write-Host "BUILD DEBUG: All DLL files found:"
-          Get-ChildItem -Path . -Filter "*.dll" -Recurse | Select-Object FullName
+          Get-ChildItem -Path . -Filter "*.dll" -Recurse | Select-Object FullName | Format-Table
 
           # Show actual output files
           Write-Host "Build completed. Output files:"
-          Get-ChildItem -Path "GlamSource/bin/x64/Release" -Recurse -Force
+          Get-ChildItem -Path "GlamSource/bin/x64/Release" -Recurse -Force | Format-Table
+
+          # Show dist directory output files
+          Write-Host "Dist directory contents:"
+          Get-ChildItem -Path "GlamSource/dist" -Recurse -Force | Format-Table
 
       - name: Package
         run: |

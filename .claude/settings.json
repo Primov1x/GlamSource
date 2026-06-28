@@ -1,33 +1,83 @@
 ﻿{
-  "enabledPlugins": {
-    "ponytail@ponytail": true
-  },
   "permissions": {
     "allow": [
-      "Bash(*)"
+      "Bash(*)",
+      "Edit(*)",
+      "Write(*)"
     ]
   },
   "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /d/PluginProject/GlamSource/.claude/hooks/inject-reminder.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'INPUT=$(cat); if echo \"$INPUT\" | grep -q \"gh run view\" && ! echo \"$INPUT\" | grep -q \"grep\"; then echo \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"PreToolUse\\\",\\\"permissionDecision\\\":\\\"deny\\\",\\\"additionalContext\\\":\\\"REGEL: gh run view IMMER mit grep nutzen!\\\"}}\"; exit 2; fi; exit 0'",
+            "command": "bash -c 'INPUT=$(cat); if echo \"$INPUT\" | grep -q \"python3\\|python \"; then echo \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"PreToolUse\\\",\\\"permissionDecision\\\":\\\"deny\\\",\\\"additionalContext\\\":\\\"Python nicht verfügbar! Nutze gh CLI mit --jq Flag.\\\"}}\"; exit 2; fi; exit 0'",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash /d/PluginProject/GlamSource/.claude/hooks/pre-commit-lint.sh",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "bash /d/PluginProject/GlamSource/.claude/hooks/enforce-build-check.sh",
+            "timeout": 15
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'INPUT=$(cat); if echo \"$INPUT\" | grep -qE \"\\.claude/|rm.*\\.claude|delete.*\\.claude\"; then echo \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"PreToolUse\\\",\\\"permissionDecision\\\":\\\"deny\\\",\\\"additionalContext\\\":\\\"VERBOTEN: .claude/ Verzeichnis darf nicht modifiziert oder gelöscht werden!\\\"}}\"; exit 2; fi; exit 0'",
             "timeout": 5
           }
         ]
-      }
-    ],
-    "PostToolUse": [
+      },
       {
         "matcher": "Write|Edit",
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'echo \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"PostToolUse\\\",\\\"additionalContext\\\":\\\"REMINDER: Committen UND pushen!\\\"}}\"; exit 0'",
+            "command": "bash /d/PluginProject/GlamSource/.claude/hooks/security-scan.sh",
             "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /d/PluginProject/GlamSource/.claude/hooks/pre-compact.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /d/PluginProject/GlamSource/.claude/hooks/subagent-stop.sh",
+            "timeout": 15
           }
         ]
       }
@@ -37,8 +87,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'echo \"{\\\"decision\\\":\\\"block\\\",\\\"reason\\\":\\\"Prüfe: Build grün? Committed und gepusht? Falls nicht: weitermachen.\\\"}\"'",
-            "timeout": 5
+            "command": "bash -c 'cd /d/PluginProject/GlamSource; UNPUSHED=$(git log origin/main..HEAD --oneline 2>/dev/null | wc -l); if [ \"$UNPUSHED\" -gt 0 ]; then git push origin main 2>&1; echo \"{\\\"decision\\\":\\\"block\\\",\\\"reason\\\":\\\"Auto-pushed $UNPUSHED commits.\\\"}\" ; exit 0; fi; STATUS=$(gh run list --repo Primov1x/GlamSource --limit 1 --json conclusion -q \".[0].conclusion\" 2>/dev/null); if [ \"$STATUS\" != \"success\" ]; then echo \"{\\\"decision\\\":\\\"block\\\",\\\"reason\\\":\\\"GitHub Actions nicht grün ($STATUS). Weitermachen!\\\"}\" ; fi'",
+            "timeout": 30
           }
         ]
       }
