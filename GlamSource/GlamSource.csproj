@@ -5,7 +5,7 @@
     <TargetPlatformIdentifier>windows</TargetPlatformIdentifier>
     <TargetPlatformVersion>7.0</TargetPlatformVersion>
     <Version>0.0.0.3</Version>
-    <DalamudApiLevel>15</DalamudApiLevel>
+    <DalamudApiLevel>14</DalamudApiLevel>
     <Name>GlamSource</Name>
     <Author>TF</Author>
     <Punchline>Zeigt woher Glams und Mounts kommen.</Punchline>
