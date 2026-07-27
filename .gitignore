@@ -67,3 +67,10 @@ temp/
 *.nupkg
 *.tgz
 reference/
+
+# --- Falsch getracktes aufraeumen ---
+.claude/
+.mcp.json
+.opencode/
+GlamSource.Mock/
+packages.lock.json
