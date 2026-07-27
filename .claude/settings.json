@@ -1,97 +1,16 @@
 ﻿{
+  "env": {
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:4000",
+    "ANTHROPIC_API_KEY": "sk-local-dev-key",
+    "ANTHROPIC_MODEL": "planner",
+    "ANTHROPIC_SMALL_FAST_MODEL": "fast"
+  },
   "permissions": {
     "allow": [
       "Bash(*)",
       "Edit(*)",
-      "Write(*)"
-    ]
-  },
-  "hooks": {
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash /d/PluginProject/GlamSource/.claude/hooks/inject-reminder.sh",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash -c 'INPUT=$(cat); if echo \"$INPUT\" | grep -q \"python3\\|python \"; then echo \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"PreToolUse\\\",\\\"permissionDecision\\\":\\\"deny\\\",\\\"additionalContext\\\":\\\"Python nicht verfügbar! Nutze gh CLI mit --jq Flag.\\\"}}\"; exit 2; fi; exit 0'",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "bash /d/PluginProject/GlamSource/.claude/hooks/pre-commit-lint.sh",
-            "timeout": 30
-          },
-          {
-            "type": "command",
-            "command": "bash /d/PluginProject/GlamSource/.claude/hooks/enforce-build-check.sh",
-            "timeout": 15
-          }
-        ]
-      },
-      {
-        "matcher": "Bash|Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash -c 'INPUT=$(cat); if echo \"$INPUT\" | grep -qE \"\\.claude/|rm.*\\.claude|delete.*\\.claude\"; then echo \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"PreToolUse\\\",\\\"permissionDecision\\\":\\\"deny\\\",\\\"additionalContext\\\":\\\"VERBOTEN: .claude/ Verzeichnis darf nicht modifiziert oder gelöscht werden!\\\"}}\"; exit 2; fi; exit 0'",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash /d/PluginProject/GlamSource/.claude/hooks/security-scan.sh",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "PreCompact": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash /d/PluginProject/GlamSource/.claude/hooks/pre-compact.sh",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash /d/PluginProject/GlamSource/.claude/hooks/subagent-stop.sh",
-            "timeout": 15
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash -c 'cd /d/PluginProject/GlamSource; UNPUSHED=$(git log origin/main..HEAD --oneline 2>/dev/null | wc -l); if [ \"$UNPUSHED\" -gt 0 ]; then git push origin main 2>&1; echo \"{\\\"decision\\\":\\\"block\\\",\\\"reason\\\":\\\"Auto-pushed $UNPUSHED commits.\\\"}\" ; exit 0; fi; STATUS=$(gh run list --repo Primov1x/GlamSource --limit 1 --json conclusion -q \".[0].conclusion\" 2>/dev/null); if [ \"$STATUS\" != \"success\" ]; then echo \"{\\\"decision\\\":\\\"block\\\",\\\"reason\\\":\\\"GitHub Actions nicht grün ($STATUS). Weitermachen!\\\"}\" ; fi'",
-            "timeout": 30
-          }
-        ]
-      }
+      "Write(*)",
+      "Read(*)"
     ]
   }
 }

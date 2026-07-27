@@ -9,7 +9,7 @@
   "download_url": "https://github.com/Primov1x/GlamSource/releases/download/LATEST/GlamSource.zip",
   "assembly_version": "0.0.0.3",
   "testing_assembly_version": "0.0.0.3",
-  "dalamud_api_level": 14,
+  "dalamud_api_level": 15,
   "load_required_state": 0,
   "load_sync": false
 }

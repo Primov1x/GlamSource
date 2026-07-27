@@ -1,0 +1,7 @@
+<Project>
+  <PropertyGroup Condition="'$(MSBuildProjectName)' != 'glamsource.mock'">
+    <!-- Weist das SDK an, dein lokales Dalamud aus dem reference-Ordner zu nutzen -->
+    <DalamudLibPath>$(MSBuildThisFileDirectory)reference\Dalamud\bin\Debug\</DalamudLibPath>
+    <AssemblySearchPaths>$(AssemblySearchPaths);$(DalamudLibPath)</AssemblySearchPaths>
+  </PropertyGroup>
+</Project>

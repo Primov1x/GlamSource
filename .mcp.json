@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "dalamud-docs": {
+      "command": "node",
+      "args": [
+        "C:\\Users\\t.fritzen\\Projects\\mcp-ffxiv-dalamud\\dist\\index.js"
+      ]
+    }
+  }
+}
