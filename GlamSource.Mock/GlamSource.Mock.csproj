@@ -7,5 +7,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../GlamSource.Core/GlamSource.Core.csproj" />
+    <PackageReference Include="DalaMock.Core" Version="6.1.7" />
   </ItemGroup>
 </Project>
