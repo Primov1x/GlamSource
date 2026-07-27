@@ -1,0 +1,37 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore GlamSource.csproj
+
+      - name: Build
+        run: dotnet build GlamSource.csproj -c Release --no-restore
+
+      - name: Test
+        run: dotnet test GlamSource.Core.Tests/GlamSource.Core.Tests.csproj -c Release --no-build
+
+      - name: Locate build output
+        run: Get-ChildItem -Recurse -Filter "latest.zip" | Select-Object FullName
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlamSource
+          path: '**/latest.zip'
+          if-no-files-found: error
