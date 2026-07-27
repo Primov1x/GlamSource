@@ -31,6 +31,7 @@
     <Compile Remove="reference\**" />
     <Compile Remove="GlamSource.Core.Tests\**" />
     <Compile Remove="GlamSource.Core\**" />
+    <Compile Remove="GlamSource.Mock\**" />
   </ItemGroup>
 
   <ItemGroup>
