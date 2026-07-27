@@ -1,6 +1,7 @@
 <Project>
-  <PropertyGroup Condition="'$(MSBuildProjectName)' != 'glamsource.mock'">
-    <!-- Weist das SDK an, dein lokales Dalamud aus dem reference-Ordner zu nutzen -->
+  <PropertyGroup Condition="'$(MSBuildProjectName)' != 'glamsource.mock' And Exists('$(MSBuildThisFileDirectory)reference\Dalamud\bin\Debug\')">
+    <!-- Lokal: bindet Dalamud aus reference/ ein.
+         Cloud (Actions): reference/ existiert nicht -> Dalamud.NET.Sdk nimmt seinen Default. -->
     <DalamudLibPath>$(MSBuildThisFileDirectory)reference\Dalamud\bin\Debug\</DalamudLibPath>
     <AssemblySearchPaths>$(AssemblySearchPaths);$(DalamudLibPath)</AssemblySearchPaths>
   </PropertyGroup>
