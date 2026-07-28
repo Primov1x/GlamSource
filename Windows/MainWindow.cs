@@ -3,6 +3,7 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Windowing;
 using GlamSource.Core;
+using Newtonsoft.Json.Linq;
 
 namespace GlamSource.Windows;
 
@@ -26,6 +27,27 @@ public class MainWindow : Window, IDisposable
 
     public override void Draw()
     {
+        try
+        {
+            var target = Plugin.TargetManager.Target;
+            if (target is Dalamud.Game.ClientState.Objects.SubKinds.IPlayerCharacter playerChar && playerChar.Address != nint.Zero)
+            {
+                var objectIndex = (int)target.GameObjectId;
+                var getState = new Glamourer.Api.IpcSubscribers.GetState(Plugin.PluginInterface);
+                var (ec, jObject) = getState.Invoke(objectIndex, 0);
+                Plugin.Log.Information("[DEBUG-Glamourer] GetState: objectIndex={ObjectIndex} ec={Ec} json={Json}",
+                    objectIndex, ec, jObject?.ToString() ?? "(null)");
+            }
+            else
+            {
+                Plugin.Log.Information("[DEBUG-Glamourer] No valid player target");
+            }
+        }
+        catch (Exception ex)
+        {
+            Plugin.Log.Error(ex, "[DEBUG-Glamourer] GetState failed");
+        }
+
         ImGui.TextColored(new Vector4(0.9f, 0.7f, 0.2f, 1f), "Target Equipment");
         ImGui.Separator();
         ImGui.Spacing();

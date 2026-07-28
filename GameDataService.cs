@@ -15,11 +15,40 @@ public unsafe class GameDataService : IGlamourService
 {
     private readonly IDataManager _dataManager;
     private readonly ITargetManager _targetManager;
+    private bool _debugLogged;
 
     public GameDataService(IDataManager dataManager, ITargetManager targetManager)
     {
         _dataManager = dataManager;
         _targetManager = targetManager;
+        FindAshShortbow();
+    }
+
+    private void FindAshShortbow()
+    {
+        try
+        {
+            var sheet = _dataManager.GetExcelSheet<Item>();
+            if (sheet == null) return;
+            foreach (var item in sheet)
+            {
+                if (item.Name.ToString().Contains("Ash Shortbow"))
+                {
+                    Plugin.Log.Information("[DEBUG-AshShortbow] RowId={RowId} Name={Name} ModelMain={ModelMain} (raw={RawMain}) ModelSub={ModelSub} (raw={RawSub})",
+                        item.RowId,
+                        item.Name.ToString(),
+                        item.ModelMain,
+                        item.ModelMain,
+                        item.ModelSub,
+                        item.ModelSub);
+                    break;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Plugin.Log.Error(ex, "[DEBUG-AshShortbow] Failed");
+        }
     }
 
     public string? GetLocationName(uint territoryId)
@@ -72,8 +101,26 @@ public unsafe class GameDataService : IGlamourService
             var weaponModelMain = i == 0;
             var matchedItem = itemSheet?
                 .FirstOrDefault(item =>
-                    (weaponModelMain && (ushort)(item.ModelMain & 0xFFFF) == modelId) ||
-                    (!weaponModelMain && (ushort)(item.ModelSub & 0xFFFF) == modelId)) ?? default;
+                {
+                    // Unpacking-Logik nach Vorbild Penumbra.GameData (Ottermandias), MIT-lizenziert
+                    var primaryId    = (ushort)(item.ModelMain & 0xFFFF);
+                    var secondaryId  = (ushort)((item.ModelMain >> 16) & 0xFFFF);
+                    var variant      = (byte)(item.ModelMain >> 32);
+                    var primaryId2   = (ushort)(item.ModelSub & 0xFFFF);
+                    var secondaryId2 = (ushort)((item.ModelSub >> 16) & 0xFFFF);
+                    var variant2     = (byte)(item.ModelSub >> 32);
+                    _ = secondaryId;
+                    _ = secondaryId2;
+                    return (weaponModelMain && primaryId == modelId && variant == variant2) ||
+                           (!weaponModelMain && primaryId2 == modelId && variant2 == variant);
+                }) ?? default;
+
+            if (!_debugLogged)
+            {
+                _debugLogged = true;
+                Plugin.Log.Information("[DEBUG] Weapon slot {Slot}: DrawData modelId={ModelId} => matched RowId={RowId} Name={Name}",
+                    i, modelId, matchedItem.RowId, matchedItem.Name.ToString());
+            }
 
             var itemRowId = matchedItem.RowId;
             var itemName = itemRowId > 0 ? matchedItem.Name.ToString() : "Unknown";
@@ -121,8 +168,16 @@ public unsafe class GameDataService : IGlamourService
 
             var matchedItem = itemSheet?
                 .FirstOrDefault(item =>
-                    (ushort)(item.ModelMain & 0xFFFF) == modelId ||
-                    (ushort)(item.ModelSub & 0xFFFF) == modelId) ?? default;
+                {
+                    // Unpacking-Logik nach Vorbild Penumbra.GameData (Ottermandias), MIT-lizenziert
+                    // Armor: Variant in Bits 16-31 (Waffen: Bits 32-39)
+                    var primaryId  = (ushort)(item.ModelMain & 0xFFFF);
+                    var variant    = (byte)(item.ModelMain >> 16);
+                    var primaryId2 = (ushort)(item.ModelSub & 0xFFFF);
+                    var variant2   = (byte)(item.ModelSub >> 16);
+                    return (primaryId == modelId && variant == variant2) ||
+                           (primaryId2 == modelId && variant == variant2);
+                }) ?? default;
 
             var itemRowId = matchedItem.RowId;
             var itemName = itemRowId > 0 ? matchedItem.Name.ToString() : "Unknown";

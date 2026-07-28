@@ -76,3 +76,5 @@ GlamSource.Mock/
 packages.lock.json
 
 run-log*.txt
+
+nuget.config
