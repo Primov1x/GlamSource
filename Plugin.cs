@@ -72,15 +72,13 @@ public class Plugin : IAsyncDalamudPlugin
         TargetManager = _targetManager;
 
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
-        GameDataService = new GameDataService(DataManager);
+        GameDataService = new GameDataService(DataManager, TargetManager);
         MainWindowHelpers = new MainWindowHelpers(GameDataService);
 
         var goatImagePath = Path.Join(PluginInterface.AssemblyLocation.Directory?.FullName, "goat.png");
-        var fixturePath = Path.Join(PluginInterface.AssemblyLocation.Directory?.FullName, "fixtures", "target-example.json");
-        var glamourService = new FixtureGlamourService(fixturePath);
 
         configWindow = new ConfigWindow(this);
-        mainWindow = new MainWindow(glamourService);
+        mainWindow = new MainWindow(GameDataService);
 
         WindowSystem.AddWindow(configWindow);
         WindowSystem.AddWindow(mainWindow);
