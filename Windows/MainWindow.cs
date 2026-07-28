@@ -10,6 +10,9 @@ namespace GlamSource.Windows;
 public class MainWindow : Window, IDisposable
 {
     private readonly IGlamourService _glamourService;
+    private int _lastLoggedIndex = -1;
+    private int _lastLoggedEc = -999;
+    private bool _lastNoTargetLogged = false;
 
     public MainWindow(IGlamourService glamourService)
         : base("GlamSource", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
@@ -32,15 +35,26 @@ public class MainWindow : Window, IDisposable
             var target = Plugin.TargetManager.Target;
             if (target is Dalamud.Game.ClientState.Objects.SubKinds.IPlayerCharacter playerChar && playerChar.Address != nint.Zero)
             {
-                var objectIndex = (int)target.GameObjectId;
+                var objectIndex = (int)target.ObjectIndex;
                 var getState = new Glamourer.Api.IpcSubscribers.GetState(Plugin.PluginInterface);
                 var (ec, jObject) = getState.Invoke(objectIndex, 0);
-                Plugin.Log.Information("[DEBUG-Glamourer] GetState: objectIndex={ObjectIndex} ec={Ec} json={Json}",
-                    objectIndex, ec, jObject?.ToString() ?? "(null)");
+                int ecInt = (int)ec;
+                _lastNoTargetLogged = false;
+                if (objectIndex != _lastLoggedIndex || ecInt != _lastLoggedEc)
+                {
+                    Plugin.Log.Information("[DEBUG-Glamourer] GetState: objectIndex={ObjectIndex} ec={Ec} json={Json}",
+                        objectIndex, ecInt, jObject?.ToString() ?? "(null)");
+                    _lastLoggedIndex = objectIndex;
+                    _lastLoggedEc = ecInt;
+                }
             }
             else
             {
-                Plugin.Log.Information("[DEBUG-Glamourer] No valid player target");
+                if (!_lastNoTargetLogged)
+                {
+                    Plugin.Log.Information("[DEBUG-Glamourer] No valid player target");
+                    _lastNoTargetLogged = true;
+                }
             }
         }
         catch (Exception ex)
