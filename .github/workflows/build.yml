@@ -33,15 +33,21 @@ jobs:
       - name: Test
         run: dotnet test GlamSource.Core.Tests/GlamSource.Core.Tests.csproj -c Release --no-build
 
-      - name: Pack
-        run: dotnet pack GlamSource.csproj -c Release /p:IsPackable=true -o ./artifacts
-
-      - name: Locate build output
-        run: Get-ChildItem -Recurse -Filter "*.zip" -Path ./artifacts | Select-Object FullName
+      - name: Create plugin package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path ./artifacts
+          $buildDir = Get-ChildItem -Path "bin" -Directory | Select-Object -First 1
+          $dll = Get-ChildItem -Path $buildDir.FullName -Filter "GlamSource.dll" | Select-Object -First 1
+          $json = Get-ChildItem -Path $buildDir.FullName -Filter "GlamSource.json" | Select-Object -First 1
+          if ($dll) { Copy-Item $dll.FullName -Destination "./artifacts/GlamSource.dll" }
+          if ($json) { Copy-Item $json.FullName -Destination "./artifacts/GlamSource.json" }
+          Compress-Archive -Path "./artifacts/GlamSource.dll", "./artifacts/GlamSource.json" -DestinationPath "./artifacts/GlamSource.zip" -Force
+          Get-ChildItem -Path ./artifacts | Select-Object FullName
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: GlamSource
-          path: './artifacts/*.zip'
+          path: './artifacts/GlamSource.zip'
           if-no-files-found: error
