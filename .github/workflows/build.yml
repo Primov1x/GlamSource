@@ -27,7 +27,7 @@ jobs:
           Expand-Archive -Path $out -DestinationPath '.' -Force
           $dllPath = (Get-ChildItem -Recurse -Filter "Dalamud.dll" | Select-Object -First 1).Directory.FullName
           Write-Host "Found Dalamud.dll in: $dllPath"
-          Add-Content -Path $env:GITHUB_ENV -Value "DalamudLibPath=$dllPath"
+          Add-Content -Path $env:GITHUB_ENV -Value "DALAMUD_HOME=$dllPath"
         shell: pwsh
 
       - name: Restore
