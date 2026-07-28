@@ -1,4 +1,4 @@
-﻿using Dalamud.Game.Command;
+using Dalamud.Game.Command;
 using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
@@ -94,6 +94,7 @@ public class Plugin : IAsyncDalamudPlugin
         PluginInterface.UiBuilder.Draw += WindowSystem.Draw;
         PluginInterface.UiBuilder.OpenConfigUi += ToggleConfigUi;
         PluginInterface.UiBuilder.OpenMainUi += ToggleMainUi;
+        Log.Information($"[DEBUG] Count={WindowSystem.Windows.Count} IsOpen={mainWindow.IsOpen}");
 
         Log.Information($"===A cool log message from {PluginInterface.Manifest.Name}===");
     }
@@ -104,7 +105,7 @@ public class Plugin : IAsyncDalamudPlugin
     {
         PluginInterface.UiBuilder.Draw -= WindowSystem.Draw;
         PluginInterface.UiBuilder.OpenConfigUi -= ToggleConfigUi;
-        PluginInterface.UiBuilder.OpenMainUi += ToggleMainUi;
+        PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUi;
 
         WindowSystem.RemoveAllWindows();
 
