@@ -1,70 +1,82 @@
 ﻿using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
-using Dalamud.Interface.Textures;
 using Dalamud.Interface.Windowing;
-using Dalamud.Interface.Utility;
-using Dalamud.Interface.Utility.Raii;
-using GlamSource.Windows.Helpers;
+using GlamSource.Core;
 
 namespace GlamSource.Windows;
 
 public class MainWindow : Window, IDisposable
 {
-    private readonly string goatImagePath;
-    private readonly Plugin plugin;
-    private readonly MainWindowHelpers mainWindowHelpers;
+    private readonly IGlamourService _glamourService;
 
-    public MainWindow(Plugin plugin, string goatImagePath, MainWindowHelpers mainWindowHelpers)
-        : base("My Amazing Window", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
+    public MainWindow(IGlamourService glamourService)
+        : base("GlamSource", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
     {
         SizeConstraints = new WindowSizeConstraints
         {
-            MinimumSize = new Vector2(375, 330),
+            MinimumSize = new Vector2(500, 400),
             MaximumSize = new Vector2(float.MaxValue, float.MaxValue)
         };
 
-        this.goatImagePath = goatImagePath;
-        this.plugin = plugin;
-        this.mainWindowHelpers = mainWindowHelpers;
+        _glamourService = glamourService;
     }
 
     public void Dispose() { }
 
     public override void Draw()
     {
-        ImGui.Text($"The random config bool is {plugin.Configuration.SomePropertyToBeSavedAndWithADefault}");
-
-        if (ImGui.Button("Show Settings"))
-        {
-            plugin.ToggleConfigUi();
-        }
-
+        ImGui.TextColored(new Vector4(0.9f, 0.7f, 0.2f, 1f), "Target Equipment");
+        ImGui.Separator();
         ImGui.Spacing();
 
-        using (var child = ImRaii.Child("SomeChildWithAScrollbar", Vector2.Zero, true))
-        {
-            if (!child.Success)
-                return;
+        var slots = _glamourService.GetTargetEquipment();
 
-            ImGui.Text("Have a goat:");
-            var goatImage = Plugin.TextureProvider.GetFromFile(goatImagePath).GetWrapOrDefault();
-            if (goatImage != null)
+        if (slots.Count == 0)
+        {
+            ImGui.Text("No equipment data available.");
+            return;
+        }
+
+        if (ImGui.BeginTable("EquipmentTable", 4, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg))
+        {
+            ImGui.TableSetupColumn("Slot", ImGuiTableColumnFlags.WidthFixed, 120f);
+            ImGui.TableSetupColumn("Worn Item", ImGuiTableColumnFlags.WidthStretch);
+            ImGui.TableSetupColumn("Glamour", ImGuiTableColumnFlags.WidthStretch);
+            ImGui.TableSetupColumn("Overlay", ImGuiTableColumnFlags.WidthFixed, 60f);
+            ImGui.TableHeadersRow();
+
+            foreach (var slot in slots)
             {
-                using (ImRaii.PushIndent(55f))
+                ImGui.TableNextRow();
+                ImGui.TableSetColumnIndex(0);
+                ImGui.Text($"{slot.Slot}");
+
+                ImGui.TableSetColumnIndex(1);
+                ImGui.Text($"{slot.ActualItemName} ({slot.ActualItemId})");
+
+                ImGui.TableSetColumnIndex(2);
+                if (slot.IsGlamoured)
                 {
-                    ImGui.Image(goatImage.Handle, goatImage.Size);
+                    ImGui.TextColored(new Vector4(0.3f, 0.8f, 0.3f, 1f), $"{slot.GlamourItemName} ({slot.GlamourItemId})");
+                }
+                else
+                {
+                    ImGui.TextDisabled("(none)");
+                }
+
+                ImGui.TableSetColumnIndex(3);
+                if (slot.IsGlamoured)
+                {
+                    ImGui.TextColored(new Vector4(0.2f, 1f, 0.2f, 1f), "\u2713");
+                }
+                else
+                {
+                    ImGui.TextDisabled("-");
                 }
             }
-            else
-            {
-                ImGui.Text("Image not found.");
-            }
 
-            ImGuiHelpers.ScaledDummy(20.0f);
-
-            mainWindowHelpers.RenderJobInfo();
-            mainWindowHelpers.RenderLocationInfo();
+            ImGui.EndTable();
         }
     }
 }

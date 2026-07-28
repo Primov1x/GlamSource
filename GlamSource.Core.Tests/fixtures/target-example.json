@@ -1,0 +1,86 @@
+[
+  {
+    "slot": "MainHand",
+    "actualItemId": 41234,
+    "actualItemName": "Agonizing Flame of Fury",
+    "glamourItemId": 35678,
+    "glamourItemName": "YoRHa Type-No.2 Type S (Body)"
+  },
+  {
+    "slot": "OffHand",
+    "actualItemId": 41235,
+    "actualItemName": "Agonizing Crest of Fury",
+    "glamourItemId": null,
+    "glamourItemName": null
+  },
+  {
+    "slot": "Head",
+    "actualItemId": 41230,
+    "actualItemName": "Agonizing Mask of Fury",
+    "glamourItemId": null,
+    "glamourItemName": null
+  },
+  {
+    "slot": "Body",
+    "actualItemId": 41231,
+    "actualItemName": "Agonizing Mail of Fury",
+    "glamourItemId": 35678,
+    "glamourItemName": "YoRHa Type-No.2 Type S (Body)"
+  },
+  {
+    "slot": "Hands",
+    "actualItemId": 41232,
+    "actualItemName": "Agonizing Gloves of Fury",
+    "glamourItemId": null,
+    "glamourItemName": null
+  },
+  {
+    "slot": "Legs",
+    "actualItemId": 41233,
+    "actualItemName": "Agonizing Tassets of Fury",
+    "glamourItemId": null,
+    "glamourItemName": null
+  },
+  {
+    "slot": "Feet",
+    "actualItemId": 41229,
+    "actualItemName": "Agonizing Boots of Fury",
+    "glamourItemId": null,
+    "glamourItemName": null
+  },
+  {
+    "slot": "Earrings",
+    "actualItemId": 38901,
+    "actualItemName": "Perception Earring",
+    "glamourItemId": 39002,
+    "glamourItemName": "Coral Earring"
+  },
+  {
+    "slot": "Necklace",
+    "actualItemId": 38902,
+    "actualItemName": "Seraph Necklace",
+    "glamourItemId": null,
+    "glamourItemName": null
+  },
+  {
+    "slot": "Bracelets",
+    "actualItemId": 38903,
+    "actualItemName": "Fortitude Bracelet",
+    "glamourItemId": null,
+    "glamourItemName": null
+  },
+  {
+    "slot": "RingRight",
+    "actualItemId": 38904,
+    "actualItemName": "Dexterity Ring",
+    "glamourItemId": null,
+    "glamourItemName": null
+  },
+  {
+    "slot": "RingLeft",
+    "actualItemId": 38905,
+    "actualItemName": "Strength Ring",
+    "glamourItemId": null,
+    "glamourItemName": null
+  }
+]

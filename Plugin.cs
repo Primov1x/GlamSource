@@ -1,15 +1,18 @@
 ﻿using Dalamud.Game.Command;
 using Dalamud.IoC;
 using Dalamud.Plugin;
-using System.IO;
-using Dalamud.Interface.Windowing;
 using Dalamud.Plugin.Services;
+using Dalamud.Interface.Windowing;
+using GlamSource.Core;
 using GlamSource.Windows;
 using GlamSource.Windows.Helpers;
+using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace GlamSource;
 
-public sealed class Plugin : IDalamudPlugin
+public class Plugin : IAsyncDalamudPlugin
 {
     [PluginService] internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
     [PluginService] internal static ITextureProvider TextureProvider { get; private set; } = null!;
@@ -20,9 +23,19 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
     [PluginService] internal static ITargetManager TargetManager { get; private set; } = null!;
 
+    private readonly IDalamudPluginInterface _pluginInterface;
+    private readonly ITextureProvider _textureProvider;
+    private readonly ICommandManager _commandManager;
+    private readonly IClientState _clientState;
+    private readonly IPlayerState _playerState;
+    private readonly IDataManager _dataManager;
+    private readonly IPluginLog _log;
+    private readonly ITargetManager _targetManager;
+    private readonly IGlamourService _glamourService;
+
     private const string CommandName = "/glamsource";
 
-    public Configuration Configuration { get; init; }
+    public Configuration Configuration { get; private set; } = null!;
 
     public readonly WindowSystem WindowSystem = new("GlamSource");
     public readonly GameDataService GameDataService;
@@ -31,8 +44,36 @@ public sealed class Plugin : IDalamudPlugin
     private readonly ConfigWindow configWindow;
     private readonly MainWindow mainWindow;
 
-    public Plugin()
+    public Plugin(
+        IDalamudPluginInterface pluginInterface,
+        ITextureProvider textureProvider,
+        ICommandManager commandManager,
+        IClientState clientState,
+        IPlayerState playerState,
+        IDataManager dataManager,
+        IPluginLog pluginLog,
+        ITargetManager targetManager,
+        IGlamourService glamourService)
     {
+        _pluginInterface = pluginInterface;
+        _textureProvider = textureProvider;
+        _commandManager = commandManager;
+        _clientState = clientState;
+        _playerState = playerState;
+        _dataManager = dataManager;
+        _log = pluginLog;
+        _targetManager = targetManager;
+        _glamourService = glamourService;
+
+        PluginInterface = _pluginInterface;
+        TextureProvider = _textureProvider;
+        CommandManager = _commandManager;
+        ClientState = _clientState;
+        PlayerState = _playerState;
+        DataManager = _dataManager;
+        Log = _log;
+        TargetManager = _targetManager;
+
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         GameDataService = new GameDataService(DataManager);
         MainWindowHelpers = new MainWindowHelpers(GameDataService);
@@ -40,7 +81,7 @@ public sealed class Plugin : IDalamudPlugin
         var goatImagePath = Path.Join(PluginInterface.AssemblyLocation.Directory?.FullName, "goat.png");
 
         configWindow = new ConfigWindow(this);
-        mainWindow = new MainWindow(this, goatImagePath, MainWindowHelpers);
+        mainWindow = new MainWindow(_glamourService);
 
         WindowSystem.AddWindow(configWindow);
         WindowSystem.AddWindow(mainWindow);
@@ -57,11 +98,13 @@ public sealed class Plugin : IDalamudPlugin
         Log.Information($"===A cool log message from {PluginInterface.Manifest.Name}===");
     }
 
-    public void Dispose()
+    public Task LoadAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public async ValueTask DisposeAsync()
     {
         PluginInterface.UiBuilder.Draw -= WindowSystem.Draw;
         PluginInterface.UiBuilder.OpenConfigUi -= ToggleConfigUi;
-        PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUi;
+        PluginInterface.UiBuilder.OpenMainUi += ToggleMainUi;
 
         WindowSystem.RemoveAllWindows();
 
@@ -69,6 +112,8 @@ public sealed class Plugin : IDalamudPlugin
         mainWindow.Dispose();
 
         CommandManager.RemoveHandler(CommandName);
+
+        await Task.CompletedTask;
     }
 
     private void OnCommand(string command, string args) => mainWindow.Toggle();

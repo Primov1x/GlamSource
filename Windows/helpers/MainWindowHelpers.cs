@@ -8,9 +8,9 @@ namespace GlamSource.Windows.Helpers;
 public class MainWindowHelpers
 {
     private const float LabelWidth = 120f;
-    private readonly IGlamourService _gameDataService;
+    private readonly GameDataService _gameDataService;
 
-    public MainWindowHelpers(IGlamourService gameDataService)
+    public MainWindowHelpers(GameDataService gameDataService)
     {
         _gameDataService = gameDataService;
     }

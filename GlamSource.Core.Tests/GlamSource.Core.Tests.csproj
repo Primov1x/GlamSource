@@ -19,6 +19,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="fixtures\*.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
 
