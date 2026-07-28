@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 using Dalamud.Game;
 using Dalamud.Game.ClientState.Objects.SubKinds;
@@ -14,6 +15,7 @@ public unsafe class GameDataService : IGlamourService
 {
     private readonly IDataManager _dataManager;
     private readonly ITargetManager _targetManager;
+    private bool _debugLogged;
 
     public GameDataService(IDataManager dataManager, ITargetManager targetManager)
     {
@@ -34,6 +36,47 @@ public unsafe class GameDataService : IGlamourService
 
     public IReadOnlyList<EquipmentSlot> GetTargetEquipment()
     {
+        if (!_debugLogged)
+        {
+            _debugLogged = true;
+            try
+            {
+                var debugItem = _dataManager.GetExcelSheet<Item>()?.GetRowOrDefault(46523);
+                if (debugItem.HasValue)
+                {
+                    Plugin.Log.Information("[DEBUG] Item 46523 (Historia Cap of Healing): ModelMain={ModelMain} ({ModelMainType}), ModelSub={ModelSub} ({ModelSubType})",
+                        debugItem.Value.ModelMain,
+                        debugItem.Value.ModelMain.GetType().Name,
+                        debugItem.Value.ModelSub,
+                        debugItem.Value.ModelSub.GetType().Name);
+                }
+
+                var debugSheet = _dataManager.GetExcelSheet<Item>();
+                if (debugSheet != null)
+                {
+                    var count = 0;
+                    foreach (var item in debugSheet)
+                    {
+                        if (item.ModelMain != 0 || item.ModelSub != 0)
+                        {
+                            Plugin.Log.Information("[DEBUG] Item {RowId} \"{Name}\": ModelMain={ModelMain} ({ModelMainType}), ModelSub={ModelSub} ({ModelSubType})",
+                                item.RowId,
+                                item.Name.ToString(),
+                                item.ModelMain,
+                                item.ModelMain.GetType().Name,
+                                item.ModelSub,
+                                item.ModelSub.GetType().Name);
+                            count++;
+                            if (count >= 5) break;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.Error(ex, "[DEBUG] Failed to log item debug info");
+            }
+        }
         var target = _targetManager.Target;
         if (target is not IPlayerCharacter playerChar || playerChar.Address == nint.Zero)
         {
@@ -57,15 +100,26 @@ public unsafe class GameDataService : IGlamourService
             var glamourSlot = i == 0 ? EquipmentSlotType.MainHand : EquipmentSlotType.OffHand;
             var modelId = drawData.Weapon(weaponSlot).ModelId.Id;
 
-            var itemName = "Unknown";
-            if (itemSheet?.TryGetRow(modelId, out var item) == true)
+            if (modelId == 0)
             {
-                itemName = item.Name.ToString();
+                result.Add(new EquipmentSlot(
+                    Slot: glamourSlot,
+                    ActualItemId: 0,
+                    ActualItemName: "Empty",
+                    GlamourItemId: null,
+                    GlamourItemName: null));
+                continue;
             }
+
+            var matchedItem = itemSheet?
+                .FirstOrDefault(item => (i == 0 && item.ModelMain == modelId) || (i == 1 && item.ModelSub == modelId)) ?? default;
+
+            var itemRowId = matchedItem.RowId;
+            var itemName = itemRowId > 0 ? matchedItem.Name.ToString() : "Unknown";
 
             result.Add(new EquipmentSlot(
                 Slot: glamourSlot,
-                ActualItemId: modelId,
+                ActualItemId: itemRowId,
                 ActualItemName: itemName,
                 GlamourItemId: null,
                 GlamourItemName: null));
@@ -104,15 +158,15 @@ public unsafe class GameDataService : IGlamourService
             if (modelId == 0)
                 continue;
 
-            var itemName = "Unknown";
-            if (itemSheet?.TryGetRow(modelId, out var item) == true)
-            {
-                itemName = item.Name.ToString();
-            }
+            var matchedItem = itemSheet?
+                .FirstOrDefault(item => item.ModelMain == modelId || item.ModelSub == modelId) ?? default;
+
+            var itemRowId = matchedItem.RowId;
+            var itemName = itemRowId > 0 ? matchedItem.Name.ToString() : "Unknown";
 
             result.Add(new EquipmentSlot(
                 Slot: glamourSlot,
-                ActualItemId: modelId,
+                ActualItemId: itemRowId,
                 ActualItemName: itemName,
                 GlamourItemId: null,
                 GlamourItemName: null));
