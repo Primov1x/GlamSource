@@ -31,7 +31,6 @@ public class Plugin : IAsyncDalamudPlugin
     private readonly IDataManager _dataManager;
     private readonly IPluginLog _log;
     private readonly ITargetManager _targetManager;
-    private readonly IGlamourService _glamourService;
 
     private const string CommandName = "/glamsource";
 
@@ -52,8 +51,7 @@ public class Plugin : IAsyncDalamudPlugin
         IPlayerState playerState,
         IDataManager dataManager,
         IPluginLog pluginLog,
-        ITargetManager targetManager,
-        IGlamourService glamourService)
+        ITargetManager targetManager)
     {
         _pluginInterface = pluginInterface;
         _textureProvider = textureProvider;
@@ -63,7 +61,6 @@ public class Plugin : IAsyncDalamudPlugin
         _dataManager = dataManager;
         _log = pluginLog;
         _targetManager = targetManager;
-        _glamourService = glamourService;
 
         PluginInterface = _pluginInterface;
         TextureProvider = _textureProvider;
@@ -79,9 +76,11 @@ public class Plugin : IAsyncDalamudPlugin
         MainWindowHelpers = new MainWindowHelpers(GameDataService);
 
         var goatImagePath = Path.Join(PluginInterface.AssemblyLocation.Directory?.FullName, "goat.png");
+        var fixturePath = Path.Join(PluginInterface.AssemblyLocation.Directory?.FullName, "fixtures", "target-example.json");
+        var glamourService = new FixtureGlamourService(fixturePath);
 
         configWindow = new ConfigWindow(this);
-        mainWindow = new MainWindow(_glamourService);
+        mainWindow = new MainWindow(glamourService);
 
         WindowSystem.AddWindow(configWindow);
         WindowSystem.AddWindow(mainWindow);
@@ -94,7 +93,6 @@ public class Plugin : IAsyncDalamudPlugin
         PluginInterface.UiBuilder.Draw += WindowSystem.Draw;
         PluginInterface.UiBuilder.OpenConfigUi += ToggleConfigUi;
         PluginInterface.UiBuilder.OpenMainUi += ToggleMainUi;
-        Log.Information($"[DEBUG] Count={WindowSystem.Windows.Count} IsOpen={mainWindow.IsOpen}");
 
         Log.Information($"===A cool log message from {PluginInterface.Manifest.Name}===");
     }

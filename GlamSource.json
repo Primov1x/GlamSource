@@ -1,8 +1,10 @@
 {
   "Author": "TF",
   "Name": "GlamSource",
+  "InternalName": "GlamSource",
   "Punchline": "Zeigt woher Glams und Mounts kommen.",
   "Description": "Hover über ein Item oder Mount und sieh sofort die Quelle — Dungeon, Shop, Craft, Event. Kein Wiki mehr nötig. Befehle: /glamsource",
+  "AssemblyVersion": "0.0.0.1",
   "ApplicableVersion": "any",
   "Tags": [
     "glamour",
