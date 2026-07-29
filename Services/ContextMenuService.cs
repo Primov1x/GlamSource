@@ -1,6 +1,7 @@
 using System;
 using Dalamud.Game.Gui.ContextMenu;
 using Dalamud.Plugin.Services;
+using GlamSource;
 
 namespace GlamSource.Services;
 
@@ -18,6 +19,9 @@ public sealed class ContextMenuService : IDisposable
 
     private void OnMenuOpened(IMenuOpenedArgs args)
     {
+        Plugin.Log.Information("[CTX] OnMenuOpened type={Type} target={Target}",
+            args.MenuType, args.Target?.GetType().Name ?? "null");
+
         var itemId = ExtractItemId(args);
         if (itemId is not > 0)
             return;
