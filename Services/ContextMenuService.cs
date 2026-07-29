@@ -80,6 +80,7 @@ public sealed class ContextMenuService : IDisposable
             return null;
 
         var addonName = args.AddonName;
+        Plugin.Log.Information("[CTX-Default] AddonName={Addon}", addonName ?? "null");
         if (string.IsNullOrEmpty(addonName) || !GameAddonWhitelist.Contains(addonName))
             return null;
 
@@ -196,3 +197,4 @@ public sealed class ContextMenuService : IDisposable
         _contextMenu.OnMenuOpened -= OnMenuOpened;
     }
 }
+
