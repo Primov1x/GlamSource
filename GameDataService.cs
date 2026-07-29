@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Dalamud.Game;
 using Dalamud.Game.ClientState.Objects.SubKinds;
 using Dalamud.Game.ClientState.Objects.Types;
+using Dalamud.Game.Gui;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
@@ -20,14 +21,16 @@ public unsafe class GameDataService : IGlamourService
     private readonly ITargetManager _targetManager;
     private readonly IObjectTable _objectTable;
     private readonly IItemSourceService _sourceService;
+    private readonly IGameGui _gameGui;
     private bool _debugLogged;
     private Dictionary<EquipmentSlotType, List<Item>>? _itemsBySlot;
 
-    public GameDataService(IDataManager dataManager, ITargetManager targetManager, IObjectTable objectTable, IItemSourceService? sourceService = null)
+    public GameDataService(IDataManager dataManager, ITargetManager targetManager, IObjectTable objectTable, IGameGui gameGui, IItemSourceService? sourceService = null)
     {
         _dataManager = dataManager;
         _targetManager = targetManager;
         _objectTable = objectTable;
+        _gameGui = gameGui;
         _sourceService = sourceService ?? new LuminaItemSourceService(dataManager.GameData);
         FindAshShortbow();
         BuildItemSlotCache();
@@ -123,9 +126,13 @@ public unsafe class GameDataService : IGlamourService
         if (localPlayer != null && target.GameObjectId == localPlayer.GameObjectId)
             return GetOwnEquipment();
 
-        var examineData = GetExamineEquipment();
-        if (examineData.Count > 0)
-            return examineData;
+        var examineAddon = _gameGui.GetAddonByName("CharacterInspect");
+        if (examineAddon != nint.Zero)
+        {
+            var examineData = GetExamineEquipment();
+            if (examineData.Count > 0)
+                return examineData;
+        }
 
         return GetDrawDataEquipment(target);
     }

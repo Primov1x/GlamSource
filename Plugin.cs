@@ -87,7 +87,7 @@ public class Plugin : IAsyncDalamudPlugin
 
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         var sourceService = new LuminaItemSourceService(DataManager.GameData);
-        var effectiveGlamourService = GlamourServiceOverride ?? new GameDataService(DataManager, TargetManager, ObjectTable, sourceService);
+        var effectiveGlamourService = GlamourServiceOverride ?? new GameDataService(DataManager, TargetManager, ObjectTable, GameGui, sourceService);
         GameDataService = effectiveGlamourService is GameDataService gds ? gds : null!;
         MainWindowHelpers = new MainWindowHelpers(GameDataService);
 
