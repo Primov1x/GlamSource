@@ -15,9 +15,6 @@ public class MainWindow : Window, IDisposable
     private int _lastLoggedIndex = -1;
     private int _lastLoggedEc = -999;
     private bool _lastNoTargetLogged = false;
-    private int _retryFrame = -1;
-    private int _retryObjectIndex = -1;
-    private const int RetryCooldownFrames = 5;
     private int _drawFrame = 0;
 
     public MainWindow(IGlamourService glamourService)
@@ -100,53 +97,27 @@ public class MainWindow : Window, IDisposable
             {
                 _lastNoTargetLogged = false;
                 var objectIndex = (int)target.ObjectIndex;
-                var getState = new Glamourer.Api.IpcSubscribers.GetState(Plugin.PluginInterface);
-                var (ec, jObject) = getState.Invoke(objectIndex, 0);
+                var getStateBase64 = new Glamourer.Api.IpcSubscribers.GetStateBase64(Plugin.PluginInterface);
+                var (ec, base64) = getStateBase64.Invoke(objectIndex, 0);
                 int ecInt = (int)ec;
 
-                if (ec == Glamourer.Api.Enums.GlamourerApiEc.ActorNotFound)
+                if (ec == Glamourer.Api.Enums.GlamourerApiEc.Success && !string.IsNullOrEmpty(base64))
                 {
-                    _drawFrame++;
-                    if (_retryFrame == -1 || _drawFrame - _retryFrame >= RetryCooldownFrames)
+                    var json = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(base64));
+                    if (objectIndex != _lastLoggedIndex || ecInt != _lastLoggedEc || _drawFrame % 30 == 0)
                     {
-                        var playerChar = target as Dalamud.Game.ClientState.Objects.SubKinds.IPlayerCharacter;
-                        if (playerChar is not null && playerChar.Address != nint.Zero)
-                        {
-                            Plugin.Log?.Information("[DEBUG-Glamourer] ActorNotFound, retrying with GetStateName for '{Name}'",
-                                playerChar.Name.ToString());
-                            var (fallbackEc, fallbackJson) = CallGlamourerState(objectIndex, true);
-                            int fallbackEcInt = (int)fallbackEc;
-                            if (objectIndex != _lastLoggedIndex || fallbackEcInt != _lastLoggedEc)
-                            {
-                                Plugin.Log?.Information("[DEBUG-Glamourer] GetStateName fallback: ec={Ec} json={Json}",
-                                    fallbackEcInt, fallbackJson?.ToString() ?? "(null)");
-                                _lastLoggedIndex = objectIndex;
-                                _lastLoggedEc = fallbackEcInt;
-                            }
-                            _retryFrame = _drawFrame;
-                            _retryObjectIndex = objectIndex;
-                        }
-                        else
-                        {
-                            if (objectIndex != _lastLoggedIndex || ecInt != _lastLoggedEc)
-                            {
-                                Plugin.Log?.Information("[DEBUG-Glamourer] ActorNotFound for non-player (ObjectKind={ObjectKind})",
-                                    target.ObjectKind);
-                                _lastLoggedIndex = objectIndex;
-                                _lastLoggedEc = ecInt;
-                            }
-                        }
+                        Plugin.Log.Information("[Glamourer] Base64 decoded length={Len}", json.Length);
+                        var preview = json.Length > 500 ? json[..500] : json;
+                        Plugin.Log.Information("[Glamourer] JSON preview: {Json}", preview);
+                        _lastLoggedIndex = objectIndex;
+                        _lastLoggedEc = ecInt;
                     }
                 }
                 else
                 {
-                    _retryFrame = -1;
-                    _retryObjectIndex = -1;
-                    if (objectIndex != _lastLoggedIndex || ecInt != _lastLoggedEc)
+                    if (ecInt != _lastLoggedEc || _drawFrame % 30 == 0)
                     {
-                        Plugin.Log?.Information("[DEBUG-Glamourer] GetState: objectIndex={ObjectIndex} ec={Ec} json={Json}",
-                            objectIndex, ecInt, jObject?.ToString() ?? "(null)");
-                        _lastLoggedIndex = objectIndex;
+                        Plugin.Log.Information("[Glamourer] GetStateBase64 ec={Ec}", ec);
                         _lastLoggedEc = ecInt;
                     }
                 }
@@ -164,15 +135,11 @@ public class MainWindow : Window, IDisposable
                     Plugin.Log?.Information("[DEBUG-Glamourer] No valid target (null/invalid/not character)");
                     _lastNoTargetLogged = true;
                 }
-                _retryFrame = -1;
-                _retryObjectIndex = -1;
             }
         }
         catch (Exception ex)
         {
-            Plugin.Log?.Error(ex, "[DEBUG-Glamourer] GetState failed");
-            _retryFrame = -1;
-            _retryObjectIndex = -1;
+            Plugin.Log?.Error(ex, "[Glamourer] GetStateBase64 failed");
         }
 
         ImGui.TextColored(new Vector4(0.9f, 0.7f, 0.2f, 1f), "Target Equipment");
