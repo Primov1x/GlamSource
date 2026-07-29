@@ -121,7 +121,7 @@ public unsafe class GameDataService : IGlamourService
             {
                 _debugLogged = true;
                 Plugin.Log.Information("[DEBUG] Weapon slot {Slot}: DrawData modelId={ModelId} => matched RowId={RowId} Name={Name}",
-                    i, modelId, matchedItem.RowId, matchedItem.RowId > 0 ? matchedItem.Name.ToString() : "none"));
+                    i, modelId, matchedItem.RowId, matchedItem.RowId > 0 ? matchedItem.Name.ToString() : "none");
             }
 
             var itemRowId = matchedItem.RowId;
