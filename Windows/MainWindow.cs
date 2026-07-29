@@ -12,10 +12,9 @@ namespace GlamSource.Windows;
 public class MainWindow : Window, IDisposable
 {
     private readonly IGlamourService _glamourService;
-    private int _lastLoggedIndex = -1;
-    private int _lastLoggedEc = -999;
     private bool _lastNoTargetLogged = false;
-    private int _drawFrame = 0;
+    private int _lastGlamourerIndex = -1;
+    private string? _lastGlamourerEc;
 
     public MainWindow(IGlamourService glamourService)
         : base("GlamSource", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
@@ -99,26 +98,22 @@ public class MainWindow : Window, IDisposable
                 var objectIndex = (int)target.ObjectIndex;
                 var getStateBase64 = new Glamourer.Api.IpcSubscribers.GetStateBase64(Plugin.PluginInterface);
                 var (ec, base64) = getStateBase64.Invoke(objectIndex, 0);
-                int ecInt = (int)ec;
+                var ecStr = ec.ToString();
 
-                if (ec == Glamourer.Api.Enums.GlamourerApiEc.Success && !string.IsNullOrEmpty(base64))
+                if (objectIndex != _lastGlamourerIndex || ecStr != _lastGlamourerEc)
                 {
-                    var json = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(base64));
-                    if (objectIndex != _lastLoggedIndex || ecInt != _lastLoggedEc || _drawFrame % 30 == 0)
+                    _lastGlamourerIndex = objectIndex;
+                    _lastGlamourerEc = ecStr;
+
+                    if (ec == Glamourer.Api.Enums.GlamourerApiEc.Success && !string.IsNullOrEmpty(base64))
                     {
-                        Plugin.Log.Information("[Glamourer] Base64 decoded length={Len}", json.Length);
-                        var preview = json.Length > 500 ? json[..500] : json;
-                        Plugin.Log.Information("[Glamourer] JSON preview: {Json}", preview);
-                        _lastLoggedIndex = objectIndex;
-                        _lastLoggedEc = ecInt;
+                        Plugin.Log.Information("[Glamourer] Success! Base64 length={Len} preview={Preview}",
+                            base64.Length,
+                            base64.Length > 200 ? base64[..200] : base64);
                     }
-                }
-                else
-                {
-                    if (ecInt != _lastLoggedEc || _drawFrame % 30 == 0)
+                    else
                     {
-                        Plugin.Log.Information("[Glamourer] GetStateBase64 ec={Ec}", ec);
-                        _lastLoggedEc = ecInt;
+                        Plugin.Log.Information("[Glamourer] ec={Ec}", ec);
                     }
                 }
 
