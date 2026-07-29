@@ -46,6 +46,20 @@ public class MainWindow : Window, IDisposable
         };
     }
 
+    private static Vector4 GetSourceColor(ItemSourceType type)
+    {
+        return type switch
+        {
+            ItemSourceType.Crafted => new Vector4(1f, 0.5f, 0f, 1f),
+            ItemSourceType.Vendor => new Vector4(0.5f, 0.5f, 1f, 1f),
+            ItemSourceType.Quest => new Vector4(0.5f, 1f, 0.5f, 1f),
+            ItemSourceType.Dungeon => new Vector4(1f, 0.3f, 0.3f, 1f),
+            ItemSourceType.Trial => new Vector4(1f, 0.8f, 0f, 1f),
+            ItemSourceType.Raid => new Vector4(0.8f, 0f, 1f, 1f),
+            _ => new Vector4(0.7f, 0.7f, 0.7f, 1f)
+        };
+    }
+
     private bool IsValidTarget(IGameObject obj)
     {
         if (obj is not ICharacter)
@@ -202,25 +216,32 @@ public class MainWindow : Window, IDisposable
                 }
 
                 ImGui.TableSetColumnIndex(3);
-                var visibleSources = slot.IsGlamoured ? slot.GlamourItemSources : slot.ActualItemSources;
-                if (visibleSources != null && visibleSources.Count > 0)
+                var hasActualSources = slot.ActualItemSources != null && slot.ActualItemSources.Count > 0;
+                var hasGlamourSources = slot.GlamourItemSources != null && slot.GlamourItemSources.Count > 0;
+
+                if (!hasActualSources && !hasGlamourSources)
                 {
-                    var src = visibleSources[0];
-                    var color = src.Type switch
-                    {
-                        ItemSourceType.Crafted => new Vector4(1f, 0.5f, 0f, 1f),
-                        ItemSourceType.Vendor => new Vector4(0.5f, 0.5f, 1f, 1f),
-                        ItemSourceType.Quest => new Vector4(0.5f, 1f, 0.5f, 1f),
-                        ItemSourceType.Dungeon => new Vector4(1f, 0.3f, 0.3f, 1f),
-                        ItemSourceType.Trial => new Vector4(1f, 0.8f, 0f, 1f),
-                        ItemSourceType.Raid => new Vector4(0.8f, 0f, 1f, 1f),
-                        _ => new Vector4(0.7f, 0.7f, 0.7f, 1f)
-                    };
-                    ImGui.TextColored(color, FormatSource(src));
+                    ImGui.TextDisabled("Unknown");
                 }
                 else
                 {
-                    ImGui.TextDisabled("Unknown");
+                    if (hasActualSources)
+                    {
+                        foreach (var src in slot.ActualItemSources)
+                        {
+                            var color = GetSourceColor(src.Type);
+                            ImGui.TextColored(color, $"Worn: {FormatSource(src)}");
+                        }
+                    }
+
+                    if (hasGlamourSources)
+                    {
+                        foreach (var src in slot.GlamourItemSources)
+                        {
+                            var color = GetSourceColor(src.Type);
+                            ImGui.TextColored(color, $"Glam: {FormatSource(src)}");
+                        }
+                    }
                 }
 
                 ImGui.TableSetColumnIndex(4);

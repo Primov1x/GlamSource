@@ -4,6 +4,7 @@ using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Dalamud.Interface.Windowing;
 using GlamSource.Core;
+using GlamSource.Services;
 using GlamSource.Windows;
 using GlamSource.Windows.Helpers;
 using System.IO;
@@ -22,6 +23,7 @@ public class Plugin : IAsyncDalamudPlugin
     [PluginService] internal static IDataManager DataManager { get; private set; } = null!;
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
     [PluginService] internal static ITargetManager TargetManager { get; private set; } = null!;
+    [PluginService] internal static IContextMenu ContextMenu { get; private set; } = null!;
 
     public static IGlamourService? GlamourServiceOverride { get; set; }
 
@@ -44,6 +46,8 @@ public class Plugin : IAsyncDalamudPlugin
 
     private readonly ConfigWindow configWindow;
     private readonly MainWindow mainWindow;
+    private readonly ContextMenuService contextMenuService;
+    private readonly ItemDetailWindow itemDetailWindow;
 
     public Plugin(
         IDalamudPluginInterface pluginInterface,
@@ -84,6 +88,15 @@ public class Plugin : IAsyncDalamudPlugin
         configWindow = new ConfigWindow(this);
         mainWindow = new MainWindow(effectiveGlamourService);
 
+        var itemDetailService = new ItemDetailService(DataManager.GameData, sourceService);
+        itemDetailWindow = new ItemDetailWindow(itemDetailService, sourceService);
+        WindowSystem.AddWindow(itemDetailWindow);
+
+        contextMenuService = new ContextMenuService(ContextMenu, itemId =>
+        {
+            itemDetailWindow.ShowItem(itemId);
+        });
+
         WindowSystem.AddWindow(configWindow);
         WindowSystem.AddWindow(mainWindow);
 
@@ -114,6 +127,8 @@ public class Plugin : IAsyncDalamudPlugin
 
         configWindow.Dispose();
         mainWindow.Dispose();
+        itemDetailWindow.Dispose();
+        contextMenuService.Dispose();
 
         CommandManager.RemoveHandler(CommandName);
 
