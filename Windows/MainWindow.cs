@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Objects.Types;
@@ -34,6 +34,18 @@ public class MainWindow : Window, IDisposable
 
     public void Dispose() { }
 
+    private static string FormatSource(ItemSource src)
+    {
+        return src.Type switch
+        {
+            ItemSourceType.Crafted => src.Description,
+            ItemSourceType.Vendor => src.Description,
+            ItemSourceType.Quest => "Quest",
+            ItemSourceType.Dungeon or ItemSourceType.Trial or ItemSourceType.Raid => src.Description,
+            _ => src.Description
+        };
+    }
+
     private bool IsValidTarget(IGameObject obj)
     {
         if (obj is not ICharacter)
@@ -66,83 +78,85 @@ public class MainWindow : Window, IDisposable
 
     public override void Draw()
     {
+        System.Console.WriteLine($"[DIAG] Draw() called, slots={_glamourService.GetTargetEquipment().Count}");
         try
         {
-            var target = Plugin.TargetManager.Target;
-            if (target is null || !IsValidTarget(target) || target.Address == nint.Zero)
+            var target = Plugin.TargetManager?.Target;
+            if (target is not null && IsValidTarget(target) && target.Address != nint.Zero)
             {
-                if (!_lastNoTargetLogged)
+                _lastNoTargetLogged = false;
+                var objectIndex = (int)target.ObjectIndex;
+                var getState = new Glamourer.Api.IpcSubscribers.GetState(Plugin.PluginInterface);
+                var (ec, jObject) = getState.Invoke(objectIndex, 0);
+                int ecInt = (int)ec;
+
+                if (ec == Glamourer.Api.Enums.GlamourerApiEc.ActorNotFound)
                 {
-                    Plugin.Log.Information("[DEBUG-Glamourer] No valid target (null/invalid/not character)");
-                    _lastNoTargetLogged = true;
+                    _drawFrame++;
+                    if (_retryFrame == -1 || _drawFrame - _retryFrame >= RetryCooldownFrames)
+                    {
+                        var playerChar = target as Dalamud.Game.ClientState.Objects.SubKinds.IPlayerCharacter;
+                        if (playerChar is not null && playerChar.Address != nint.Zero)
+                        {
+                            Plugin.Log?.Information("[DEBUG-Glamourer] ActorNotFound, retrying with GetStateName for '{Name}'",
+                                playerChar.Name.ToString());
+                            var (fallbackEc, fallbackJson) = CallGlamourerState(objectIndex, true);
+                            int fallbackEcInt = (int)fallbackEc;
+                            if (objectIndex != _lastLoggedIndex || fallbackEcInt != _lastLoggedEc)
+                            {
+                                Plugin.Log?.Information("[DEBUG-Glamourer] GetStateName fallback: ec={Ec} json={Json}",
+                                    fallbackEcInt, fallbackJson?.ToString() ?? "(null)");
+                                _lastLoggedIndex = objectIndex;
+                                _lastLoggedEc = fallbackEcInt;
+                            }
+                            _retryFrame = _drawFrame;
+                            _retryObjectIndex = objectIndex;
+                        }
+                        else
+                        {
+                            if (objectIndex != _lastLoggedIndex || ecInt != _lastLoggedEc)
+                            {
+                                Plugin.Log?.Information("[DEBUG-Glamourer] ActorNotFound for non-player (ObjectKind={ObjectKind})",
+                                    target.ObjectKind);
+                                _lastLoggedIndex = objectIndex;
+                                _lastLoggedEc = ecInt;
+                            }
+                        }
+                    }
                 }
-                _retryFrame = -1;
-                _retryObjectIndex = -1;
-                return;
-            }
-
-            _lastNoTargetLogged = false;
-            var objectIndex = (int)target.ObjectIndex;
-            var getState = new Glamourer.Api.IpcSubscribers.GetState(Plugin.PluginInterface);
-            var (ec, jObject) = getState.Invoke(objectIndex, 0);
-            int ecInt = (int)ec;
-
-            if (ec == Glamourer.Api.Enums.GlamourerApiEc.ActorNotFound)
-            {
-                _drawFrame++;
-                if (_retryFrame == -1 || _drawFrame - _retryFrame >= RetryCooldownFrames)
+                else
                 {
-                    var playerChar = target as Dalamud.Game.ClientState.Objects.SubKinds.IPlayerCharacter;
-                    if (playerChar is not null && playerChar.Address != nint.Zero)
+                    _retryFrame = -1;
+                    _retryObjectIndex = -1;
+                    if (objectIndex != _lastLoggedIndex || ecInt != _lastLoggedEc)
                     {
-                        Plugin.Log.Information("[DEBUG-Glamourer] ActorNotFound, retrying with GetStateName for '{Name}'",
-                            playerChar.Name.ToString());
-                        var (fallbackEc, fallbackJson) = CallGlamourerState(objectIndex, true);
-                        int fallbackEcInt = (int)fallbackEc;
-                        if (objectIndex != _lastLoggedIndex || fallbackEcInt != _lastLoggedEc)
-                        {
-                            Plugin.Log.Information("[DEBUG-Glamourer] GetStateName fallback: ec={Ec} json={Json}",
-                                fallbackEcInt, fallbackJson?.ToString() ?? "(null)");
-                            _lastLoggedIndex = objectIndex;
-                            _lastLoggedEc = fallbackEcInt;
-                        }
-                        _retryFrame = _drawFrame;
-                        _retryObjectIndex = objectIndex;
+                        Plugin.Log?.Information("[DEBUG-Glamourer] GetState: objectIndex={ObjectIndex} ec={Ec} json={Json}",
+                            objectIndex, ecInt, jObject?.ToString() ?? "(null)");
+                        _lastLoggedIndex = objectIndex;
+                        _lastLoggedEc = ecInt;
                     }
-                    else
-                    {
-                        if (objectIndex != _lastLoggedIndex || ecInt != _lastLoggedEc)
-                        {
-                            Plugin.Log.Information("[DEBUG-Glamourer] ActorNotFound for non-player (ObjectKind={ObjectKind})",
-                                target.ObjectKind);
-                            _lastLoggedIndex = objectIndex;
-                            _lastLoggedEc = ecInt;
-                        }
-                    }
+                }
+
+                if (ec == Glamourer.Api.Enums.GlamourerApiEc.ActorNotHuman)
+                {
+                    Plugin.Log?.Warning("[DEBUG-Glamourer] Target is not human (ObjectKind={ObjectKind}, name={Name})",
+                        target.ObjectKind, target.Name.ToString());
                 }
             }
             else
             {
+                if (!_lastNoTargetLogged)
+                {
+                    Plugin.Log?.Information("[DEBUG-Glamourer] No valid target (null/invalid/not character)");
+                    _lastNoTargetLogged = true;
+                }
                 _retryFrame = -1;
                 _retryObjectIndex = -1;
-                if (objectIndex != _lastLoggedIndex || ecInt != _lastLoggedEc)
-                {
-                    Plugin.Log.Information("[DEBUG-Glamourer] GetState: objectIndex={ObjectIndex} ec={Ec} json={Json}",
-                        objectIndex, ecInt, jObject?.ToString() ?? "(null)");
-                    _lastLoggedIndex = objectIndex;
-                    _lastLoggedEc = ecInt;
-                }
-            }
-
-            if (ec == Glamourer.Api.Enums.GlamourerApiEc.ActorNotHuman)
-            {
-                Plugin.Log.Warning("[DEBUG-Glamourer] Target is not human (ObjectKind={ObjectKind}, name={Name})",
-                    target.ObjectKind, target.Name.ToString());
             }
         }
         catch (Exception ex)
         {
-            Plugin.Log.Error(ex, "[DEBUG-Glamourer] GetState failed");
+            Plugin.Log?.Error(ex, "[DEBUG-Glamourer] GetState failed");
             _retryFrame = -1;
             _retryObjectIndex = -1;
         }
@@ -159,11 +173,12 @@ public class MainWindow : Window, IDisposable
             return;
         }
 
-        if (ImGui.BeginTable("EquipmentTable", 4, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg))
+        if (ImGui.BeginTable("EquipmentTable", 5, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg))
         {
             ImGui.TableSetupColumn("Slot", ImGuiTableColumnFlags.WidthFixed, 120f);
             ImGui.TableSetupColumn("Worn Item", ImGuiTableColumnFlags.WidthStretch);
             ImGui.TableSetupColumn("Glamour", ImGuiTableColumnFlags.WidthStretch);
+            ImGui.TableSetupColumn("Source", ImGuiTableColumnFlags.WidthStretch);
             ImGui.TableSetupColumn("Overlay", ImGuiTableColumnFlags.WidthFixed, 60f);
             ImGui.TableHeadersRow();
 
@@ -187,6 +202,28 @@ public class MainWindow : Window, IDisposable
                 }
 
                 ImGui.TableSetColumnIndex(3);
+                var visibleSources = slot.IsGlamoured ? slot.GlamourItemSources : slot.ActualItemSources;
+                if (visibleSources != null && visibleSources.Count > 0)
+                {
+                    var src = visibleSources[0];
+                    var color = src.Type switch
+                    {
+                        ItemSourceType.Crafted => new Vector4(1f, 0.5f, 0f, 1f),
+                        ItemSourceType.Vendor => new Vector4(0.5f, 0.5f, 1f, 1f),
+                        ItemSourceType.Quest => new Vector4(0.5f, 1f, 0.5f, 1f),
+                        ItemSourceType.Dungeon => new Vector4(1f, 0.3f, 0.3f, 1f),
+                        ItemSourceType.Trial => new Vector4(1f, 0.8f, 0f, 1f),
+                        ItemSourceType.Raid => new Vector4(0.8f, 0f, 1f, 1f),
+                        _ => new Vector4(0.7f, 0.7f, 0.7f, 1f)
+                    };
+                    ImGui.TextColored(color, FormatSource(src));
+                }
+                else
+                {
+                    ImGui.TextDisabled("Unknown");
+                }
+
+                ImGui.TableSetColumnIndex(4);
                 if (slot.IsGlamoured)
                 {
                     ImGui.TextColored(new Vector4(0.2f, 1f, 0.2f, 1f), "\u2713");

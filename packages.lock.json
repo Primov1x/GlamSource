@@ -26,8 +26,47 @@
         "resolved": "13.0.3",
         "contentHash": "HrC5BXdl00IP9zeV+0Z848QWPAoCr9P3bDEZguI+gkLcBKAOxix/tLEAAHC+UvDNPv4a2d18lOReHMOagPa+zQ=="
       },
+      "BCnEncoder.Net": {
+        "type": "Transitive",
+        "resolved": "2.2.1",
+        "contentHash": "tI5+/OQo0kciLqWrViRjpOH+IL3FjexYnoWZajiGV41g/EM9CGbWsxsPzBDmpoxNkrV9uox/EtIhCIi9chBSFw==",
+        "dependencies": {
+          "CommunityToolkit.HighPerformance": "8.4.0"
+        }
+      },
+      "CommunityToolkit.HighPerformance": {
+        "type": "Transitive",
+        "resolved": "8.4.0",
+        "contentHash": "flxspiBs0G/0GMp7IK2J2ijV9bTG6hEwFc/z6ekHqB6nwRJ4Ry2yLdx+TkbCUYFCl4XhABkAwomeKbT6zM2Zlg=="
+      },
+      "Lumina": {
+        "type": "Transitive",
+        "resolved": "7.6.0",
+        "contentHash": "rvlUbb72dd/9sWVcJQ1FG6POQRDd8TKy64VWTHwXbm1s54gFK5jssRDB7sVmlKUFLzpORmH4Xt8G8DISHYzMQg==",
+        "dependencies": {
+          "BCnEncoder.Net": "2.2.1",
+          "Microsoft.Extensions.ObjectPool": "10.0.0"
+        }
+      },
+      "Lumina.Excel": {
+        "type": "Transitive",
+        "resolved": "7.4.3",
+        "contentHash": "3FXHgq3ihk3yLSriYjM5j+w/114i/rawAbt7+O9LMFHyY0fGVIP+MOpQaLa1CruEOXjwmT9CvLKkDy4h1ESDlA==",
+        "dependencies": {
+          "Lumina": "7.1.0"
+        }
+      },
+      "Microsoft.Extensions.ObjectPool": {
+        "type": "Transitive",
+        "resolved": "10.0.0",
+        "contentHash": "bpeCq0IYmVLACyEUMzFIOQX+zZUElG1t+nu1lSxthe7B+1oNYking7b91305+jNB6iwojp9fqTY9O+Nh7ULQxg=="
+      },
       "glamsource.core": {
-        "type": "Project"
+        "type": "Project",
+        "dependencies": {
+          "Lumina": "[7.6.0, )",
+          "Lumina.Excel": "[7.4.3, )"
+        }
       }
     }
   }

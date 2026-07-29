@@ -1,43 +1,43 @@
 [
   {
     "slot": "MainHand",
-    "actualItemId": 41234,
-    "actualItemName": "Agonizing Flame of Fury",
-    "glamourItemId": 35678,
-    "glamourItemName": "YoRHa Type-No.2 Type S (Body)"
+    "actualItemId": 5057,
+    "actualItemName": "Iron Ingot",
+    "glamourItemId": null,
+    "glamourItemName": null
   },
   {
     "slot": "OffHand",
-    "actualItemId": 41235,
-    "actualItemName": "Agonizing Crest of Fury",
+    "actualItemId": 4554,
+    "actualItemName": "Hi-Potion",
     "glamourItemId": null,
     "glamourItemName": null
   },
   {
     "slot": "Head",
-    "actualItemId": 41230,
-    "actualItemName": "Agonizing Mask of Fury",
+    "actualItemId": 33422,
+    "actualItemName": "Exarchic Circlet of Casting",
     "glamourItemId": null,
     "glamourItemName": null
   },
   {
     "slot": "Body",
-    "actualItemId": 41231,
-    "actualItemName": "Agonizing Mail of Fury",
-    "glamourItemId": 35678,
-    "glamourItemName": "YoRHa Type-No.2 Type S (Body)"
+    "actualItemId": 3278,
+    "actualItemName": "Hempen Shirt",
+    "glamourItemId": 35637,
+    "glamourItemName": "Diamond Zeta Sword"
   },
   {
     "slot": "Hands",
-    "actualItemId": 41232,
-    "actualItemName": "Agonizing Gloves of Fury",
+    "actualItemId": 2,
+    "actualItemName": "Fire Shard",
     "glamourItemId": null,
     "glamourItemName": null
   },
   {
     "slot": "Legs",
-    "actualItemId": 41233,
-    "actualItemName": "Agonizing Tassets of Fury",
+    "actualItemId": 33155,
+    "actualItemName": "Cryptlurker Coat of Fending",
     "glamourItemId": null,
     "glamourItemName": null
   },

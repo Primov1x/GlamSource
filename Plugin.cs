@@ -23,6 +23,8 @@ public class Plugin : IAsyncDalamudPlugin
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
     [PluginService] internal static ITargetManager TargetManager { get; private set; } = null!;
 
+    public static IGlamourService? GlamourServiceOverride { get; set; }
+
     private readonly IDalamudPluginInterface _pluginInterface;
     private readonly ITextureProvider _textureProvider;
     private readonly ICommandManager _commandManager;
@@ -72,13 +74,15 @@ public class Plugin : IAsyncDalamudPlugin
         TargetManager = _targetManager;
 
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
-        GameDataService = new GameDataService(DataManager, TargetManager);
+        var sourceService = new LuminaItemSourceService(DataManager.GameData);
+        var effectiveGlamourService = GlamourServiceOverride ?? new GameDataService(DataManager, TargetManager, sourceService);
+        GameDataService = effectiveGlamourService is GameDataService gds ? gds : null!;
         MainWindowHelpers = new MainWindowHelpers(GameDataService);
 
         var goatImagePath = Path.Join(PluginInterface.AssemblyLocation.Directory?.FullName, "goat.png");
 
         configWindow = new ConfigWindow(this);
-        mainWindow = new MainWindow(GameDataService);
+        mainWindow = new MainWindow(effectiveGlamourService);
 
         WindowSystem.AddWindow(configWindow);
         WindowSystem.AddWindow(mainWindow);
@@ -93,6 +97,9 @@ public class Plugin : IAsyncDalamudPlugin
         PluginInterface.UiBuilder.OpenMainUi += ToggleMainUi;
 
         Log.Information($"===A cool log message from {PluginInterface.Manifest.Name}===");
+
+        if (GlamourServiceOverride != null)
+            mainWindow.IsOpen = true;
     }
 
     public Task LoadAsync(CancellationToken cancellationToken) => Task.CompletedTask;

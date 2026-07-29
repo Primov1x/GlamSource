@@ -10,11 +10,13 @@ namespace GlamSource.Core;
 public sealed class FixtureGlamourService : IGlamourService
 {
     private readonly string _fixturePath;
+    private readonly IItemSourceService? _sourceService;
     private IReadOnlyList<EquipmentSlot>? _cached;
 
-    public FixtureGlamourService(string fixturePath)
+    public FixtureGlamourService(string fixturePath, IItemSourceService? sourceService = null)
     {
         _fixturePath = fixturePath;
+        _sourceService = sourceService;
     }
 
     public IReadOnlyList<EquipmentSlot> GetTargetEquipment()
@@ -34,12 +36,22 @@ public sealed class FixtureGlamourService : IGlamourService
 
         _cached = slots
             .Where(s => s.Slot != null)
-            .Select(s => new EquipmentSlot(
-                Slot: (EquipmentSlotType)s.Slot!,
-                ActualItemId: s.ActualItemId,
-                ActualItemName: s.ActualItemName ?? string.Empty,
-                GlamourItemId: s.GlamourItemId,
-                GlamourItemName: s.GlamourItemName))
+            .Select(s =>
+            {
+                var actualSources = _sourceService?.GetSources(s.ActualItemId);
+                var glamourSources = s.GlamourItemId.HasValue
+                    ? _sourceService?.GetSources(s.GlamourItemId.Value)
+                    : null;
+
+                return new EquipmentSlot(
+                    Slot: (EquipmentSlotType)s.Slot!,
+                    ActualItemId: s.ActualItemId,
+                    ActualItemName: s.ActualItemName ?? string.Empty,
+                    GlamourItemId: s.GlamourItemId,
+                    GlamourItemName: s.GlamourItemName,
+                    ActualItemSources: actualSources,
+                    GlamourItemSources: glamourSources);
+            })
             .ToList()
             .AsReadOnly();
 

@@ -21,7 +21,9 @@ public sealed record EquipmentSlot(
     uint ActualItemId,
     string ActualItemName,
     uint? GlamourItemId,
-    string? GlamourItemName)
+    string? GlamourItemName,
+    IReadOnlyList<ItemSource>? ActualItemSources = null,
+    IReadOnlyList<ItemSource>? GlamourItemSources = null)
 {
     public bool IsGlamoured => GlamourItemId.HasValue;
 }

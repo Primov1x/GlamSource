@@ -19,7 +19,7 @@ public class FixtureGlamourServiceTests
         Assert.NotEmpty(slots);
         Assert.Equal(12, slots.Count);
         Assert.Equal(EquipmentSlotType.MainHand, slots[0].Slot);
-        Assert.Equal("Agonizing Flame of Fury", slots[0].ActualItemName);
+        Assert.Equal("Iron Ingot", slots[0].ActualItemName);
     }
 
     [Fact]
@@ -50,11 +50,11 @@ public class FixtureGlamourServiceTests
         var glamoured = slots.Where(s => s.IsGlamoured).ToList();
         Assert.NotEmpty(glamoured);
 
-        var mainHand = glamoured.First(s => s.Slot == EquipmentSlotType.MainHand);
-        Assert.Equal((uint?)35678, mainHand.GlamourItemId);
-        Assert.Equal("YoRHa Type-No.2 Type S (Body)", mainHand.GlamourItemName);
-        Assert.Equal((uint)41234, mainHand.ActualItemId);
-        Assert.Equal("Agonizing Flame of Fury", mainHand.ActualItemName);
+        var body = glamoured.First(s => s.Slot == EquipmentSlotType.Body);
+        Assert.Equal((uint?)35637, body.GlamourItemId);
+        Assert.Equal("Diamond Zeta Sword", body.GlamourItemName);
+        Assert.Equal((uint)3278, body.ActualItemId);
+        Assert.Equal("Hempen Shirt", body.ActualItemName);
     }
 
     [Fact]
@@ -79,6 +79,45 @@ public class FixtureGlamourServiceTests
     {
         var service = new FixtureGlamourService(Path.Combine(Path.GetTempPath(), "nonexistent.json"));
         Assert.Throws<FileNotFoundException>(() => service.GetTargetEquipment());
+    }
+
+    [Fact]
+    public void Load_WithSourceService_ExposesSources()
+    {
+        var mockService = new MockItemSourceService();
+        var service = new FixtureGlamourService(TestFixturePath("target-example.json"), mockService);
+        var slots = service.GetTargetEquipment();
+
+        var ironIngot = slots.First(s => s.Slot == EquipmentSlotType.MainHand);
+        Assert.NotNull(ironIngot.ActualItemSources);
+        Assert.NotEmpty(ironIngot.ActualItemSources!);
+        Assert.Equal(ItemSourceType.Crafted, ironIngot.ActualItemSources![0].Type);
+
+        var hempenShirt = slots.First(s => s.Slot == EquipmentSlotType.Body);
+        Assert.NotNull(hempenShirt.ActualItemSources);
+        Assert.NotEmpty(hempenShirt.ActualItemSources!);
+        Assert.Equal(ItemSourceType.Vendor, hempenShirt.ActualItemSources![0].Type);
+
+        var glamourSword = slots.First(s => s.Slot == EquipmentSlotType.Body);
+        Assert.NotNull(glamourSword.GlamourItemSources);
+        Assert.NotEmpty(glamourSword.GlamourItemSources!);
+    }
+
+    private sealed class MockItemSourceService : IItemSourceService
+    {
+        private static readonly Dictionary<uint, IReadOnlyList<ItemSource>> _map = new()
+        {
+            [5057] = new[] { new ItemSource(ItemSourceType.Crafted, "Crafted") }.AsReadOnly(),
+            [3278] = new[] { new ItemSource(ItemSourceType.Vendor, "Vendor") }.AsReadOnly(),
+            [33422] = new[] { new ItemSource(ItemSourceType.Crafted, "Crafted") }.AsReadOnly(),
+            [35637] = new[] { new ItemSource(ItemSourceType.Crafted, "Crafted") }.AsReadOnly(),
+            [2] = new[] { new ItemSource(ItemSourceType.Vendor, "Vendor") }.AsReadOnly(),
+        };
+
+        public IReadOnlyList<ItemSource> GetSources(uint itemId)
+        {
+            return _map.GetValueOrDefault(itemId) ?? Array.Empty<ItemSource>();
+        }
     }
 
     [Fact]

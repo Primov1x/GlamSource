@@ -15,12 +15,14 @@ public unsafe class GameDataService : IGlamourService
 {
     private readonly IDataManager _dataManager;
     private readonly ITargetManager _targetManager;
+    private readonly IItemSourceService _sourceService;
     private bool _debugLogged;
 
-    public GameDataService(IDataManager dataManager, ITargetManager targetManager)
+    public GameDataService(IDataManager dataManager, ITargetManager targetManager, IItemSourceService? sourceService = null)
     {
         _dataManager = dataManager;
         _targetManager = targetManager;
+        _sourceService = sourceService ?? new LuminaItemSourceService(dataManager.GameData);
         FindAshShortbow();
     }
 
@@ -125,12 +127,7 @@ public unsafe class GameDataService : IGlamourService
             var itemRowId = matchedItem.RowId;
             var itemName = itemRowId > 0 ? matchedItem.Name.ToString() : "Unknown";
 
-            result.Add(new EquipmentSlot(
-                Slot: glamourSlot,
-                ActualItemId: itemRowId,
-                ActualItemName: itemName,
-                GlamourItemId: null,
-                GlamourItemName: null));
+            result.Add(CreateSlot(glamourSlot, itemRowId, itemName, null, null));
         }
 
         // Rüstung: 10 Slots — FFXIV-Index → GlamSource.Core.EquipmentSlotType
@@ -182,14 +179,27 @@ public unsafe class GameDataService : IGlamourService
             var itemRowId = matchedItem.RowId;
             var itemName = itemRowId > 0 ? matchedItem.Name.ToString() : "Unknown";
 
-            result.Add(new EquipmentSlot(
-                Slot: glamourSlot,
-                ActualItemId: itemRowId,
-                ActualItemName: itemName,
-                GlamourItemId: null,
-                GlamourItemName: null));
+            result.Add(CreateSlot(glamourSlot, itemRowId, itemName, null, null));
         }
 
         return result.AsReadOnly();
+    }
+
+    private EquipmentSlot CreateSlot(EquipmentSlotType slot, uint actualItemId, string actualItemName, uint? glamourItemId, string? glamourItemName)
+    {
+        var actualSources = actualItemId > 0 ? _sourceService.GetSources(actualItemId) : Array.Empty<ItemSource>();
+        IReadOnlyList<ItemSource>? glamourSources = null;
+        if (glamourItemId.HasValue && glamourItemId.Value > 0)
+        {
+            glamourSources = _sourceService.GetSources(glamourItemId.Value);
+        }
+        return new EquipmentSlot(
+            Slot: slot,
+            ActualItemId: actualItemId,
+            ActualItemName: actualItemName,
+            GlamourItemId: glamourItemId,
+            GlamourItemName: glamourItemName,
+            ActualItemSources: actualSources,
+            GlamourItemSources: glamourSources);
     }
 }
