@@ -77,6 +77,11 @@ public unsafe class GameDataService : IGlamourService
             return Array.Empty<EquipmentSlot>();
 
         var localPlayer = _objectTable.LocalPlayer;
+        Plugin.Log.Information("[EQUIP] target.Id={TId} lp.Id={LpId} match={M}",
+            target.GameObjectId,
+            localPlayer?.GameObjectId ?? 0,
+            localPlayer != null && target.GameObjectId == localPlayer.GameObjectId);
+
         if (localPlayer != null && target.GameObjectId == localPlayer.GameObjectId)
             return GetOwnEquipment();
 
@@ -89,6 +94,7 @@ public unsafe class GameDataService : IGlamourService
 
     private unsafe IReadOnlyList<EquipmentSlot> GetOwnEquipment()
     {
+        Plugin.Log.Information("[EQUIP] GetOwnEquipment called");
         var im = InventoryManager.Instance();
         if (im == null)
             return Array.Empty<EquipmentSlot>();
@@ -184,6 +190,7 @@ public unsafe class GameDataService : IGlamourService
 
     private IReadOnlyList<EquipmentSlot> GetDrawDataEquipment(IGameObject target)
     {
+        Plugin.Log.Information("[EQUIP] GetDrawDataEquipment FALLBACK");
         if (target is not IPlayerCharacter playerChar)
             return Array.Empty<EquipmentSlot>();
 
