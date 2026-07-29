@@ -25,6 +25,7 @@ public class Plugin : IAsyncDalamudPlugin
     [PluginService] internal static ITargetManager TargetManager { get; private set; } = null!;
     [PluginService] internal static IContextMenu ContextMenu { get; private set; } = null!;
     [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
+    [PluginService] internal static IObjectTable ObjectTable { get; private set; } = null!;
 
     public static IGlamourService? GlamourServiceOverride { get; set; }
 
@@ -37,6 +38,7 @@ public class Plugin : IAsyncDalamudPlugin
     private readonly IPluginLog _log;
     private readonly ITargetManager _targetManager;
     private readonly IGameGui _gameGui;
+    private readonly IObjectTable _objectTable;
 
     private const string CommandName = "/glamsource";
 
@@ -60,7 +62,8 @@ public class Plugin : IAsyncDalamudPlugin
         IDataManager dataManager,
         IPluginLog pluginLog,
         ITargetManager targetManager,
-        IGameGui gameGui)
+        IGameGui gameGui,
+        IObjectTable objectTable)
     {
         _pluginInterface = pluginInterface;
         _textureProvider = textureProvider;
@@ -84,7 +87,7 @@ public class Plugin : IAsyncDalamudPlugin
 
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         var sourceService = new LuminaItemSourceService(DataManager.GameData);
-        var effectiveGlamourService = GlamourServiceOverride ?? new GameDataService(DataManager, TargetManager, sourceService);
+        var effectiveGlamourService = GlamourServiceOverride ?? new GameDataService(DataManager, TargetManager, ObjectTable, sourceService);
         GameDataService = effectiveGlamourService is GameDataService gds ? gds : null!;
         MainWindowHelpers = new MainWindowHelpers(GameDataService);
 

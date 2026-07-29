@@ -6,32 +6,167 @@
   "compilationOptions": {},
   "targets": {
     ".NETCoreApp,Version=v10.0": {
-      "GlamSource/0.0.0.1": {
+      "GlamSource/0.0.0.10": {
         "dependencies": {
-          "GlamSource.Core": "1.0.0"
+          "GlamSource.Core": "1.0.0",
+          "Glamourer.Api": "2.8.2",
+          "Newtonsoft.Json": "13.0.3",
+          "Glamourer.Api.Reference": "2.8.2.0"
         },
         "runtime": {
           "GlamSource.dll": {}
         }
       },
+      "BCnEncoder.Net/2.2.1": {
+        "dependencies": {
+          "CommunityToolkit.HighPerformance": "8.4.0"
+        },
+        "runtime": {
+          "lib/netstandard2.1/BCnEncoder.dll": {
+            "assemblyVersion": "2.2.1.0",
+            "fileVersion": "2.2.1.0"
+          }
+        }
+      },
+      "CommunityToolkit.HighPerformance/8.4.0": {
+        "runtime": {
+          "lib/net8.0/CommunityToolkit.HighPerformance.dll": {
+            "assemblyVersion": "8.4.0.0",
+            "fileVersion": "8.4.0.1"
+          }
+        }
+      },
+      "Glamourer.Api/2.8.2": {
+        "runtime": {
+          "lib/net10.0-windows7.0/Glamourer.Api.dll": {
+            "assemblyVersion": "2.8.2.0",
+            "fileVersion": "2.8.2.0"
+          }
+        }
+      },
+      "Lumina/7.6.0": {
+        "dependencies": {
+          "BCnEncoder.Net": "2.2.1",
+          "Microsoft.Extensions.ObjectPool": "10.0.0"
+        },
+        "runtime": {
+          "lib/net10.0/Lumina.dll": {
+            "assemblyVersion": "7.0.0.0",
+            "fileVersion": "7.6.0.0"
+          }
+        }
+      },
+      "Lumina.Excel/7.4.3": {
+        "dependencies": {
+          "Lumina": "7.6.0"
+        },
+        "runtime": {
+          "lib/net10.0/Lumina.Excel.dll": {
+            "assemblyVersion": "7.0.0.0",
+            "fileVersion": "7.4.3.0"
+          }
+        }
+      },
+      "Microsoft.Extensions.ObjectPool/10.0.0": {
+        "runtime": {
+          "lib/net10.0/Microsoft.Extensions.ObjectPool.dll": {
+            "assemblyVersion": "10.0.0.0",
+            "fileVersion": "10.0.25.52411"
+          }
+        }
+      },
+      "Newtonsoft.Json/13.0.3": {
+        "runtime": {
+          "lib/net6.0/Newtonsoft.Json.dll": {
+            "assemblyVersion": "13.0.0.0",
+            "fileVersion": "13.0.3.27908"
+          }
+        }
+      },
       "GlamSource.Core/1.0.0": {
+        "dependencies": {
+          "Lumina": "7.6.0",
+          "Lumina.Excel": "7.4.3"
+        },
         "runtime": {
           "GlamSource.Core.dll": {
             "assemblyVersion": "1.0.0.0",
             "fileVersion": "1.0.0.0"
           }
         }
+      },
+      "Glamourer.Api.Reference/2.8.2.0": {
+        "runtime": {
+          "Glamourer.Api.dll": {
+            "assemblyVersion": "2.8.2.0",
+            "fileVersion": "2.8.2.0"
+          }
+        }
       }
     }
   },
   "libraries": {
-    "GlamSource/0.0.0.1": {
+    "GlamSource/0.0.0.10": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
+    "BCnEncoder.Net/2.2.1": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-tI5+/OQo0kciLqWrViRjpOH+IL3FjexYnoWZajiGV41g/EM9CGbWsxsPzBDmpoxNkrV9uox/EtIhCIi9chBSFw==",
+      "path": "bcnencoder.net/2.2.1",
+      "hashPath": "bcnencoder.net.2.2.1.nupkg.sha512"
+    },
+    "CommunityToolkit.HighPerformance/8.4.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-flxspiBs0G/0GMp7IK2J2ijV9bTG6hEwFc/z6ekHqB6nwRJ4Ry2yLdx+TkbCUYFCl4XhABkAwomeKbT6zM2Zlg==",
+      "path": "communitytoolkit.highperformance/8.4.0",
+      "hashPath": "communitytoolkit.highperformance.8.4.0.nupkg.sha512"
+    },
+    "Glamourer.Api/2.8.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-oWOqIiEQCUZhDSVG0c+5mz//Je5FljyVMOrcgTjtrpQ7LTEOosP2wYQ87mKHQ72hvF9y5N35A40Of9TAgm7TJw==",
+      "path": "glamourer.api/2.8.2",
+      "hashPath": "glamourer.api.2.8.2.nupkg.sha512"
+    },
+    "Lumina/7.6.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-rvlUbb72dd/9sWVcJQ1FG6POQRDd8TKy64VWTHwXbm1s54gFK5jssRDB7sVmlKUFLzpORmH4Xt8G8DISHYzMQg==",
+      "path": "lumina/7.6.0",
+      "hashPath": "lumina.7.6.0.nupkg.sha512"
+    },
+    "Lumina.Excel/7.4.3": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-3FXHgq3ihk3yLSriYjM5j+w/114i/rawAbt7+O9LMFHyY0fGVIP+MOpQaLa1CruEOXjwmT9CvLKkDy4h1ESDlA==",
+      "path": "lumina.excel/7.4.3",
+      "hashPath": "lumina.excel.7.4.3.nupkg.sha512"
+    },
+    "Microsoft.Extensions.ObjectPool/10.0.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-bpeCq0IYmVLACyEUMzFIOQX+zZUElG1t+nu1lSxthe7B+1oNYking7b91305+jNB6iwojp9fqTY9O+Nh7ULQxg==",
+      "path": "microsoft.extensions.objectpool/10.0.0",
+      "hashPath": "microsoft.extensions.objectpool.10.0.0.nupkg.sha512"
+    },
+    "Newtonsoft.Json/13.0.3": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-HrC5BXdl00IP9zeV+0Z848QWPAoCr9P3bDEZguI+gkLcBKAOxix/tLEAAHC+UvDNPv4a2d18lOReHMOagPa+zQ==",
+      "path": "newtonsoft.json/13.0.3",
+      "hashPath": "newtonsoft.json.13.0.3.nupkg.sha512"
+    },
     "GlamSource.Core/1.0.0": {
       "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Glamourer.Api.Reference/2.8.2.0": {
+      "type": "reference",
       "serviceable": false,
       "sha512": ""
     }
