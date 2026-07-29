@@ -1,4 +1,5 @@
 using System;
+using System.IO.Compression;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Objects.Types;
@@ -107,9 +108,22 @@ public class MainWindow : Window, IDisposable
 
                     if (ec == Glamourer.Api.Enums.GlamourerApiEc.Success && !string.IsNullOrEmpty(base64))
                     {
-                        Plugin.Log.Information("[Glamourer] Success! Base64 length={Len} preview={Preview}",
-                            base64.Length,
-                            base64.Length > 200 ? base64[..200] : base64);
+                        var bytes = Convert.FromBase64String(base64);
+                        string json;
+                        try
+                        {
+                            using var ms = new System.IO.MemoryStream(bytes);
+                            using var gz = new GZipStream(ms, CompressionMode.Decompress);
+                            using var reader = new System.IO.StreamReader(gz);
+                            json = reader.ReadToEnd();
+                        }
+                        catch
+                        {
+                            json = System.Text.Encoding.UTF8.GetString(bytes);
+                        }
+                        Plugin.Log.Information("[Glamourer] Decoded length={Len} preview={Preview}",
+                            json.Length,
+                            json.Length > 500 ? json[..500] : json);
                     }
                     else
                     {
