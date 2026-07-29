@@ -21,6 +21,7 @@ public unsafe class GameDataService : IGlamourService
     private readonly IObjectTable _objectTable;
     private readonly IItemSourceService _sourceService;
     private bool _debugLogged;
+    private Dictionary<EquipmentSlotType, List<Item>>? _itemsBySlot;
 
     public GameDataService(IDataManager dataManager, ITargetManager targetManager, IObjectTable objectTable, IItemSourceService? sourceService = null)
     {
@@ -29,6 +30,7 @@ public unsafe class GameDataService : IGlamourService
         _objectTable = objectTable;
         _sourceService = sourceService ?? new LuminaItemSourceService(dataManager.GameData);
         FindAshShortbow();
+        BuildItemSlotCache();
     }
 
     private void FindAshShortbow()
@@ -56,6 +58,42 @@ public unsafe class GameDataService : IGlamourService
         {
             Plugin.Log.Error(ex, "[DEBUG-AshShortbow] Failed");
         }
+    }
+
+    private void BuildItemSlotCache()
+    {
+        _itemsBySlot = new Dictionary<EquipmentSlotType, List<Item>>();
+        var itemSheet = _dataManager.GetExcelSheet<Item>();
+        if (itemSheet == null) return;
+
+        foreach (var item in itemSheet)
+        {
+            if (string.IsNullOrEmpty(item.Name.ToString())) continue;
+            var esc = item.EquipSlotCategory;
+            if (!esc.IsValid) continue;
+            var cat = esc.Value;
+
+            AddIfSlot(cat.MainHand, EquipmentSlotType.MainHand, item);
+            AddIfSlot(cat.OffHand, EquipmentSlotType.OffHand, item);
+            AddIfSlot(cat.Head, EquipmentSlotType.Head, item);
+            AddIfSlot(cat.Body, EquipmentSlotType.Body, item);
+            AddIfSlot(cat.Gloves, EquipmentSlotType.Hands, item);
+            AddIfSlot(cat.Legs, EquipmentSlotType.Legs, item);
+            AddIfSlot(cat.Feet, EquipmentSlotType.Feet, item);
+            AddIfSlot(cat.Ears, EquipmentSlotType.Earrings, item);
+            AddIfSlot(cat.Neck, EquipmentSlotType.Necklace, item);
+            AddIfSlot(cat.Wrists, EquipmentSlotType.Bracelets, item);
+            AddIfSlot(cat.FingerR, EquipmentSlotType.RingRight, item);
+            AddIfSlot(cat.FingerL, EquipmentSlotType.RingLeft, item);
+        }
+    }
+
+    private void AddIfSlot(sbyte value, EquipmentSlotType slot, Item item)
+    {
+        if (value <= 0) return;
+        if (!_itemsBySlot!.ContainsKey(slot))
+            _itemsBySlot[slot] = new List<Item>();
+        _itemsBySlot[slot].Add(item);
     }
 
     public string? GetLocationName(uint territoryId)
@@ -207,7 +245,6 @@ public unsafe class GameDataService : IGlamourService
             return Array.Empty<EquipmentSlot>();
 
         var drawData = charPtr->DrawData;
-        var itemSheet = _dataManager.GetExcelSheet<Item>();
         var result = new List<EquipmentSlot>();
 
         for (var i = 0; i < 2; i++)
@@ -227,8 +264,9 @@ public unsafe class GameDataService : IGlamourService
                 continue;
             }
 
-            var weaponModelMain = i == 0;
-            var matchedItem = FindItemByModelId(itemSheet, modelId, isWeapon: true, weaponModelMain: weaponModelMain);
+            var slotType = glamourSlot;
+            var candidates = _itemsBySlot?.GetValueOrDefault(slotType);
+            var matchedItem = FindItemByModelId(candidates, modelId, isWeapon: true, weaponModelMain: i == 0);
 
             if (!_debugLogged)
             {
@@ -265,7 +303,8 @@ public unsafe class GameDataService : IGlamourService
             if (modelId == 0)
                 continue;
 
-            var matchedItem = FindItemByModelId(itemSheet, modelId, isWeapon: false);
+            var candidates = _itemsBySlot?.GetValueOrDefault(glamourSlot);
+            var matchedItem = FindItemByModelId(candidates, modelId, isWeapon: false);
 
             var itemRowId = matchedItem?.RowId ?? 0;
             var itemName = itemRowId > 0 ? (matchedItem?.Name.ToString() ?? "Unknown") : "Unknown";
@@ -276,12 +315,12 @@ public unsafe class GameDataService : IGlamourService
         return result;
     }
 
-    private static Item? FindItemByModelId(ExcelSheet<Item>? itemSheet, uint modelId, bool isWeapon = false, bool weaponModelMain = false)
+    private static Item? FindItemByModelId(IReadOnlyList<Item>? candidates, uint modelId, bool isWeapon = false, bool weaponModelMain = false)
     {
-        if (itemSheet == null)
+        if (candidates == null)
             return null;
 
-        foreach (var item in itemSheet)
+        foreach (var item in candidates)
         {
             if (isWeapon)
             {
