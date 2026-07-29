@@ -24,6 +24,7 @@ public class Plugin : IAsyncDalamudPlugin
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
     [PluginService] internal static ITargetManager TargetManager { get; private set; } = null!;
     [PluginService] internal static IContextMenu ContextMenu { get; private set; } = null!;
+    [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
 
     public static IGlamourService? GlamourServiceOverride { get; set; }
 
@@ -35,6 +36,7 @@ public class Plugin : IAsyncDalamudPlugin
     private readonly IDataManager _dataManager;
     private readonly IPluginLog _log;
     private readonly ITargetManager _targetManager;
+    private readonly IGameGui _gameGui;
 
     private const string CommandName = "/glamsource";
 
@@ -57,7 +59,8 @@ public class Plugin : IAsyncDalamudPlugin
         IPlayerState playerState,
         IDataManager dataManager,
         IPluginLog pluginLog,
-        ITargetManager targetManager)
+        ITargetManager targetManager,
+        IGameGui gameGui)
     {
         _pluginInterface = pluginInterface;
         _textureProvider = textureProvider;
@@ -67,6 +70,7 @@ public class Plugin : IAsyncDalamudPlugin
         _dataManager = dataManager;
         _log = pluginLog;
         _targetManager = targetManager;
+        _gameGui = gameGui;
 
         PluginInterface = _pluginInterface;
         TextureProvider = _textureProvider;
@@ -76,6 +80,7 @@ public class Plugin : IAsyncDalamudPlugin
         DataManager = _dataManager;
         Log = _log;
         TargetManager = _targetManager;
+        GameGui = _gameGui;
 
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         var sourceService = new LuminaItemSourceService(DataManager.GameData);
@@ -92,7 +97,7 @@ public class Plugin : IAsyncDalamudPlugin
         itemDetailWindow = new ItemDetailWindow(itemDetailService, sourceService);
         WindowSystem.AddWindow(itemDetailWindow);
 
-        contextMenuService = new ContextMenuService(ContextMenu, itemId =>
+        contextMenuService = new ContextMenuService(ContextMenu, _gameGui, itemId =>
         {
             itemDetailWindow.ShowItem(itemId);
         });
