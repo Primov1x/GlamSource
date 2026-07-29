@@ -116,7 +116,22 @@ public unsafe class GameDataService : IGlamourService
 
             var itemName = ResolveItemName(itemSheet, itemId);
 
-            result.Add(CreateSlot(slotType.Value, itemId, itemName, null, null));
+            uint? glamourId = null;
+            string? glamourName = null;
+            try
+            {
+                var gId = item.GlamourId;
+                if (gId > 0)
+                {
+                    glamourId = gId;
+                    glamourName = ResolveItemName(itemSheet, gId);
+                }
+            }
+            catch
+            {
+            }
+
+            result.Add(CreateSlot(slotType.Value, itemId, itemName, glamourId, glamourName));
         }
 
         return result;
@@ -145,7 +160,22 @@ public unsafe class GameDataService : IGlamourService
 
             var itemName = ResolveItemName(itemSheet, itemId);
 
-            result.Add(CreateSlot(slotType.Value, itemId, itemName, null, null));
+            uint? glamourId = null;
+            string? glamourName = null;
+            try
+            {
+                var gId = item.GlamourId;
+                if (gId > 0)
+                {
+                    glamourId = gId;
+                    glamourName = ResolveItemName(itemSheet, gId);
+                }
+            }
+            catch
+            {
+            }
+
+            result.Add(CreateSlot(slotType.Value, itemId, itemName, glamourId, glamourName));
         }
 
         return result;
