@@ -84,10 +84,6 @@ public sealed class ContextMenuService : IDisposable
         if (string.IsNullOrEmpty(addonName) || !GameAddonWhitelist.Contains(addonName))
             return null;
 
-        var defaultTarget = (MenuTargetDefault)args.Target;
-        if (defaultTarget.TargetContentId != 0)
-            return null;
-
         return ExtractItemIdFromAddon(addonName);
     }
 
