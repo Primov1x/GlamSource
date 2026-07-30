@@ -258,7 +258,8 @@ public unsafe class GameDataService : IGlamourService
         {
             var weaponSlot = (DrawDataContainer.WeaponSlot)i;
             var glamourSlot = i == 0 ? EquipmentSlotType.MainHand : EquipmentSlotType.OffHand;
-            var modelId = drawData.Weapon(weaponSlot).ModelId.Id;
+            var weaponData = drawData.Weapon(weaponSlot).ModelId;
+            var modelId = weaponData.Id;
 
             if (modelId == 0)
             {
@@ -273,13 +274,13 @@ public unsafe class GameDataService : IGlamourService
 
             var slotType = glamourSlot;
             var candidates = _itemsBySlot?.GetValueOrDefault(slotType);
-            var matchedItem = FindItemByModelId(candidates, modelId, isWeapon: true, weaponModelMain: i == 0);
+            var matchedItem = FindItemByModelId(candidates, modelId, isWeapon: true, weaponModelMain: i == 0, weaponModelType: weaponData.Type, weaponModelVariant: (byte)weaponData.Variant);
 
             if (!_debugLogged)
             {
                 _debugLogged = true;
-                Plugin.Log.Information("[DEBUG] Weapon slot {Slot}: DrawData modelId={ModelId} => matched RowId={RowId} Name={Name}",
-                    i, modelId, matchedItem?.RowId ?? 0, matchedItem != null && matchedItem.Value.RowId > 0 ? matchedItem.Value.Name.ToString() : "none");
+                Plugin.Log.Information("[DEBUG] Weapon slot {Slot}: DrawData modelId={ModelId} type={Type} variant={Variant} => matched RowId={RowId} Name={Name}",
+                    i, modelId, weaponData.Type, weaponData.Variant, matchedItem?.RowId ?? 0, matchedItem != null && matchedItem.Value.RowId > 0 ? matchedItem.Value.Name.ToString() : "none");
             }
 
             var itemRowId = matchedItem?.RowId ?? 0;
@@ -306,12 +307,13 @@ public unsafe class GameDataService : IGlamourService
                 _ => throw new Exception("unreachable")
             };
 
-            var modelId = drawData.Equipment(ffxivSlot).Id;
+            var eqData = drawData.Equipment(ffxivSlot);
+            var modelId = eqData.Id;
             if (modelId == 0)
                 continue;
 
             var candidates = _itemsBySlot?.GetValueOrDefault(glamourSlot);
-            var matchedItem = FindItemByModelId(candidates, modelId, isWeapon: false);
+            var matchedItem = FindItemByModelId(candidates, modelId, isWeapon: false, weaponModelVariant: eqData.Variant);
 
             var itemRowId = matchedItem?.RowId ?? 0;
             var itemName = itemRowId > 0 ? (matchedItem?.Name.ToString() ?? "Unknown") : "Unknown";
@@ -322,37 +324,99 @@ public unsafe class GameDataService : IGlamourService
         return result;
     }
 
-    private static Item? FindItemByModelId(IReadOnlyList<Item>? candidates, uint modelId, bool isWeapon = false, bool weaponModelMain = false)
+    private static Item? FindItemByModelId(IReadOnlyList<Item>? candidates, uint modelId, bool isWeapon = false, bool weaponModelMain = false, ushort weaponModelType = 0, byte weaponModelVariant = 0)
     {
         if (candidates == null)
             return null;
 
-        foreach (var item in candidates)
+        if (isWeapon)
         {
-            if (isWeapon)
+            var primaryMatches = new List<Item>();
+            var secondaryMatches = new List<Item>();
+
+            foreach (var item in candidates)
             {
                 var primaryId = (ushort)(item.ModelMain & 0xFFFF);
-                var variant = (byte)(item.ModelMain >> 32);
-                var primaryId2 = (ushort)(item.ModelSub & 0xFFFF);
-                var variant2 = (byte)(item.ModelSub >> 32);
-                if (weaponModelMain && primaryId == modelId && variant == variant2)
-                    return item;
-                if (!weaponModelMain && primaryId2 == modelId && variant2 == variant)
-                    return item;
+                var primaryVariant = (byte)(item.ModelMain >> 32);
+                var primaryType = (ushort)((item.ModelMain >> 16) & 0xFFFF);
+                var secondaryId = (ushort)(item.ModelSub & 0xFFFF);
+                var secondaryVariant = (byte)(item.ModelSub >> 32);
+                var secondaryType = (ushort)((item.ModelSub >> 16) & 0xFFFF);
+
+                if (weaponModelMain)
+                {
+                    if (primaryId == modelId)
+                    {
+                        bool variantMatch = weaponModelVariant == 0 || primaryVariant == weaponModelVariant;
+                        bool typeMatch = weaponModelType == 0 || primaryType == weaponModelType;
+                        if (variantMatch && typeMatch)
+                            primaryMatches.Add(item);
+                        else if (variantMatch)
+                            primaryMatches.Add(item);
+                    }
+                }
+                else
+                {
+                    if (secondaryId == modelId)
+                    {
+                        bool variantMatch = weaponModelVariant == 0 || secondaryVariant == weaponModelVariant;
+                        bool typeMatch = weaponModelType == 0 || secondaryType == weaponModelType;
+                        if (variantMatch && typeMatch)
+                            secondaryMatches.Add(item);
+                        else if (variantMatch)
+                            secondaryMatches.Add(item);
+                    }
+                }
             }
-            else
+
+            Item? bestMatch = primaryMatches.Count > 0 ? primaryMatches[0] : null;
+            if (primaryMatches.Count > 1)
+            {
+                foreach (var item in primaryMatches)
+                {
+                    var primaryType = (ushort)((item.ModelMain >> 16) & 0xFFFF);
+                    if (weaponModelType > 0 && primaryType == weaponModelType)
+                    {
+                        bestMatch = item;
+                        break;
+                    }
+                }
+            }
+
+            if (bestMatch == null && secondaryMatches.Count > 0)
+            {
+                bestMatch = secondaryMatches[0];
+                if (secondaryMatches.Count > 1)
+                {
+                    foreach (var item in secondaryMatches)
+                    {
+                        var secondaryType = (ushort)((item.ModelSub >> 16) & 0xFFFF);
+                        if (weaponModelType > 0 && secondaryType == weaponModelType)
+                        {
+                            bestMatch = item;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            return bestMatch;
+        }
+        else
+        {
+            foreach (var item in candidates)
             {
                 var primaryId = (ushort)(item.ModelMain & 0xFFFF);
                 var variant = (byte)(item.ModelMain >> 16);
                 var primaryId2 = (ushort)(item.ModelSub & 0xFFFF);
                 var variant2 = (byte)(item.ModelSub >> 16);
-                if ((primaryId == modelId && variant == variant2) ||
-                    (primaryId2 == modelId && variant == variant2))
+                if ((primaryId == modelId && variant == weaponModelVariant) ||
+                    (primaryId2 == modelId && variant2 == weaponModelVariant))
                     return item;
             }
-        }
 
-        return null;
+            return null;
+        }
     }
 
     private EquipmentSlot CreateSlot(EquipmentSlotType slot, uint actualItemId, string actualItemName, uint? glamourItemId, string? glamourItemName)

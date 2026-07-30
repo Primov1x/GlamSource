@@ -163,6 +163,18 @@ public class MainWindow : Window, IDisposable
             return;
         }
 
+        var currentTarget = Plugin.TargetManager?.Target;
+        var isOwnCharacter = currentTarget != null && currentTarget.GameObjectId == Plugin.ObjectTable.LocalPlayer?.GameObjectId;
+        var examineAddon = Plugin.GameGui.GetAddonByName("CharacterInspect");
+        var hasExamine = examineAddon != nint.Zero;
+        var isDrawDataFallback = !isOwnCharacter && !hasExamine;
+
+        if (isDrawDataFallback)
+        {
+            ImGui.TextColored(new Vector4(1f, 0.6f, 0f, 1f), "[!] Equipment data from DrawData (incomplete). Right-click target -> Examine for full equipment data.");
+            ImGui.Spacing();
+        }
+
         if (ImGui.BeginTable("EquipmentTable", 5, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg))
         {
             ImGui.TableSetupColumn("Slot", ImGuiTableColumnFlags.WidthFixed, 120f);
