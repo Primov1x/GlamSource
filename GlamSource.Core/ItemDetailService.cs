@@ -261,6 +261,46 @@ public sealed class ItemDetailService : IItemDetailService, IDisposable
         return allSources;
     }
 
+    private static readonly Dictionary<uint, uint> GilCurrencyMap = new()
+    {
+        [1] = 28,       // Gil
+        [2] = 33913,    // Allagan Tomestone of Mnemonics
+        [3] = 33912,    // Allagan Tomestone of Warriorhood
+        [4] = 33914,    // Allagan Tomestone of Hyleo
+        [5] = 33915,    // Allagan Tomestone of Hesperos
+        [6] = 41784,    // Allagan Tomestone of Aesthetics
+        [7] = 41785,    // Allagan Tomestone of Pallady
+    };
+
+    private uint ResolveSpecialShopCostItem(uint costRowId, uint useCurrencyType)
+    {
+        if (costRowId == 0 || costRowId >= 8)
+            return costRowId;
+
+        return useCurrencyType switch
+        {
+            16 => GilCurrencyMap.TryGetValue(costRowId, out var mapped) ? mapped : costRowId,
+            8 => 1,
+            4 => ResolveTomestoneCostItem(costRowId),
+            _ => costRowId,
+        };
+    }
+
+    private uint ResolveTomestoneCostItem(uint costRowId)
+    {
+        var tomestonesSheet = _gameData.GetExcelSheet<TomestonesItem>();
+        if (tomestonesSheet == null)
+            return costRowId;
+
+        foreach (var t in tomestonesSheet)
+        {
+            if (t.Tomestones.RowId == costRowId && t.Item.RowId != 0)
+                return t.Item.RowId;
+        }
+
+        return costRowId;
+    }
+
     private IEnumerable<ItemSourceDetail> FindSpecialShopSources(uint itemId)
     {
         var specialShops = _gameData.GetExcelSheet<SpecialShop>()?.ToArray() ?? Array.Empty<SpecialShop>();
@@ -283,6 +323,9 @@ public sealed class ItemDetailService : IItemDetailService, IDisposable
                 {
                     if (receiveItem.Item.RowId == itemId)
                     {
+                        Console.WriteLine($"[SHOP-DIAG] Item {itemId} found in Shop {shopId} '{shopName}'");
+                        Console.WriteLine($"[SHOP-DIAG] UseCurrencyType={shop.UseCurrencyType}");
+
                         var currencyItemIds = new List<CostEntry>();
 
                         foreach (var cost in itemStruct.ItemCosts)
@@ -290,11 +333,16 @@ public sealed class ItemDetailService : IItemDetailService, IDisposable
                             if (cost.ItemCost.RowId == 0)
                                 continue;
 
+                            var resolvedId = ResolveSpecialShopCostItem(cost.ItemCost.RowId, shop.UseCurrencyType);
+                            var resolvedName = GetItemName(resolvedId) ?? "Unknown";
+
+                            Console.WriteLine($"[SHOP-DIAG] Cost: RowId={cost.ItemCost.RowId} resolved={resolvedId} '{resolvedName}' CurrencyCost={cost.CurrencyCost}");
+
                             currencyItemIds.Add(new CostEntry(
-                                cost.ItemCost.RowId,
-                                GetItemName(cost.ItemCost.RowId) ?? "Unknown",
+                                resolvedId,
+                                resolvedName,
                                 (uint)cost.CurrencyCost,
-                                GetItemIconId(cost.ItemCost.RowId)));
+                                GetItemIconId(resolvedId)));
                         }
 
                         if (currencyItemIds.Count == 0)
