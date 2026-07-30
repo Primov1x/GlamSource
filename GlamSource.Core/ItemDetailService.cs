@@ -12,7 +12,15 @@ public record ItemDetail(
     uint ItemId,
     string Name,
     ushort ItemLevel,
+    bool IsMarketable,
+    uint IconId,
     IReadOnlyList<ItemSourceDetail> Sources);
+
+public record CostEntry(
+    uint ItemId,
+    string Name,
+    uint Count,
+    uint IconId);
 
 public record ItemSourceDetail(
     ItemSourceType Type,
@@ -22,8 +30,9 @@ public record ItemSourceDetail(
     float? MapX, float? MapY,
     uint? TerritoryTypeId,
     uint? MapId,
-    IReadOnlyList<(uint itemId, string name, uint count)>? Costs,
-    IReadOnlyList<(uint itemId, string name, uint count)>? Materials);
+    IReadOnlyList<CostEntry>? Costs,
+    IReadOnlyList<CostEntry>? Materials,
+    string? QuestName);
 
 public interface IItemDetailService
 {
@@ -36,14 +45,16 @@ public sealed class ItemDetailService : IItemDetailService, IDisposable
     private readonly IItemSourceService _sourceService;
     private readonly Dictionary<uint, ItemDetail?> _cache = new();
 
-    // Pre-resolved NPC name cache: npcId → npcName
     private readonly Dictionary<uint, string> _npcNameCache = new();
+    private readonly Dictionary<uint, List<NpcLocationInfo>> _shopNpcLookup = new();
+    private readonly Dictionary<uint, List<Recipe>> _recipeByResult = new();
 
-    // Recipe result → Recipe lookup
-    private readonly Dictionary<uint, Recipe> _recipeByResult = new();
-
-    // Item name cache
+    private record NpcLocationInfo(
+        string NpcName, string ZoneName,
+        float MapX, float MapY,
+        uint TerritoryTypeId, uint MapId);
     private readonly Dictionary<uint, string> _itemNameCache = new();
+    private readonly Dictionary<uint, string> _jobNameCache = new();
 
     public ItemDetailService(GameData gameData, IItemSourceService sourceService)
     {
@@ -84,9 +95,11 @@ public sealed class ItemDetailService : IItemDetailService, IDisposable
         var item = foundItem.Value;
         var name = item.Name.ToString()!;
         var itemLevel = item.LevelEquip;
+        var isMarketable = item.ItemSearchCategory.RowId > 0;
+        var iconId = item.Icon;
 
         var sources = BuildSources(itemId, item);
-        var detail = new ItemDetail(itemId, name, itemLevel, sources);
+        var detail = new ItemDetail(itemId, name, itemLevel, isMarketable, iconId, sources);
 
         _cache[itemId] = detail;
         return detail;
@@ -96,25 +109,48 @@ public sealed class ItemDetailService : IItemDetailService, IDisposable
     {
         var results = new List<ItemSourceDetail>();
 
-        // 1. Crafted — from Recipe sheet
-        if (_recipeByResult.TryGetValue(itemId, out var recipe))
+        // 1. Crafted — from Recipe sheet (grouped by material set)
+        if (_recipeByResult.TryGetValue(itemId, out var recipes))
         {
-            var materials = recipe.Ingredient
-                .Cast<dynamic>()
-                .Where(r => r.RowId != 0)
-                .Select(r => ((uint)r.RowId, GetItemName((uint)r.RowId) ?? "", (uint)1))
-                .ToList();
+            var materialGroups = recipes.GroupBy(r => GetMaterialKey(r));
+            foreach (var group in materialGroups)
+            {
+                var jobNames = group.Select(r => GetClassJobAbbreviation(r.CraftType.RowId)).Distinct();
+                var jobList = string.Join(", ", jobNames);
+                var levelTableRowId = group.First().RecipeLevelTable.RowId;
+                var desc = $"Crafted Lv.{levelTableRowId} ({jobList})";
 
-            var jobName = recipe.CraftType.Value.Name.ToString();
-            var requiredLevel = recipe.RequiredCraftsmanship;
-            var desc = $"Crafted: {jobName} Lv.{requiredLevel}";
+                var ingredientArray = group.First().Ingredient.Cast<dynamic>().ToArray();
+                var amountArray = group.First().AmountIngredient.Cast<dynamic>().ToArray();
 
-            results.Add(new ItemSourceDetail(
-                ItemSourceType.Crafted,
-                desc,
-                null, null, null, null, null, null,
-                null,
-                materials));
+                var materials = new List<CostEntry>();
+                for (int i = 0; i < ingredientArray.Length; i++)
+                {
+                    var ing = ingredientArray[i];
+                    var ingredientId = (uint)ing.RowId;
+                    if (ingredientId == 0)
+                        continue;
+
+                    uint amount = 1;
+                    if (i < amountArray.Length)
+                    {
+                        amount = (uint)amountArray[i];
+                    }
+
+                    if (amount > 0)
+                    {
+                        materials.Add(new CostEntry(ingredientId, GetItemName(ingredientId) ?? "", amount, GetItemIconId(ingredientId)));
+                    }
+                }
+
+                results.Add(new ItemSourceDetail(
+                    ItemSourceType.Crafted,
+                    desc,
+                    null, null, null, null, null, null,
+                    null,
+                    materials,
+                    null));
+            }
         }
 
         // 2. GilShop — Vendor
@@ -137,11 +173,13 @@ public sealed class ItemDetailService : IItemDetailService, IDisposable
                     {
                         if (reward.RowId == itemId)
                         {
+                            var questName = quest.Name.ToString() ?? "Unknown Quest";
                             results.Add(new ItemSourceDetail(
                                 ItemSourceType.Quest,
-                                "Quest Reward",
+                                $"Quest Reward: {questName}",
                                 null, null, null, null, null, null,
-                                null, null));
+                                null, null,
+                                questName));
                             break;
                         }
                     }
@@ -160,6 +198,28 @@ public sealed class ItemDetailService : IItemDetailService, IDisposable
         if (gilShopItems == null)
             return Enumerable.Empty<ItemSourceDetail>();
 
+        uint price = 100;
+        var itemSheet = _gameData.GetExcelSheet<Item>();
+        if (itemSheet != null)
+        {
+            foreach (var it in itemSheet)
+            {
+                if (it.RowId == itemId)
+                {
+                    price = it.PriceMid;
+                    break;
+                }
+            }
+        }
+
+        var costs = new List<CostEntry>
+        {
+            new CostEntry(0, "Gil", price, 800)
+        };
+
+        var allSources = new List<ItemSourceDetail>();
+        var seenShopIds = new HashSet<uint>();
+
         foreach (var collection in gilShopItems)
         {
             foreach (var shopItem in collection)
@@ -167,28 +227,52 @@ public sealed class ItemDetailService : IItemDetailService, IDisposable
                 if (shopItem.Item.RowId != itemId)
                     continue;
 
-                var costs = new List<(uint, string, uint)>
-                {
-                    (0, "Gil", 100)
-                };
+                var shopId = collection.RowId;
+                if (!seenShopIds.Add(shopId))
+                    continue;
 
-                return new[] { new ItemSourceDetail(
-                    ItemSourceType.Vendor,
-                    "Vendor: Merchant",
-                    null, null, null, null, null, null,
-                    costs, null) };
+                var npcInfos = _shopNpcLookup.GetValueOrDefault(shopId);
+
+                if (npcInfos != null)
+                {
+                    foreach (var npc in npcInfos)
+                    {
+                        var desc = $"Vendor: {npc.NpcName}";
+                        allSources.Add(new ItemSourceDetail(
+                            ItemSourceType.Vendor,
+                            desc,
+                            npc.NpcName, npc.ZoneName,
+                            npc.MapX, npc.MapY,
+                            npc.TerritoryTypeId, npc.MapId,
+                            costs, null, null));
+                    }
+                }
+                else
+                {
+                    allSources.Add(new ItemSourceDetail(
+                        ItemSourceType.Vendor,
+                        "Vendor: Merchant",
+                        null, null, null, null, null, null,
+                        costs, null, null));
+                }
             }
         }
 
-        return Enumerable.Empty<ItemSourceDetail>();
+        return allSources;
     }
 
     private IEnumerable<ItemSourceDetail> FindSpecialShopSources(uint itemId)
     {
         var specialShops = _gameData.GetExcelSheet<SpecialShop>()?.ToArray() ?? Array.Empty<SpecialShop>();
+        var allSources = new List<ItemSourceDetail>();
+        var seenShopIds = new HashSet<uint>();
 
         foreach (var shop in specialShops)
         {
+            var shopId = shop.RowId;
+            if (!seenShopIds.Add(shopId))
+                continue;
+
             var shopName = shop.Name.ToString();
             if (string.IsNullOrEmpty(shopName))
                 continue;
@@ -199,24 +283,42 @@ public sealed class ItemDetailService : IItemDetailService, IDisposable
                 {
                     if (receiveItem.Item.RowId == itemId)
                     {
-                        var currencyName = GetItemName(receiveItem.Item.RowId) ?? "Unknown Currency";
-                        var amount = receiveItem.ReceiveCount;
-                        var costs = new List<(uint, string, uint)>
-                        {
-                            (receiveItem.Item.RowId, currencyName, amount)
-                        };
+                        var currencyItemIds = new List<CostEntry>();
 
-                        return new[] { new ItemSourceDetail(
+                        foreach (var cost in itemStruct.ItemCosts)
+                        {
+                            if (cost.ItemCost.RowId == 0)
+                                continue;
+
+                            currencyItemIds.Add(new CostEntry(
+                                cost.ItemCost.RowId,
+                                GetItemName(cost.ItemCost.RowId) ?? "Unknown",
+                                (uint)cost.CurrencyCost,
+                                GetItemIconId(cost.ItemCost.RowId)));
+                        }
+
+                        if (currencyItemIds.Count == 0)
+                        {
+                            var currencyName = GetItemName(receiveItem.Item.RowId) ?? "Unknown Currency";
+                            var amount = receiveItem.ReceiveCount;
+                            currencyItemIds.Add(new CostEntry(receiveItem.Item.RowId, currencyName, amount, GetItemIconId(receiveItem.Item.RowId)));
+                        }
+
+                        var questName = GetQuestName(shop.Quest.RowId);
+
+                        allSources.Add(new ItemSourceDetail(
                             ItemSourceType.Vendor,
-                            $"Shop: {shopName} ({amount} {currencyName})",
+                            $"Shop: {shopName}",
                             null, null, null, null, null, null,
-                            costs, null) };
+                            currencyItemIds, null,
+                            questName));
+                        break;
                     }
                 }
             }
         }
 
-        return Enumerable.Empty<ItemSourceDetail>();
+        return allSources;
     }
 
     private void BuildCaches()
@@ -241,8 +343,22 @@ public sealed class ItemDetailService : IItemDetailService, IDisposable
             {
                 if (recipe.ItemResult.RowId != 0)
                 {
-                    _recipeByResult[recipe.ItemResult.RowId] = recipe;
+                    if (!_recipeByResult.ContainsKey(recipe.ItemResult.RowId))
+                        _recipeByResult[recipe.ItemResult.RowId] = new();
+                    _recipeByResult[recipe.ItemResult.RowId].Add(recipe);
                 }
+            }
+        }
+
+        // CraftType name cache (for recipe job display names)
+        var craftTypeSheet = _gameData.GetExcelSheet<CraftType>();
+        if (craftTypeSheet != null)
+        {
+            foreach (var ct in craftTypeSheet)
+            {
+                var name = ct.Name.ToString();
+                if (!string.IsNullOrEmpty(name))
+                    _jobNameCache[ct.RowId] = name;
             }
         }
 
@@ -257,6 +373,74 @@ public sealed class ItemDetailService : IItemDetailService, IDisposable
                     _npcNameCache[npc.RowId] = name;
             }
         }
+
+        // Shop → NPC/Zone reverse map
+        BuildShopNpcCache();
+    }
+
+    private void BuildShopNpcCache()
+    {
+        var enpcBaseSheet = _gameData.GetExcelSheet<ENpcBase>();
+        var levelSheet = _gameData.GetExcelSheet<Level>();
+        var mapSheet = _gameData.GetExcelSheet<Map>();
+
+        if (enpcBaseSheet == null || levelSheet == null || mapSheet == null)
+            return;
+
+        // Level lookup: ENpcBase.RowId → (MapId, Map, X, Z)
+        // Note: FFXIV uses X/Z for map coordinates (Z = Y on 2D map)
+        var npcLevelLookup = new Dictionary<uint, (uint mapId, Map map, float x, float z)>();
+        int levelCount = 0;
+        foreach (var level in levelSheet)
+        {
+            if (level.Type != 8)  // Type 8 = ENpc
+                continue;
+            var npcId = level.Object.RowId;
+            if (npcId == 0)
+                continue;
+
+            var mapId = level.Map.RowId;
+            if (mapId != 0)
+            {
+                npcLevelLookup[npcId] = (mapId, level.Map.Value, level.X, level.Z);
+                levelCount++;
+            }
+        }
+        // ENpcBase → Shop RowIds
+        foreach (var npcBase in enpcBaseSheet)
+        {
+            var npcId = npcBase.RowId;
+            if (!_npcNameCache.TryGetValue(npcId, out var npcName) || string.IsNullOrEmpty(npcName))
+                continue;
+
+            if (!npcLevelLookup.TryGetValue(npcId, out var levelInfo))
+                continue;
+
+            var zoneName = levelInfo.map.PlaceName.ValueNullable?.Name.ToString() ?? "";
+            var territoryTypeId = levelInfo.map.TerritoryType.RowId;
+            var mapId = levelInfo.mapId;
+            var map = levelInfo.map;
+            var mapX = ToMapCoordinate(levelInfo.x, map.SizeFactor, map.OffsetX);
+            var mapY = ToMapCoordinate(levelInfo.z, map.SizeFactor, map.OffsetY);
+
+            foreach (var dataRef in npcBase.ENpcData)
+            {
+                if (dataRef.RowId == 0)
+                    continue;
+
+                var shopId = dataRef.RowId;
+                if (!_shopNpcLookup.ContainsKey(shopId))
+                    _shopNpcLookup[shopId] = new();
+                _shopNpcLookup[shopId].Add(new NpcLocationInfo(
+                    npcName, zoneName, mapX, mapY, territoryTypeId, mapId));
+            }
+        }
+    }
+
+    private static float ToMapCoordinate(float raw, ushort sizeFactor, short offset)
+    {
+        var scale = sizeFactor / 100.0f;
+        return (raw / 1000.0f * scale) + (41.0f / scale) / 2.0f + 1.0f;
     }
 
     private string? GetItemName(uint itemId)
@@ -264,6 +448,106 @@ public sealed class ItemDetailService : IItemDetailService, IDisposable
         if (itemId == 0)
             return null;
         return _itemNameCache.TryGetValue(itemId, out var name) ? name : null;
+    }
+
+    private uint GetItemIconId(uint itemId)
+    {
+        if (itemId == 0)
+            return 0;
+
+        var itemSheet = _gameData.GetExcelSheet<Item>();
+        if (itemSheet == null)
+            return 0;
+
+        foreach (var item in itemSheet)
+        {
+            if (item.RowId == itemId)
+                return item.Icon;
+        }
+        return 0;
+    }
+
+    private string? GetQuestName(uint questId)
+    {
+        if (questId == 0)
+            return null;
+
+        var questSheet = _gameData.GetExcelSheet<Quest>();
+        if (questSheet == null)
+            return null;
+
+        foreach (var quest in questSheet)
+        {
+            if (quest.RowId == questId)
+            {
+                return quest.Name.ToString();
+            }
+        }
+        return null;
+    }
+
+    private string GetJobName(uint craftTypeRowId)
+    {
+        if (_jobNameCache.TryGetValue(craftTypeRowId, out var cached))
+            return cached;
+
+        var craftTypeSheet = _gameData.GetExcelSheet<CraftType>();
+        if (craftTypeSheet != null)
+        {
+            var ct = craftTypeSheet.GetRow(craftTypeRowId);
+            var name = ct.Name.ToString();
+            if (!string.IsNullOrEmpty(name))
+            {
+                _jobNameCache[craftTypeRowId] = name;
+                return name;
+            }
+        }
+
+        _jobNameCache[craftTypeRowId] = "Unknown";
+        return "Unknown";
+    }
+
+    private string GetClassJobAbbreviation(uint craftTypeRowId)
+    {
+        var classJobId = craftTypeRowId + 8;
+        var classJobSheet = _gameData.GetExcelSheet<ClassJob>();
+        if (classJobSheet != null)
+        {
+            var cj = classJobSheet.GetRow(classJobId);
+            var abbr = cj.Abbreviation.ToString();
+            if (!string.IsNullOrEmpty(abbr))
+                return abbr;
+        }
+        return "???";
+    }
+
+    private string GetMaterialKey(Recipe recipe)
+    {
+        var ingredientArray = recipe.Ingredient.Cast<dynamic>().ToArray();
+        var amountArray = recipe.AmountIngredient.Cast<dynamic>().ToArray();
+
+        var parts = new List<(uint id, uint amount)>();
+        for (int i = 0; i < ingredientArray.Length; i++)
+        {
+            var ing = ingredientArray[i];
+            var ingredientId = (uint)ing.RowId;
+            if (ingredientId == 0)
+                continue;
+
+            uint amount = 1;
+            if (i < amountArray.Length)
+            {
+                amount = (uint)amountArray[i];
+            }
+
+            if (amount > 0)
+            {
+                parts.Add((ingredientId, amount));
+            }
+        }
+
+        parts.Sort((a, b) => a.id.CompareTo(b.id));
+        return string.Join(",", parts.Select(p => $"{p.id}:{p.amount}"));
     }
 
     public void Dispose()
