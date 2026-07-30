@@ -65,7 +65,8 @@
         "type": "Project",
         "dependencies": {
           "Lumina": "[7.6.0, )",
-          "Lumina.Excel": "[7.4.3, )"
+          "Lumina.Excel": "[7.4.3, )",
+          "Newtonsoft.Json": "[13.0.3, )"
         }
       }
     }

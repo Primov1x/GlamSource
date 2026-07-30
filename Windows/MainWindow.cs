@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO.Compression;
+using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Objects.Types;
@@ -13,11 +15,14 @@ namespace GlamSource.Windows;
 public class MainWindow : Window, IDisposable
 {
     private readonly IGlamourService _glamourService;
+    private readonly ItemDetailWindow? _itemDetailWindow;
     private bool _lastNoTargetLogged = false;
     private int _lastGlamourerIndex = -1;
     private string? _lastGlamourerEc;
+    private string _lookupText = "";
+    private IReadOnlyList<(uint id, string name)>? _lookupResults;
 
-    public MainWindow(IGlamourService glamourService)
+    public MainWindow(IGlamourService glamourService, ItemDetailWindow? itemDetailWindow = null)
         : base("GlamSource", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
     {
         SizeConstraints = new WindowSizeConstraints
@@ -27,6 +32,7 @@ public class MainWindow : Window, IDisposable
         };
 
         _glamourService = glamourService;
+        _itemDetailWindow = itemDetailWindow;
     }
 
     public void Dispose() { }
@@ -151,6 +157,36 @@ public class MainWindow : Window, IDisposable
             Plugin.Log?.Error(ex, "[Glamourer] GetStateBase64 failed");
         }
 
+        ImGui.TextColored(new Vector4(0.9f, 0.7f, 0.2f, 1f), "Item Lookup");
+        ImGui.SetNextItemWidth(300f);
+        if (ImGui.InputTextWithHint("##item_lookup", "Search any item...",
+            ref _lookupText, 256))
+        {
+            if (_lookupText.Length >= 3)
+                _lookupResults = _glamourService.SearchItems(_lookupText)
+                    .Take(20).ToList();
+            else
+                _lookupResults = null;
+        }
+
+        if (_lookupResults is { Count: > 0 })
+        {
+            if (ImGui.BeginChild("##lookup_results", new Vector2(350, 150), true))
+            {
+                foreach (var (id, name) in _lookupResults)
+                {
+                    if (ImGui.Selectable($"{name} ({id})##lookup_{id}"))
+                    {
+                        _itemDetailWindow?.ShowItem(id);
+                        _lookupText = "";
+                        _lookupResults = null;
+                    }
+                }
+            }
+            ImGui.EndChild();
+        }
+
+        ImGui.Separator();
         ImGui.TextColored(new Vector4(0.9f, 0.7f, 0.2f, 1f), "Target Equipment");
         ImGui.Separator();
         ImGui.Spacing();

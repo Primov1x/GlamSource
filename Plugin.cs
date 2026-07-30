@@ -52,6 +52,7 @@ public class Plugin : IAsyncDalamudPlugin
     private readonly MainWindow mainWindow;
     private readonly ContextMenuService contextMenuService;
     private readonly ItemDetailWindow itemDetailWindow;
+    private readonly UniversalisService? _universalisService;
 
     public Plugin(
         IDalamudPluginInterface pluginInterface,
@@ -94,10 +95,12 @@ public class Plugin : IAsyncDalamudPlugin
         var goatImagePath = Path.Join(PluginInterface.AssemblyLocation.Directory?.FullName, "goat.png");
 
         configWindow = new ConfigWindow(this);
-        mainWindow = new MainWindow(effectiveGlamourService);
+        mainWindow = new MainWindow(effectiveGlamourService, itemDetailWindow);
 
         var itemDetailService = new ItemDetailService(DataManager.GameData, sourceService);
-        itemDetailWindow = new ItemDetailWindow(itemDetailService, sourceService);
+        var httpClient = new System.Net.Http.HttpClient();
+        _universalisService = new UniversalisService(httpClient, "Shiva", "Light");
+        itemDetailWindow = new ItemDetailWindow(itemDetailService, sourceService, _universalisService);
         WindowSystem.AddWindow(itemDetailWindow);
 
         contextMenuService = new ContextMenuService(ContextMenu, _gameGui, itemId =>
@@ -137,6 +140,7 @@ public class Plugin : IAsyncDalamudPlugin
         mainWindow.Dispose();
         itemDetailWindow.Dispose();
         contextMenuService.Dispose();
+        _universalisService?.Dispose();
 
         CommandManager.RemoveHandler(CommandName);
 

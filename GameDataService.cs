@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 using Dalamud.Game;
 using Dalamud.Game.ClientState.Objects.SubKinds;
@@ -135,6 +136,24 @@ public unsafe class GameDataService : IGlamourService
         }
 
         return GetDrawDataEquipment(target);
+    }
+
+    public IReadOnlyList<(uint id, string name)> SearchItems(string query)
+    {
+        if (string.IsNullOrEmpty(query) || query.Length < 3)
+            return Array.Empty<(uint, string)>();
+
+        var itemSheet = _dataManager.GetExcelSheet<Item>();
+        if (itemSheet == null)
+            return Array.Empty<(uint, string)>();
+
+        var lower = query.ToLowerInvariant();
+        return itemSheet
+            .Where(i => !string.IsNullOrEmpty(i.Name.ToString()) && i.Name.ToString().ToLowerInvariant().Contains(lower))
+            .Take(20)
+            .Select(i => (i.RowId, i.Name.ToString()!))
+            .ToList()
+            .AsReadOnly();
     }
 
     private unsafe IReadOnlyList<EquipmentSlot> GetOwnEquipment()

@@ -19,6 +19,8 @@ public sealed class FixtureGlamourService : IGlamourService
         _sourceService = sourceService;
     }
 
+    public IReadOnlyList<(uint id, string name)> SearchItems(string query) => Array.Empty<(uint, string)>();
+
     public IReadOnlyList<EquipmentSlot> GetTargetEquipment()
     {
         if (_cached != null)
