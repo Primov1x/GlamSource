@@ -156,12 +156,38 @@ public sealed class ContextMenuService : IDisposable
 
     private unsafe uint? ExtractCharacterInspectItemId()
     {
-        var container = InventoryManager.Instance()->GetInventoryContainer(InventoryType.Examine);
-        var agent = _gameGui.FindAgentInterface("CharacterInspect");
-        if (agent == default) return null;
-        var selectedSlot = *(int*)((nint)agent + 0x44C);
-        var item = container->GetInventorySlot(selectedSlot);
-        return CorrectItemId(item->GetItemId());
+        try
+        {
+            var im = InventoryManager.Instance();
+            if (im == null) { Plugin.Log.Information("[CTX-CI] InventoryManager null"); return null; }
+            
+            var container = im->GetInventoryContainer(InventoryType.Examine);
+            if (container == null) { Plugin.Log.Information("[CTX-CI] Examine container null"); return null; }
+            
+            var agent = _gameGui.FindAgentInterface("CharacterInspect");
+            if (agent == default) { Plugin.Log.Information("[CTX-CI] Agent null"); return null; }
+            
+            var selectedSlot = *(int*)((nint)agent + 0x44C);
+            Plugin.Log.Information("[CTX-CI] selectedSlot={Slot}", selectedSlot);
+            
+            if (selectedSlot < 0 || selectedSlot >= container->Size)
+            {
+                Plugin.Log.Information("[CTX-CI] slot out of range (size={Size})", container->Size);
+                return null;
+            }
+            
+            var item = container->GetInventorySlot(selectedSlot);
+            if (item == null) { Plugin.Log.Information("[CTX-CI] item null"); return null; }
+            
+            var itemId = CorrectItemId(item->ItemId);
+            Plugin.Log.Information("[CTX-CI] itemId={Id}", itemId);
+            return itemId;
+        }
+        catch (Exception ex)
+        {
+            Plugin.Log.Error(ex, "[CTX-CI] Failed");
+            return null;
+        }
     }
 
     private unsafe uint? ExtractMiragePrismItemId()
