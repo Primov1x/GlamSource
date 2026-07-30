@@ -98,7 +98,7 @@ public sealed class ContextMenuService : IDisposable
             "ChatLog" => ExtractChatLogItemId(),
             "ContentsInfoDetail" => ExtractContentsInfoDetailItemId(),
             "ItemSearch" => ExtractItemSearchItemId(),
-            "CharacterInspect" => ExtractCharacterInspectItemId(),
+            "CharacterInspect" => ExtractHoveredItemId(),
             "MiragePrismPrismBoxCrystallize" => ExtractMiragePrismItemId(),
             _ => ExtractHoveredItemId(),
         };
