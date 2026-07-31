@@ -302,7 +302,7 @@ public class ItemDetailWindow : Window, IDisposable
                     if (showInfoButton)
                     {
                         ImGui.SameLine();
-                        if (ImGui.SmallButton($"[i]##cost_{costIdx}"))
+                        if (ImGui.SmallButton($"[i]##cost_{sourceIdx}_{costIdx}"))
                         {
                             _navigateToItemId = cost.ItemId;
                             _navigateToSourceIdx = sourceIdx;
@@ -347,10 +347,6 @@ public class ItemDetailWindow : Window, IDisposable
         if (!string.IsNullOrEmpty(src.CfcName) || !string.IsNullOrEmpty(src.CfcType))
         {
             ImGui.Indent(20f);
-            if (!string.IsNullOrEmpty(src.CfcType))
-            {
-                ImGui.TextColored(new Vector4(1f, 0.8f, 0f, 1f), $"    Dropped from {src.CfcType}s");
-            }
             if (!string.IsNullOrEmpty(src.CfcName))
             {
                 ImGui.TextDisabled($"    Duty: {src.CfcName}");
@@ -363,25 +359,62 @@ public class ItemDetailWindow : Window, IDisposable
                     TryOpenDutyFinder(src.CfcRowId.Value);
                 }
             }
-            if (src.Type == ItemSourceType.Trial && src.BossName != null && src.QuestForUnlock.HasValue && src.QuestForUnlock.Value > 0)
+            if (src.CfcRowIds != null && src.CfcRowIds.Count > 1)
+            {
+                ImGui.Indent(20f);
+                ImGui.TextDisabled($"    Other duties:");
+                foreach (var cfcId in src.CfcRowIds)
+                {
+                    if (cfcId > 0)
+                    {
+                        ImGui.SameLine();
+                        if (ImGui.SmallButton($"Duty Finder##cfc_{cfcId}"))
+                        {
+                            TryOpenDutyFinder(cfcId);
+                        }
+                    }
+                }
+                ImGui.Unindent(20f);
+            }
+            if (src.BossName != null && src.QuestForUnlock.HasValue && src.QuestForUnlock.Value > 0)
             {
                 var isUnlocked = CheckUnlockStatus(src.QuestForUnlock.Value);
-                var unlockColor = isUnlocked ? new Vector4(0.3f, 1f, 0.3f, 1f) : new Vector4(1f, 0.3f, 0.3f, 1f);
-                ImGui.TextColored(unlockColor, $"    Unlock: {(isUnlocked ? "Complete" : "Incomplete")}");
+                if (isUnlocked)
+                {
+                    ImGui.TextColored(new Vector4(0.3f, 1f, 0.3f, 1f), $"    Unlock: Complete");
+                }
+                else
+                {
+                    ImGui.TextColored(new Vector4(1f, 0.3f, 0.3f, 1f), $"    Unlock: Incomplete");
+                    if (ImGui.SmallButton("Start with Questionable"))
+                    {
+                        TryStartWithQuestionable();
+                    }
+                }
             }
             ImGui.Unindent(20f);
         }
 
         // Questionable quest button (Feature D)
-        if (src.Type == ItemSourceType.Quest)
+        if (src.Type == ItemSourceType.Quest && src.QuestForUnlock.HasValue && src.QuestForUnlock.Value > 0)
         {
+            var isUnlocked = CheckUnlockStatus(src.QuestForUnlock.Value);
             ImGui.Indent(20f);
-            if (ImGui.SmallButton("Start with Questionable"))
+            if (isUnlocked)
             {
-                TryStartWithQuestionable();
+                ImGui.TextColored(new Vector4(0.3f, 1f, 0.3f, 1f), $"    Quest Complete");
+            }
+            else
+            {
+                ImGui.TextColored(new Vector4(1f, 0.3f, 0.3f, 1f), $"    Quest Incomplete");
+                if (ImGui.SmallButton("Start with Questionable"))
+                {
+                    TryStartWithQuestionable();
+                }
             }
             ImGui.Unindent(20f);
         }
+
     }
 
     private void DrawFallbackSources(uint itemId)
@@ -430,10 +463,8 @@ public class ItemDetailWindow : Window, IDisposable
         try
         {
             var questionable = Plugin.PluginInterface.GetIpcSubscriber<string, bool>("Questionable.StartQuest");
-            if (questionable != null)
-            {
-                Console.WriteLine("[QUESTIONABLE] Questionable.StartQuest called");
-            }
+            var hasFunc = questionable.HasFunction;
+            Console.WriteLine($"[QUESTIONABLE] StartQuest available={hasFunc}");
         }
         catch (Exception ex)
         {
@@ -443,7 +474,7 @@ public class ItemDetailWindow : Window, IDisposable
 
     private static bool CheckUnlockStatus(uint questId)
     {
-        return false;
+        return QuestManager.IsQuestComplete(questId);
     }
 
     private static unsafe void TryOpenDutyFinder(uint cfcRowId)

@@ -40,7 +40,8 @@ public record ItemSourceDetail(
     string? CfcName,
     string? CfcType,
     string? BossName,
-    uint? QuestForUnlock);
+    uint? QuestForUnlock,
+    IReadOnlyList<uint>? CfcRowIds);
 
 public interface IItemDetailService
 {
@@ -66,7 +67,7 @@ public sealed class ItemDetailService : IItemDetailService
     private readonly Dictionary<uint, List<uint>> _itemToDutyMap = new();
 
     // ponytail: CostItemId → (bossName, cfcName, cfcRowId) from "Totem Gear (X)" shop name
-    private readonly Dictionary<uint, (string bossName, string? cfcName, uint? cfcRowId)> _totemCostToBoss = new();
+    private readonly Dictionary<uint, (string bossName, string? cfcName, uint? cfcRowId, uint? questId)> _totemCostToBoss = new();
 
 
 
@@ -145,7 +146,7 @@ public sealed class ItemDetailService : IItemDetailService
                     null, null, null, null, null, null,
                     null,
                     materials,
-                    null, null, null, null, null, null));
+                    null, null, null, null, null, null, null));
             }
         }
 
@@ -157,21 +158,38 @@ public sealed class ItemDetailService : IItemDetailService
         var specialShopSources = FindSpecialShopSources(itemId);
         results.AddRange(specialShopSources);
 
-        // 4. Duty Drop from LuminaSupplemental DungeonDrop
+        // 4. Duty Drop from LuminaSupplemental (DungeonDrop + BossDrop + BossChest)
         if (results.Count == 0 && _itemToDutyMap.TryGetValue(itemId, out var dutyCfcIds))
         {
             var cfcSheet = _gameData.GetExcelSheet<ContentFinderCondition>();
+            var cfcNames = new List<(string name, string dutyType, ItemSourceType sourceType, uint rowId)>();
             foreach (var cfcId in dutyCfcIds)
             {
                 if (cfcSheet != null && cfcSheet.TryGetRow(cfcId, out var cfc))
                 {
                     var cfcName = cfc.Name.ToString();
-                    var cfcType = cfc.TrialRoulette ? "Trial" : "Dungeon";
+                    var contentTypeId = cfc.ContentType.RowId;
+                    var dutyType = GetDutyType(cfcId);
+                    var sourceType = contentTypeId switch
+                    {
+                        4 => ItemSourceType.Trial,
+                        5 => ItemSourceType.Raid,
+                        28 => ItemSourceType.Raid,
+                        _ => ItemSourceType.Dungeon
+                    };
+                    cfcNames.Add((cfcName, dutyType, sourceType, cfc.RowId));
+                }
+            }
+            if (cfcNames.Count > 0)
+            {
+                var cfcRowIds = cfcNames.Select(c => c.rowId).ToList();
+                foreach (var (name, dutyType, sourceType, rowId) in cfcNames)
+                {
                     results.Add(new ItemSourceDetail(
-                        ItemSourceType.Dungeon,
-                        $"Duty Drop: {cfcName}",
+                        sourceType,
+                        $"{dutyType} Drop: {name}",
                         null, null, null, null, null, null, null, null,
-                        null, cfc.RowId, cfcName, cfcType, null, null));
+                        null, rowId, name, dutyType, null, null, cfcRowIds));
                 }
             }
         }
@@ -179,12 +197,33 @@ public sealed class ItemDetailService : IItemDetailService
         // 4b. CostItem → Totem boss name from "Totem Gear (X)" shop name
         if (results.Count == 0 && _totemCostToBoss.TryGetValue(itemId, out var totemInfo))
         {
+            var dutyType = totemInfo.cfcRowId.HasValue ? GetDutyType(totemInfo.cfcRowId.Value) : "Trial";
+            var sourceType = dutyType == "Trial" ? ItemSourceType.Trial : ItemSourceType.Dungeon;
             results.Add(new ItemSourceDetail(
-                ItemSourceType.Trial,
-                $"Trial Drop: {totemInfo.bossName} (Extreme)",
+                sourceType,
+                $"{dutyType} Drop: {totemInfo.bossName} (Extreme)",
                 null, null, null, null, null, null, null, null,
-                null, totemInfo.cfcRowId, totemInfo.cfcName, "Trial",
-                totemInfo.bossName, null));
+                null, totemInfo.cfcRowId, totemInfo.cfcName, dutyType,
+                totemInfo.bossName, totemInfo.questId, null));
+        }
+
+        // 4c. Exchange token → Savage/Trial shop classification
+        if (results.Count == 0 && _exchangeCostToShopCfcs.TryGetValue(itemId, out var exchangeInfo))
+        {
+            var (exchangeType, shopName, cfcRowIds) = exchangeInfo;
+            var displayType = exchangeType == "Savage" ? "Raid" : "Trial";
+            var desc = exchangeType == "Savage"
+                ? cfcRowIds.Count > 0 && cfcRowIds[0] > 0
+                    ? $"{GetDutyType(cfcRowIds[0])} Drop: {shopName}"
+                    : $"Raid Drop: {shopName}"
+                : $"Trial Drop: {shopName}";
+            var sourceType = exchangeType == "Savage" ? ItemSourceType.Raid : ItemSourceType.Trial;
+            results.Add(new ItemSourceDetail(
+                sourceType,
+                desc,
+                null, null, null, null, null, null, null, null,
+                null, cfcRowIds.Count > 0 ? cfcRowIds[0] : null, null, displayType,
+                null, null, cfcRowIds));
         }
 
         // 5. Quest — Quest Reward
@@ -205,7 +244,7 @@ public sealed class ItemDetailService : IItemDetailService
                                 $"Quest Reward: {questName}",
                                 null, null, null, null, null, null,
                                 null, null,
-                                questName, null, null, null, null, null));
+                                questName, null, null, null, null, null, null));
                             break;
                         }
                     }
@@ -221,7 +260,7 @@ public sealed class ItemDetailService : IItemDetailService
             results.Add(new ItemSourceDetail(
                 ItemSourceType.Other,
                 "No vendor/crafting source found. May drop from duties, raids, or other content.",
-                null, null, null, null, null, null, null, null, null, null, null, null, null, null));
+                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
         }
 
         return results;
@@ -279,7 +318,7 @@ public sealed class ItemDetailService : IItemDetailService
                             npc.NpcName, npc.ZoneName,
                             npc.MapX, npc.MapY,
                             npc.TerritoryTypeId, npc.MapId,
-                            costs, null, null, null, null, null, null, null));
+                            costs, null, null, null, null, null, null, null, null));
                     }
                 }
                 else
@@ -288,7 +327,7 @@ public sealed class ItemDetailService : IItemDetailService
                         ItemSourceType.Vendor,
                         "Vendor: Merchant",
                         null, null, null, null, null, null,
-                        costs, null, null, null, null, null, null, null));
+                        costs, null, null, null, null, null, null, null, null));
                 }
             }
         }
@@ -383,13 +422,19 @@ public sealed class ItemDetailService : IItemDetailService
                         }
 
                         var questName = GetQuestName(shop.Quest.RowId);
+                        var questForUnlock = shop.Quest.RowId > 0 ? (uint?)shop.Quest.RowId : null;
+
+                        var exchangeType = ClassifyExchangeShop(shopName);
+                        var displayDesc = exchangeType != null
+                            ? $"{exchangeType} Exchange: {shopName}"
+                            : $"Shop: {shopName}";
 
                         allSources.Add(new ItemSourceDetail(
                             ItemSourceType.Vendor,
-                            $"Shop: {shopName}",
+                            displayDesc,
                             null, null, null, null, null, null,
                             currencyItemIds, null,
-                            questName, null, null, null, null, null));
+                            questName, null, null, null, null, questForUnlock, null));
                         break;
                     }
                 }
@@ -538,10 +583,76 @@ public sealed class ItemDetailService : IItemDetailService
                 _itemToDutyMap[drop.ItemId].Add(drop.ContentFinderConditionId);
         }
 
+        var bossChests = CsvLoader.LoadResource<DungeonBossChest>(
+            CsvLoader.DungeonBossChestResourceName,
+            includesHeaders: true,
+            out _,
+            out _,
+            gameData: null);
+
+        foreach (var drop in bossChests)
+        {
+            if (drop.ItemId == 0 || drop.ContentFinderConditionId == 0)
+                continue;
+
+            if (!_itemToDutyMap.ContainsKey(drop.ItemId))
+                _itemToDutyMap[drop.ItemId] = new();
+
+            if (!_itemToDutyMap[drop.ItemId].Contains(drop.ContentFinderConditionId))
+                _itemToDutyMap[drop.ItemId].Add(drop.ContentFinderConditionId);
+        }
+
         BuildTotemLookupCache();
     }
 
     private static readonly Regex _totemBossRegex = new(@"\((.+)\)");
+
+    private static readonly Dictionary<string, uint> BossToCfcRowId = new()
+    {
+        // HW
+        ["Ravana"] = 87,
+        ["Bismarck"] = 89,
+        ["Thordan"] = 91,
+        ["Sephirot"] = 135,
+        ["Nidhogg"] = 170,
+        ["Sophia"] = 184,
+        ["Zurvan"] = 224,
+        // SB
+        ["Susano"] = 244,
+        ["Lakshmi"] = 264,
+        ["Shinryu"] = 278,
+        ["Byakko"] = 291,
+        ["Tsukuyomi"] = 538,
+        ["Suzaku"] = 597,
+        ["Seiryu"] = 638,
+        // ShB
+        ["Titania"] = 658,
+        ["Innocence"] = 667,
+        ["Hades"] = 693,
+        ["The Ruby Weapon"] = 718,
+        ["Alexander"] = 725,
+        ["Warrior of Light"] = 739,
+        ["The Emerald Weapon"] = 763,
+        ["The Diamond Weapon"] = 782,
+        // EW
+        ["Zodiark"] = 803,
+        ["Hydaelyn"] = 791,
+        ["The Endsinger"] = 846,
+        ["Barbariccia"] = 871,
+        ["Rubicante"] = 924,
+        ["Golbez"] = 950,
+        ["Zeromus"] = 965,
+        // DT
+        ["Valigarmanda"] = 833,
+        ["Zoraal Ja"] = 996,
+        ["Queen Eternal"] = 1017,
+        ["Futures Rewritten"] = 1031,
+        ["Cloud of Darkness"] = 1044,
+        ["Zelenia"] = 1062,
+        ["Necron"] = 1062,
+        ["Doomtrain"] = 1077,
+        ["Enuo"] = 1116,
+    };
 
     private void BuildTotemLookupCache()
     {
@@ -568,7 +679,23 @@ public sealed class ItemDetailService : IItemDetailService
                         {
                             var bossName = match.Groups[1].Value;
                             var cfcMatch = MatchCfcForBoss(bossName, cfcSheet);
-                            _totemCostToBoss[cost.ItemCost.RowId] = (bossName, cfcMatch?.Name.ToString() ?? null, cfcMatch?.RowId);
+                            _totemCostToBoss[cost.ItemCost.RowId] = (bossName, cfcMatch?.Name.ToString() ?? null, cfcMatch?.RowId, shop.Quest.RowId > 0 ? shop.Quest.RowId : null);
+                        }
+                    }
+
+                    var exchangeType = ClassifyExchangeShop(shopName);
+                    if (exchangeType != null)
+                    {
+                        foreach (var receiveItem in itemStruct.ReceiveItems)
+                        {
+                            if (receiveItem.Item.RowId > 0)
+                            {
+                                var matchedCfcs = FindCfcsForExchange(exchangeType, shopName, cfcSheet);
+                                if (matchedCfcs.Count > 0)
+                                {
+                                    _exchangeCostToShopCfcs[receiveItem.Item.RowId] = (exchangeType, shopName, matchedCfcs);
+                                }
+                            }
                         }
                     }
                 }
@@ -576,22 +703,131 @@ public sealed class ItemDetailService : IItemDetailService
         }
     }
 
+    private List<uint> FindCfcsForExchange(string exchangeType, string shopName, ExcelSheet<ContentFinderCondition>? cfcSheet)
+    {
+        var result = new List<uint>();
+        if (cfcSheet == null)
+            return result;
+
+        if (exchangeType == "Savage")
+        {
+            var tierName = ExtractTierName(shopName);
+            if (!string.IsNullOrEmpty(tierName))
+            {
+                foreach (var cfc in cfcSheet)
+                {
+                    if (cfc.RowId == 0) continue;
+                    var cfcName = cfc.Name.ToString();
+                    if (string.IsNullOrEmpty(cfcName)) continue;
+                    if (!cfcName.Contains("Savage", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (cfcName.Contains(tierName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        result.Add(cfc.RowId);
+                    }
+                }
+            }
+        }
+        else if (exchangeType == "Trial")
+        {
+            foreach (var cfc in cfcSheet)
+            {
+                if (cfc.RowId == 0) continue;
+                if (cfc.TrialRoulette)
+                {
+                    result.Add(cfc.RowId);
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private static readonly Dictionary<uint, (string exchangeType, string shopName, IReadOnlyList<uint> cfcRowIds)> _exchangeCostToShopCfcs = new();
+
+    private string? ClassifyExchangeShop(string shopName)
+    {
+        if (shopName.StartsWith("Totem Gear") || shopName.StartsWith("Auspice Gear"))
+            return "Trial";
+
+        if (shopName.Contains("Unsung Relic") && shopName.Contains("Exchange"))
+            return "Savage";
+        if (shopName.Contains("Mythos Exchange"))
+            return "Savage";
+
+        if (Regex.IsMatch(shopName, @"Gear \(IL \d+-\d+\)"))
+            return "Savage";
+
+        return null;
+    }
+
+    private static string? ExtractTierName(string shopName)
+    {
+        var tierPatterns = new[] { "Asphodelos", "Abyssos", "Anabaseios", "Hephaistos", "Hypnos", "Orbonne", "Erebus", "Vakaura", "Mahakala", "Ktisis", "Oikema", "Kosmoe" };
+        foreach (var tier in tierPatterns)
+        {
+            if (shopName.Contains(tier, StringComparison.OrdinalIgnoreCase))
+                return tier;
+        }
+        return null;
+    }
+
+    private string GetDutyType(uint cfcRowId)
+    {
+        var cfc = _gameData.GetExcelSheet<ContentFinderCondition>()?.GetRow(cfcRowId);
+        var contentTypeId = cfc?.ContentType.RowId ?? 0;
+        return contentTypeId switch
+        {
+            2 => "Dungeon",
+            4 => "Trial",
+            5 => "Raid",
+            28 => "Ultimate",
+            _ => "Duty"
+        };
+    }
+
     private ContentFinderCondition? MatchCfcForBoss(string bossName, ExcelSheet<ContentFinderCondition>? cfcSheet)
     {
         if (cfcSheet == null)
             return null;
 
-        foreach (var cfc in cfcSheet)
+        // Stage 1: Hardcoded Boss→CFC RowId map
+        if (BossToCfcRowId.TryGetValue(bossName, out var hardcodedCfcId))
         {
-            if (cfc.RowId == 0)
-                continue;
-            var cfcName = cfc.Name.ToString();
-            if (string.IsNullOrEmpty(cfcName))
-                continue;
-
-            if (cfcName.Contains(bossName) && (cfcName.Contains("Extreme") || cfcName.Contains("Minstrel")))
+            if (cfcSheet.TryGetRow(hardcodedCfcId, out var cfc))
                 return cfc;
         }
+
+        var bossLower = bossName.ToLowerInvariant();
+
+        // Stage 2: Direct name match in Trial/Minstrel name
+        foreach (var cfc in cfcSheet)
+        {
+            if (cfc.RowId == 0) continue;
+            var cfcName = cfc.Name.ToString();
+            if (string.IsNullOrEmpty(cfcName)) continue;
+            if (!cfc.TrialRoulette && !cfcName.Contains("Minstrel")) continue;
+            var cfcLower = cfcName.ToLowerInvariant();
+            if (cfcLower.Contains(bossLower))
+                return cfc;
+        }
+
+        // Stage 3: Partial/short name match (e.g. "Enuo" -> "Enuo, the Omega Protocol")
+        foreach (var cfc in cfcSheet)
+        {
+            if (cfc.RowId == 0) continue;
+            var cfcName = cfc.Name.ToString();
+            if (string.IsNullOrEmpty(cfcName)) continue;
+            if (!cfc.TrialRoulette && !cfcName.Contains("Minstrel")) continue;
+            var cfcLower = cfcName.ToLowerInvariant();
+            var parts = bossLower.Split(new[] { ' ', ',', '&', '+' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var part in parts)
+            {
+                if (part.Length < 3) continue;
+                if (cfcLower.Contains(part))
+                    return cfc;
+            }
+        }
+
         return null;
     }
 
@@ -643,7 +879,7 @@ public sealed class ItemDetailService : IItemDetailService
             return null;
 
         if (cfcSheet.TryGetRow(cfcId, out var cfc))
-            return (cfc.Name.ToString(), cfc.TrialRoulette ? "Trial" : "Dungeon");
+            return (cfc.Name.ToString(), GetDutyType(cfcId));
 
         return null;
     }
