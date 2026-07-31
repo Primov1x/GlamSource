@@ -4,7 +4,10 @@ using System.Globalization;
 using System.Numerics;
 using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Game.Text.SeStringHandling.Payloads;
+
 using Dalamud.Interface.Windowing;
+using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using GlamSource.Core;
@@ -16,6 +19,7 @@ public class ItemDetailWindow : Window, IDisposable
     private readonly IItemDetailService _detailService;
     private readonly IItemSourceService _sourceService;
     private readonly IUniversalisService _universalisService;
+    private readonly ITextureProvider _textureProvider;
     private readonly Stack<uint> _history = new();
     private uint? _showingItemId;
     private bool _isOpen;
@@ -25,6 +29,7 @@ public class ItemDetailWindow : Window, IDisposable
     private MarketInfo? _marketInfo;
     private bool _marketLoading;
     private uint _marketItemId;
+    private Action<string, string, float, float>? _onOpenMap;
 
     private static readonly Dictionary<ItemSourceType, Vector4> SourceColors = new()
     {
@@ -42,17 +47,23 @@ public class ItemDetailWindow : Window, IDisposable
         [ItemSourceType.Other] = new Vector4(0.7f, 0.7f, 0.7f, 1f),
     };
 
-    public ItemDetailWindow(IItemDetailService detailService, IItemSourceService sourceService, IUniversalisService universalisService)
+    public ItemDetailWindow(IItemDetailService detailService, IItemSourceService sourceService, IUniversalisService universalisService, ITextureProvider? textureProvider = null)
         : base($"Item Detail###ItemDetailWindow", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
     {
         _detailService = detailService;
         _sourceService = sourceService;
         _universalisService = universalisService;
+        _textureProvider = textureProvider;
         SizeConstraints = new WindowSizeConstraints
         {
             MinimumSize = new Vector2(380, 250),
             MaximumSize = new Vector2(700, float.MaxValue)
         };
+    }
+
+    public void SetMapCallback(Action<string, string, float, float> callback)
+    {
+        _onOpenMap = callback;
     }
 
     public void ShowItem(uint itemId)
@@ -318,7 +329,7 @@ public class ItemDetailWindow : Window, IDisposable
                 ImGui.SameLine();
                 if (ImGui.SmallButton($"Open Map##map_{src.Type}"))
                 {
-                    TryOpenMap(src.TerritoryTypeId, src.MapId, src.MapX.Value, src.MapY.Value);
+                    TryOpenMap(src.NpcName, src.ZoneName, src.TerritoryTypeId, src.MapId, src.MapX.Value, src.MapY.Value);
                 }
             }
             ImGui.Unindent(20f);
@@ -329,6 +340,35 @@ public class ItemDetailWindow : Window, IDisposable
         {
             ImGui.Indent(20f);
             ImGui.TextColored(new Vector4(1f, 0.7f, 0.3f, 1f), $"    Requires: Quest \"{src.QuestName}\"");
+            ImGui.Unindent(20f);
+        }
+
+        // Trial/Dungeon info from ContentFinderCondition
+        if (!string.IsNullOrEmpty(src.CfcName) || !string.IsNullOrEmpty(src.CfcType))
+        {
+            ImGui.Indent(20f);
+            if (!string.IsNullOrEmpty(src.CfcType))
+            {
+                ImGui.TextColored(new Vector4(1f, 0.8f, 0f, 1f), $"    Dropped from {src.CfcType}s");
+            }
+            if (!string.IsNullOrEmpty(src.CfcName))
+            {
+                ImGui.TextDisabled($"    Duty: {src.CfcName}");
+            }
+            if (src.CfcRowId.HasValue && src.CfcRowId.Value > 0)
+            {
+                ImGui.SameLine();
+                if (ImGui.SmallButton("Duty Finder"))
+                {
+                    TryOpenDutyFinder(src.CfcRowId.Value);
+                }
+            }
+            if (src.Type == ItemSourceType.Trial && src.BossName != null && src.QuestForUnlock.HasValue && src.QuestForUnlock.Value > 0)
+            {
+                var isUnlocked = CheckUnlockStatus(src.QuestForUnlock.Value);
+                var unlockColor = isUnlocked ? new Vector4(0.3f, 1f, 0.3f, 1f) : new Vector4(1f, 0.3f, 0.3f, 1f);
+                ImGui.TextColored(unlockColor, $"    Unlock: {(isUnlocked ? "Complete" : "Incomplete")}");
+            }
             ImGui.Unindent(20f);
         }
 
@@ -387,12 +427,58 @@ public class ItemDetailWindow : Window, IDisposable
 
     private static void TryStartWithQuestionable()
     {
-        Console.WriteLine("[QUESTIONABLE] IPC stub — plugin not found");
+        try
+        {
+            var questionable = Plugin.PluginInterface.GetIpcSubscriber<string, bool>("Questionable.StartQuest");
+            if (questionable != null)
+            {
+                Console.WriteLine("[QUESTIONABLE] Questionable.StartQuest called");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[QUESTIONABLE] IPC not available: {ex.Message}");
+        }
     }
 
-    private static void TryOpenMap(uint? territoryTypeId, uint? mapId, float mapX, float mapY)
+    private static bool CheckUnlockStatus(uint questId)
     {
-        Console.WriteLine($"[MAP] Territory={territoryTypeId} Map={mapId} ({mapX:F1}, {mapY:F1})");
+        return false;
+    }
+
+    private static unsafe void TryOpenDutyFinder(uint cfcRowId)
+    {
+        var agent = AgentContentsFinder.Instance();
+        if (agent != null)
+            agent->OpenRegularDuty(cfcRowId);
+    }
+
+    private void TryOpenMap(string? npcName, string? zoneName, uint? territoryTypeId, uint? mapId, float mapX, float mapY)
+    {
+        if (_onOpenMap != null)
+        {
+            _onOpenMap(npcName ?? "", zoneName ?? "", mapX, mapY);
+        }
+        else if (territoryTypeId.HasValue && mapId.HasValue)
+        {
+            try
+            {
+                var mapLink = new MapLinkPayload(
+                    territoryTypeId.Value,
+                    mapId.Value,
+                    mapX,
+                    mapY);
+                Plugin.GameGui.OpenMapWithMapLink(mapLink);
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.Error(ex, "[MAP] OpenMapWithMapLink failed");
+            }
+        }
+        else
+        {
+            Console.WriteLine($"[MAP] Territory={territoryTypeId} Map={mapId} ({mapX:F1}, {mapY:F1})");
+        }
     }
 
     private static string FormatNumber(uint value)

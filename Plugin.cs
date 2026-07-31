@@ -97,10 +97,10 @@ public class Plugin : IAsyncDalamudPlugin
         configWindow = new ConfigWindow(this);
         mainWindow = new MainWindow(effectiveGlamourService, itemDetailWindow);
 
-        var itemDetailService = new ItemDetailService(DataManager.GameData, sourceService);
+        var itemDetailService = new ItemDetailService(DataManager.GameData);
         var httpClient = new System.Net.Http.HttpClient();
         _universalisService = new UniversalisService(httpClient, "Shiva", "Light");
-        itemDetailWindow = new ItemDetailWindow(itemDetailService, sourceService, _universalisService);
+        itemDetailWindow = new ItemDetailWindow(itemDetailService, sourceService, _universalisService, textureProvider);
         WindowSystem.AddWindow(itemDetailWindow);
 
         contextMenuService = new ContextMenuService(ContextMenu, _gameGui, itemId =>

@@ -1,10 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using GlamSource.Core;
 using Lumina;
 using Lumina.Excel;
 using Lumina.Excel.Sheets;
+using LuminaSupplemental.Excel.Model;
+using LuminaSupplemental.Excel.Services;
 
 namespace GlamSource.Core;
 
@@ -32,17 +35,21 @@ public record ItemSourceDetail(
     uint? MapId,
     IReadOnlyList<CostEntry>? Costs,
     IReadOnlyList<CostEntry>? Materials,
-    string? QuestName);
+    string? QuestName,
+    uint? CfcRowId,
+    string? CfcName,
+    string? CfcType,
+    string? BossName,
+    uint? QuestForUnlock);
 
 public interface IItemDetailService
 {
     ItemDetail? GetDetail(uint itemId);
 }
 
-public sealed class ItemDetailService : IItemDetailService, IDisposable
+public sealed class ItemDetailService : IItemDetailService
 {
     private readonly GameData _gameData;
-    private readonly IItemSourceService _sourceService;
     private readonly Dictionary<uint, ItemDetail?> _cache = new();
 
     private readonly Dictionary<uint, string> _npcNameCache = new();
@@ -54,14 +61,21 @@ public sealed class ItemDetailService : IItemDetailService, IDisposable
         float MapX, float MapY,
         uint TerritoryTypeId, uint MapId);
     private readonly Dictionary<uint, string> _itemNameCache = new();
-    private readonly Dictionary<uint, string> _jobNameCache = new();
 
-    public ItemDetailService(GameData gameData, IItemSourceService sourceService)
+    // ponytail: ItemId → List<ContentFinderCondition RowId> from LuminaSupplemental DungeonDrop
+    private readonly Dictionary<uint, List<uint>> _itemToDutyMap = new();
+
+    // ponytail: CostItemId → (bossName, cfcName, cfcRowId) from "Totem Gear (X)" shop name
+    private readonly Dictionary<uint, (string bossName, string? cfcName, uint? cfcRowId)> _totemCostToBoss = new();
+
+
+
+    public ItemDetailService(GameData gameData)
     {
         _gameData = gameData ?? throw new ArgumentNullException(nameof(gameData));
-        _sourceService = sourceService ?? throw new ArgumentNullException(nameof(sourceService));
 
         BuildCaches();
+        BuildDutyDropCache();
     }
 
     public ItemDetail? GetDetail(uint itemId)
@@ -70,29 +84,11 @@ public sealed class ItemDetailService : IItemDetailService, IDisposable
             return cached;
 
         var itemSheet = _gameData.GetExcelSheet<Item>();
-        if (itemSheet == null)
+        if (itemSheet == null || !itemSheet.TryGetRow(itemId, out var item))
         {
             _cache[itemId] = null;
             return null;
         }
-
-        Item? foundItem = null;
-        foreach (var i in itemSheet)
-        {
-            if (i.RowId == itemId)
-            {
-                foundItem = i;
-                break;
-            }
-        }
-
-        if (foundItem == null)
-        {
-            _cache[itemId] = null;
-            return null;
-        }
-
-        var item = foundItem.Value;
         var name = item.Name.ToString()!;
         var itemLevel = item.LevelEquip;
         var isMarketable = item.ItemSearchCategory.RowId > 0;
@@ -149,7 +145,7 @@ public sealed class ItemDetailService : IItemDetailService, IDisposable
                     null, null, null, null, null, null,
                     null,
                     materials,
-                    null));
+                    null, null, null, null, null, null));
             }
         }
 
@@ -161,7 +157,37 @@ public sealed class ItemDetailService : IItemDetailService, IDisposable
         var specialShopSources = FindSpecialShopSources(itemId);
         results.AddRange(specialShopSources);
 
-        // 4. Quest — Quest Reward
+        // 4. Duty Drop from LuminaSupplemental DungeonDrop
+        if (results.Count == 0 && _itemToDutyMap.TryGetValue(itemId, out var dutyCfcIds))
+        {
+            var cfcSheet = _gameData.GetExcelSheet<ContentFinderCondition>();
+            foreach (var cfcId in dutyCfcIds)
+            {
+                if (cfcSheet != null && cfcSheet.TryGetRow(cfcId, out var cfc))
+                {
+                    var cfcName = cfc.Name.ToString();
+                    var cfcType = cfc.TrialRoulette ? "Trial" : "Dungeon";
+                    results.Add(new ItemSourceDetail(
+                        ItemSourceType.Dungeon,
+                        $"Duty Drop: {cfcName}",
+                        null, null, null, null, null, null, null, null,
+                        null, cfc.RowId, cfcName, cfcType, null, null));
+                }
+            }
+        }
+
+        // 4b. CostItem → Totem boss name from "Totem Gear (X)" shop name
+        if (results.Count == 0 && _totemCostToBoss.TryGetValue(itemId, out var totemInfo))
+        {
+            results.Add(new ItemSourceDetail(
+                ItemSourceType.Trial,
+                $"Trial Drop: {totemInfo.bossName} (Extreme)",
+                null, null, null, null, null, null, null, null,
+                null, totemInfo.cfcRowId, totemInfo.cfcName, "Trial",
+                totemInfo.bossName, null));
+        }
+
+        // 5. Quest — Quest Reward
         if (!results.Any(s => s.Type == ItemSourceType.Quest))
         {
             var questSheet = _gameData.GetExcelSheet<Quest>();
@@ -179,7 +205,7 @@ public sealed class ItemDetailService : IItemDetailService, IDisposable
                                 $"Quest Reward: {questName}",
                                 null, null, null, null, null, null,
                                 null, null,
-                                questName));
+                                questName, null, null, null, null, null));
                             break;
                         }
                     }
@@ -187,6 +213,15 @@ public sealed class ItemDetailService : IItemDetailService, IDisposable
                         break;
                 }
             }
+        }
+
+        // 6. Generic fallback — nothing found
+        if (results.Count == 0)
+        {
+            results.Add(new ItemSourceDetail(
+                ItemSourceType.Other,
+                "No vendor/crafting source found. May drop from duties, raids, or other content.",
+                null, null, null, null, null, null, null, null, null, null, null, null, null, null));
         }
 
         return results;
@@ -244,7 +279,7 @@ public sealed class ItemDetailService : IItemDetailService, IDisposable
                             npc.NpcName, npc.ZoneName,
                             npc.MapX, npc.MapY,
                             npc.TerritoryTypeId, npc.MapId,
-                            costs, null, null));
+                            costs, null, null, null, null, null, null, null));
                     }
                 }
                 else
@@ -253,7 +288,7 @@ public sealed class ItemDetailService : IItemDetailService, IDisposable
                         ItemSourceType.Vendor,
                         "Vendor: Merchant",
                         null, null, null, null, null, null,
-                        costs, null, null));
+                        costs, null, null, null, null, null, null, null));
                 }
             }
         }
@@ -323,9 +358,6 @@ public sealed class ItemDetailService : IItemDetailService, IDisposable
                 {
                     if (receiveItem.Item.RowId == itemId)
                     {
-                        Console.WriteLine($"[SHOP-DIAG] Item {itemId} found in Shop {shopId} '{shopName}'");
-                        Console.WriteLine($"[SHOP-DIAG] UseCurrencyType={shop.UseCurrencyType}");
-
                         var currencyItemIds = new List<CostEntry>();
 
                         foreach (var cost in itemStruct.ItemCosts)
@@ -335,8 +367,6 @@ public sealed class ItemDetailService : IItemDetailService, IDisposable
 
                             var resolvedId = ResolveSpecialShopCostItem(cost.ItemCost.RowId, shop.UseCurrencyType);
                             var resolvedName = GetItemName(resolvedId) ?? "Unknown";
-
-                            Console.WriteLine($"[SHOP-DIAG] Cost: RowId={cost.ItemCost.RowId} resolved={resolvedId} '{resolvedName}' CurrencyCost={cost.CurrencyCost}");
 
                             currencyItemIds.Add(new CostEntry(
                                 resolvedId,
@@ -359,7 +389,7 @@ public sealed class ItemDetailService : IItemDetailService, IDisposable
                             $"Shop: {shopName}",
                             null, null, null, null, null, null,
                             currencyItemIds, null,
-                            questName));
+                            questName, null, null, null, null, null));
                         break;
                     }
                 }
@@ -398,18 +428,6 @@ public sealed class ItemDetailService : IItemDetailService, IDisposable
             }
         }
 
-        // CraftType name cache (for recipe job display names)
-        var craftTypeSheet = _gameData.GetExcelSheet<CraftType>();
-        if (craftTypeSheet != null)
-        {
-            foreach (var ct in craftTypeSheet)
-            {
-                var name = ct.Name.ToString();
-                if (!string.IsNullOrEmpty(name))
-                    _jobNameCache[ct.RowId] = name;
-            }
-        }
-
         // NPC name cache (ENpcResident → singular name)
         var enpcResidentSheet = _gameData.GetExcelSheet<ENpcResident>();
         if (enpcResidentSheet != null)
@@ -438,20 +456,15 @@ public sealed class ItemDetailService : IItemDetailService, IDisposable
         // Level lookup: ENpcBase.RowId → (MapId, Map, X, Z)
         // Note: FFXIV uses X/Z for map coordinates (Z = Y on 2D map)
         var npcLevelLookup = new Dictionary<uint, (uint mapId, Map map, float x, float z)>();
-        int levelCount = 0;
         foreach (var level in levelSheet)
         {
-            if (level.Type != 8)  // Type 8 = ENpc
-                continue;
-            var npcId = level.Object.RowId;
-            if (npcId == 0)
+            if (level.Type != 8 || level.Object.RowId == 0)
                 continue;
 
             var mapId = level.Map.RowId;
             if (mapId != 0)
             {
-                npcLevelLookup[npcId] = (mapId, level.Map.Value, level.X, level.Z);
-                levelCount++;
+                npcLevelLookup[level.Object.RowId] = (mapId, level.Map.Value, level.X, level.Z);
             }
         }
         // ENpcBase → Shop RowIds
@@ -485,6 +498,103 @@ public sealed class ItemDetailService : IItemDetailService, IDisposable
         }
     }
 
+    private void BuildDutyDropCache()
+    {
+        var dungeonDrops = CsvLoader.LoadResource<DungeonDrop>(
+            CsvLoader.DungeonDropItemResourceName,
+            includesHeaders: true,
+            out _,
+            out _,
+            gameData: null);
+
+        foreach (var drop in dungeonDrops)
+        {
+            if (drop.ItemId == 0 || drop.ContentFinderConditionId == 0)
+                continue;
+
+            if (!_itemToDutyMap.ContainsKey(drop.ItemId))
+                _itemToDutyMap[drop.ItemId] = new();
+
+            if (!_itemToDutyMap[drop.ItemId].Contains(drop.ContentFinderConditionId))
+                _itemToDutyMap[drop.ItemId].Add(drop.ContentFinderConditionId);
+        }
+
+        var bossDrops = CsvLoader.LoadResource<DungeonBossDrop>(
+            CsvLoader.DungeonBossDropResourceName,
+            includesHeaders: true,
+            out _,
+            out _,
+            gameData: null);
+
+        foreach (var drop in bossDrops)
+        {
+            if (drop.ItemId == 0 || drop.ContentFinderConditionId == 0)
+                continue;
+
+            if (!_itemToDutyMap.ContainsKey(drop.ItemId))
+                _itemToDutyMap[drop.ItemId] = new();
+
+            if (!_itemToDutyMap[drop.ItemId].Contains(drop.ContentFinderConditionId))
+                _itemToDutyMap[drop.ItemId].Add(drop.ContentFinderConditionId);
+        }
+
+        BuildTotemLookupCache();
+    }
+
+    private static readonly Regex _totemBossRegex = new(@"\((.+)\)");
+
+    private void BuildTotemLookupCache()
+    {
+        var specialShops = _gameData.GetExcelSheet<SpecialShop>()?.ToArray() ?? Array.Empty<SpecialShop>();
+        var cfcSheet = _gameData.GetExcelSheet<ContentFinderCondition>();
+
+        foreach (var shop in specialShops)
+        {
+            var shopName = shop.Name.ToString();
+            if (string.IsNullOrEmpty(shopName))
+                continue;
+
+            foreach (var itemStruct in shop.Item)
+            {
+                foreach (var cost in itemStruct.ItemCosts)
+                {
+                    if (cost.ItemCost.RowId <= 19)
+                        continue;
+
+                    if (shopName.Contains("Totem Gear"))
+                    {
+                        var match = _totemBossRegex.Match(shopName);
+                        if (match.Success)
+                        {
+                            var bossName = match.Groups[1].Value;
+                            var cfcMatch = MatchCfcForBoss(bossName, cfcSheet);
+                            _totemCostToBoss[cost.ItemCost.RowId] = (bossName, cfcMatch?.Name.ToString() ?? null, cfcMatch?.RowId);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private ContentFinderCondition? MatchCfcForBoss(string bossName, ExcelSheet<ContentFinderCondition>? cfcSheet)
+    {
+        if (cfcSheet == null)
+            return null;
+
+        foreach (var cfc in cfcSheet)
+        {
+            if (cfc.RowId == 0)
+                continue;
+            var cfcName = cfc.Name.ToString();
+            if (string.IsNullOrEmpty(cfcName))
+                continue;
+
+            if (cfcName.Contains(bossName) && (cfcName.Contains("Extreme") || cfcName.Contains("Minstrel")))
+                return cfc;
+        }
+        return null;
+    }
+
     private static float ToMapCoordinate(float raw, ushort sizeFactor, short offset)
     {
         var scale = sizeFactor / 100.0f;
@@ -504,15 +614,10 @@ public sealed class ItemDetailService : IItemDetailService, IDisposable
             return 0;
 
         var itemSheet = _gameData.GetExcelSheet<Item>();
-        if (itemSheet == null)
+        if (itemSheet == null || !itemSheet.TryGetRow(itemId, out var item))
             return 0;
 
-        foreach (var item in itemSheet)
-        {
-            if (item.RowId == itemId)
-                return item.Icon;
-        }
-        return 0;
+        return item.Icon;
     }
 
     private string? GetQuestName(uint questId)
@@ -521,38 +626,26 @@ public sealed class ItemDetailService : IItemDetailService, IDisposable
             return null;
 
         var questSheet = _gameData.GetExcelSheet<Quest>();
-        if (questSheet == null)
+        if (questSheet == null || !questSheet.TryGetRow(questId, out var quest))
             return null;
 
-        foreach (var quest in questSheet)
-        {
-            if (quest.RowId == questId)
-            {
-                return quest.Name.ToString();
-            }
-        }
-        return null;
+        return quest.Name.ToString();
     }
 
-    private string GetJobName(uint craftTypeRowId)
+    // ponytail: single lookup, Lumina TryGetRow instead of foreach
+    private (string? name, string? type)? GetCfcInfo(uint cfcId)
     {
-        if (_jobNameCache.TryGetValue(craftTypeRowId, out var cached))
-            return cached;
+        if (cfcId == 0)
+            return null;
 
-        var craftTypeSheet = _gameData.GetExcelSheet<CraftType>();
-        if (craftTypeSheet != null)
-        {
-            var ct = craftTypeSheet.GetRow(craftTypeRowId);
-            var name = ct.Name.ToString();
-            if (!string.IsNullOrEmpty(name))
-            {
-                _jobNameCache[craftTypeRowId] = name;
-                return name;
-            }
-        }
+        var cfcSheet = _gameData.GetExcelSheet<ContentFinderCondition>();
+        if (cfcSheet == null)
+            return null;
 
-        _jobNameCache[craftTypeRowId] = "Unknown";
-        return "Unknown";
+        if (cfcSheet.TryGetRow(cfcId, out var cfc))
+            return (cfc.Name.ToString(), cfc.TrialRoulette ? "Trial" : "Dungeon");
+
+        return null;
     }
 
     private string GetClassJobAbbreviation(uint craftTypeRowId)
@@ -598,8 +691,5 @@ public sealed class ItemDetailService : IItemDetailService, IDisposable
         return string.Join(",", parts.Select(p => $"{p.id}:{p.amount}"));
     }
 
-    public void Dispose()
-    {
-        // No unmanaged resources, but interface contract
-    }
 }
+
