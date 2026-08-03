@@ -832,10 +832,11 @@ public sealed class ItemDetailService : IItemDetailService
         return null;
     }
 
-    private static float ToMapCoordinate(float raw, ushort sizeFactor, short offset)
+    private static float ToMapCoordinate(float val, ushort sizeFactor, short offset)
     {
-        var scale = sizeFactor / 100.0f;
-        return (raw / 1000.0f * scale) + (41.0f / scale) / 2.0f + 1.0f;
+        var c = sizeFactor / 100.0f;
+        val = (val + offset) * c;
+        return (41.0f / c * ((val + 1024.0f) / 2048.0f)) + 1;
     }
 
     private string? GetItemName(uint itemId)

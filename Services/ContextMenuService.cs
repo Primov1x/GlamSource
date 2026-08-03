@@ -62,6 +62,8 @@ public sealed class ContextMenuService : IDisposable
         args.AddMenuItem(new MenuItem
         {
             Name = "Item Source",
+            PrefixChar = 'G',
+            PrefixColor = 52,
             OnClicked = _ => _onItemClicked(itemId.Value),
         });
     }
