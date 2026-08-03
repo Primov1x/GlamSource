@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO.Compression;
 using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -8,7 +7,6 @@ using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Interface.Windowing;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using GlamSource.Core;
-using Newtonsoft.Json.Linq;
 
 namespace GlamSource.Windows;
 
@@ -16,9 +14,6 @@ public class MainWindow : Window, IDisposable
 {
     private readonly IGlamourService _glamourService;
     private readonly ItemDetailWindow? _itemDetailWindow;
-    private bool _lastNoTargetLogged = false;
-    private int _lastGlamourerIndex = -1;
-    private string? _lastGlamourerEc;
     private string _lookupText = "";
     private IReadOnlyList<(uint id, string name)>? _lookupResults;
 
@@ -39,14 +34,7 @@ public class MainWindow : Window, IDisposable
 
     private static string FormatSource(ItemSource src)
     {
-        return src.Type switch
-        {
-            ItemSourceType.Crafted => src.Description,
-            ItemSourceType.Vendor => src.Description,
-            ItemSourceType.Quest => "Quest",
-            ItemSourceType.Dungeon or ItemSourceType.Trial or ItemSourceType.Raid => src.Description,
-            _ => src.Description
-        };
+        return src.Type == ItemSourceType.Quest ? "Quest" : src.Description;
     }
 
     private static Vector4 GetSourceColor(ItemSourceType type)
@@ -74,89 +62,8 @@ public class MainWindow : Window, IDisposable
             || ok == (int)ObjectKind.EventNpc;
     }
 
-    private (Glamourer.Api.Enums.GlamourerApiEc ec, JObject? json) CallGlamourerState(int objectIndex, bool useNameFallback)
-    {
-        if (useNameFallback)
-        {
-            var stateName = new Glamourer.Api.IpcSubscribers.GetStateName(Plugin.PluginInterface);
-            var playerChar = Plugin.TargetManager.Target as Dalamud.Game.ClientState.Objects.SubKinds.IPlayerCharacter;
-            string? playerName = playerChar?.Name.ToString();
-            if (string.IsNullOrEmpty(playerName))
-                return (Glamourer.Api.Enums.GlamourerApiEc.ActorNotFound, null);
-
-            return stateName.Invoke(playerName, 0);
-        }
-        else
-        {
-            var getState = new Glamourer.Api.IpcSubscribers.GetState(Plugin.PluginInterface);
-            return getState.Invoke(objectIndex, 0);
-        }
-    }
-
     public override void Draw()
     {
-        System.Console.WriteLine($"[DIAG] Draw() called, slots={_glamourService.GetTargetEquipment().Count}");
-        try
-        {
-            var target = Plugin.TargetManager?.Target;
-            if (target is not null && IsValidTarget(target) && target.Address != nint.Zero)
-            {
-                _lastNoTargetLogged = false;
-                var objectIndex = (int)target.ObjectIndex;
-                var getStateBase64 = new Glamourer.Api.IpcSubscribers.GetStateBase64(Plugin.PluginInterface);
-                var (ec, base64) = getStateBase64.Invoke(objectIndex, 0);
-                var ecStr = ec.ToString();
-
-                if (objectIndex != _lastGlamourerIndex || ecStr != _lastGlamourerEc)
-                {
-                    _lastGlamourerIndex = objectIndex;
-                    _lastGlamourerEc = ecStr;
-
-                    if (ec == Glamourer.Api.Enums.GlamourerApiEc.Success && !string.IsNullOrEmpty(base64))
-                    {
-                        var bytes = Convert.FromBase64String(base64);
-                        string json;
-                        try
-                        {
-                            using var ms = new System.IO.MemoryStream(bytes);
-                            using var gz = new GZipStream(ms, CompressionMode.Decompress);
-                            using var reader = new System.IO.StreamReader(gz);
-                            json = reader.ReadToEnd();
-                        }
-                        catch
-                        {
-                            json = System.Text.Encoding.UTF8.GetString(bytes);
-                        }
-                        Plugin.Log.Information("[Glamourer] Decoded length={Len} preview={Preview}",
-                            json.Length,
-                            json.Length > 500 ? json[..500] : json);
-                    }
-                    else
-                    {
-                        Plugin.Log.Information("[Glamourer] ec={Ec}", ec);
-                    }
-                }
-
-                if (ec == Glamourer.Api.Enums.GlamourerApiEc.ActorNotHuman)
-                {
-                    Plugin.Log?.Warning("[DEBUG-Glamourer] Target is not human (ObjectKind={ObjectKind}, name={Name})",
-                        target.ObjectKind, target.Name.ToString());
-                }
-            }
-            else
-            {
-                if (!_lastNoTargetLogged)
-                {
-                    Plugin.Log?.Information("[DEBUG-Glamourer] No valid target (null/invalid/not character)");
-                    _lastNoTargetLogged = true;
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            Plugin.Log?.Error(ex, "[Glamourer] GetStateBase64 failed");
-        }
-
         ImGui.TextColored(new Vector4(0.9f, 0.7f, 0.2f, 1f), "Item Lookup");
         ImGui.SetNextItemWidth(300f);
         if (ImGui.InputTextWithHint("##item_lookup", "Search any item...",

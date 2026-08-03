@@ -306,6 +306,7 @@ public sealed class ItemDetailService : IItemDetailService
                     continue;
 
                 var npcInfos = _shopNpcLookup.GetValueOrDefault(shopId);
+                Console.WriteLine($"[NPC-DIAG] GilShop match: shopId={shopId} inLookup={npcInfos != null} itemId={itemId}");
 
                 if (npcInfos != null)
                 {

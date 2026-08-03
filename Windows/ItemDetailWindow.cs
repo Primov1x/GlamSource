@@ -388,7 +388,7 @@ public class ItemDetailWindow : Window, IDisposable
                     ImGui.TextColored(new Vector4(1f, 0.3f, 0.3f, 1f), $"    Unlock: Incomplete");
                     if (ImGui.SmallButton("Start with Questionable"))
                     {
-                        TryStartWithQuestionable();
+                        TryStartWithQuestionable(src.QuestForUnlock.Value);
                     }
                 }
             }
@@ -409,7 +409,7 @@ public class ItemDetailWindow : Window, IDisposable
                 ImGui.TextColored(new Vector4(1f, 0.3f, 0.3f, 1f), $"    Quest Incomplete");
                 if (ImGui.SmallButton("Start with Questionable"))
                 {
-                    TryStartWithQuestionable();
+                    TryStartWithQuestionable(src.QuestForUnlock.Value);
                 }
             }
             ImGui.Unindent(20f);
@@ -458,23 +458,37 @@ public class ItemDetailWindow : Window, IDisposable
         }
     }
 
-    private static void TryStartWithQuestionable()
+    private static void TryStartWithQuestionable(uint questRowId)
     {
         try
         {
-            var questionable = Plugin.PluginInterface.GetIpcSubscriber<string, bool>("Questionable.StartQuest");
-            var hasFunc = questionable.HasFunction;
-            Console.WriteLine($"[QUESTIONABLE] StartQuest available={hasFunc}");
+            var questionable = Plugin.PluginInterface.GetIpcSubscriber<string, bool, bool>("Questionable.StartQuest");
+            if (questionable.HasFunction)
+            {
+                var result = questionable.InvokeFunc(questRowId.ToString(), false);
+                Console.WriteLine($"[QUESTIONABLE] StartQuest questId={questRowId} result={result}");
+            }
+            else
+            {
+                Console.WriteLine($"[QUESTIONABLE] StartQuest IPC not available");
+            }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[QUESTIONABLE] IPC not available: {ex.Message}");
+            Console.WriteLine($"[QUESTIONABLE] IPC call failed: {ex.Message}");
         }
     }
 
     private static bool CheckUnlockStatus(uint questId)
     {
-        return QuestManager.IsQuestComplete(questId);
+        try
+        {
+            return QuestManager.IsQuestComplete(questId);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static unsafe void TryOpenDutyFinder(uint cfcRowId)

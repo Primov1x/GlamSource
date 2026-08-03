@@ -6,7 +6,7 @@ using Dalamud.Interface.Windowing;
 using GlamSource.Core;
 using GlamSource.Services;
 using GlamSource.Windows;
-using GlamSource.Windows.Helpers;
+
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -27,7 +27,6 @@ public class Plugin : IAsyncDalamudPlugin
     [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
     [PluginService] internal static IObjectTable ObjectTable { get; private set; } = null!;
 
-    public static IGlamourService? GlamourServiceOverride { get; set; }
 
     private readonly IDalamudPluginInterface _pluginInterface;
     private readonly ITextureProvider _textureProvider;
@@ -46,13 +45,13 @@ public class Plugin : IAsyncDalamudPlugin
 
     public readonly WindowSystem WindowSystem = new("GlamSource");
     public readonly GameDataService GameDataService;
-    public readonly MainWindowHelpers MainWindowHelpers;
 
     private readonly ConfigWindow configWindow;
     private readonly MainWindow mainWindow;
     private readonly ContextMenuService contextMenuService;
     private readonly ItemDetailWindow itemDetailWindow;
     private readonly UniversalisService? _universalisService;
+    public static IGlamourService? GlamourServiceOverride;
 
     public Plugin(
         IDalamudPluginInterface pluginInterface,
@@ -88,14 +87,13 @@ public class Plugin : IAsyncDalamudPlugin
 
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         var sourceService = new LuminaItemSourceService(DataManager.GameData);
-        var effectiveGlamourService = GlamourServiceOverride ?? new GameDataService(DataManager, TargetManager, ObjectTable, GameGui, sourceService);
-        GameDataService = effectiveGlamourService is GameDataService gds ? gds : null!;
-        MainWindowHelpers = new MainWindowHelpers(GameDataService);
+        var gameDataService = new GameDataService(DataManager, TargetManager, ObjectTable, GameGui, sourceService);
+        GameDataService = gameDataService;
 
         var goatImagePath = Path.Join(PluginInterface.AssemblyLocation.Directory?.FullName, "goat.png");
 
         configWindow = new ConfigWindow(this);
-        mainWindow = new MainWindow(effectiveGlamourService, itemDetailWindow);
+        mainWindow = new MainWindow(gameDataService, itemDetailWindow);
 
         var itemDetailService = new ItemDetailService(DataManager.GameData);
         var httpClient = new System.Net.Http.HttpClient();

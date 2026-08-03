@@ -12,6 +12,7 @@ using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using Lumina.Excel;
 using Lumina.Excel.Sheets;
+using Item = Lumina.Excel.Sheets.Item;
 using GlamSource.Core;
 
 namespace GlamSource;
@@ -23,8 +24,8 @@ public unsafe class GameDataService : IGlamourService
     private readonly IObjectTable _objectTable;
     private readonly IItemSourceService _sourceService;
     private readonly IGameGui _gameGui;
-    private bool _debugLogged;
     private Dictionary<EquipmentSlotType, List<Item>>? _itemsBySlot;
+    private bool _debugLogged;
 
     public GameDataService(IDataManager dataManager, ITargetManager targetManager, IObjectTable objectTable, IGameGui gameGui, IItemSourceService? sourceService = null)
     {
@@ -33,35 +34,7 @@ public unsafe class GameDataService : IGlamourService
         _objectTable = objectTable;
         _gameGui = gameGui;
         _sourceService = sourceService ?? new LuminaItemSourceService(dataManager.GameData);
-        FindAshShortbow();
         BuildItemSlotCache();
-    }
-
-    private void FindAshShortbow()
-    {
-        try
-        {
-            var sheet = _dataManager.GetExcelSheet<Item>();
-            if (sheet == null) return;
-            foreach (var item in sheet)
-            {
-                if (item.Name.ToString().Contains("Ash Shortbow"))
-                {
-                    Plugin.Log.Information("[DEBUG-AshShortbow] RowId={RowId} Name={Name} ModelMain={ModelMain} (raw={RawMain}) ModelSub={ModelSub} (raw={RawSub})",
-                        item.RowId,
-                        item.Name.ToString(),
-                        item.ModelMain,
-                        item.ModelMain,
-                        item.ModelSub,
-                        item.ModelSub);
-                    break;
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            Plugin.Log.Error(ex, "[DEBUG-AshShortbow] Failed");
-        }
     }
 
     private void BuildItemSlotCache()
