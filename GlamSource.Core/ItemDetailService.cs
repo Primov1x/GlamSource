@@ -114,8 +114,8 @@ public sealed class ItemDetailService : IItemDetailService
             {
                 var jobNames = group.Select(r => GetClassJobAbbreviation(r.CraftType.RowId)).Distinct();
                 var jobList = string.Join(", ", jobNames);
-                var levelTableRowId = group.First().RecipeLevelTable.RowId;
-                var desc = $"Crafted Lv.{levelTableRowId} ({jobList})";
+                var crafterLevel = group.First().RecipeLevelTable.Value.ClassJobLevel;
+                var desc = $"Crafted Lv.{crafterLevel} ({jobList})";
 
                 var ingredientArray = group.First().Ingredient.Cast<dynamic>().ToArray();
                 var amountArray = group.First().AmountIngredient.Cast<dynamic>().ToArray();
@@ -244,7 +244,7 @@ public sealed class ItemDetailService : IItemDetailService
                                 $"Quest Reward: {questName}",
                                 null, null, null, null, null, null,
                                 null, null,
-                                questName, null, null, null, null, null, null));
+                                questName, null, null, null, null, quest.RowId, null));
                             break;
                         }
                     }
