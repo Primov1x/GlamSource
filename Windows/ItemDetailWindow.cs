@@ -462,10 +462,10 @@ public class ItemDetailWindow : Window, IDisposable
     {
         try
         {
-            var questionable = Plugin.PluginInterface.GetIpcSubscriber<string, bool, bool>("Questionable.StartQuest");
+            var questionable = Plugin.PluginInterface.GetIpcSubscriber<string, bool>("Questionable.StartQuest");
             if (questionable.HasFunction)
             {
-                var result = questionable.InvokeFunc(questRowId.ToString(), false);
+                var result = questionable.InvokeFunc(questRowId.ToString());
                 Plugin.Log.Information("[QUESTIONABLE] StartQuest questId={questRowId} result={result}");
             }
             else
@@ -596,6 +596,7 @@ public class ItemDetailWindow : Window, IDisposable
     {
     }
 }
+
 
 
 
