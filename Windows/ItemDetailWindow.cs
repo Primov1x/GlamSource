@@ -466,16 +466,16 @@ public class ItemDetailWindow : Window, IDisposable
             if (questionable.HasFunction)
             {
                 var result = questionable.InvokeFunc(questRowId.ToString(), false);
-                Console.WriteLine($"[QUESTIONABLE] StartQuest questId={questRowId} result={result}");
+                Plugin.Log.Information("[QUESTIONABLE] StartQuest questId={questRowId} result={result}");
             }
             else
             {
-                Console.WriteLine($"[QUESTIONABLE] StartQuest IPC not available");
+                Plugin.Log.Information("[QUESTIONABLE] StartQuest IPC not available");
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[QUESTIONABLE] IPC call failed: {ex.Message}");
+            Plugin.Log.Information("[QUESTIONABLE] IPC call failed: {ex.Message}");
         }
     }
 
@@ -596,5 +596,6 @@ public class ItemDetailWindow : Window, IDisposable
     {
     }
 }
+
 
 
