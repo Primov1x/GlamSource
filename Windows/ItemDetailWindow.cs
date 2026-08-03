@@ -271,7 +271,7 @@ public class ItemDetailWindow : Window, IDisposable
             if (src.Type == ItemSourceType.Crafted)
             {
                 ImGui.Indent(20f);
-                if (ImGui.SmallButton("Open Crafting Log##crafting"))
+                if (ImGui.SmallButton($"Open Crafting Log##craft_{sourceIdx}"))
                 {
                     TryOpenCraftingLog(_showingItemId ?? 0);
                 }
@@ -327,7 +327,7 @@ public class ItemDetailWindow : Window, IDisposable
             if (src.MapX.HasValue && src.MapY.HasValue)
             {
                 ImGui.SameLine();
-                if (ImGui.SmallButton($"Open Map##map_{src.Type}"))
+                if (ImGui.SmallButton($"Open Map##map_{sourceIdx}"))
                 {
                     TryOpenMap(src.NpcName, src.ZoneName, src.TerritoryTypeId, src.MapId, src.MapX.Value, src.MapY.Value);
                 }
@@ -354,7 +354,7 @@ public class ItemDetailWindow : Window, IDisposable
             if (src.CfcRowId.HasValue && src.CfcRowId.Value > 0)
             {
                 ImGui.SameLine();
-                if (ImGui.SmallButton("Duty Finder"))
+                if (ImGui.SmallButton($"Duty Finder##duty_{sourceIdx}"))
                 {
                     TryOpenDutyFinder(src.CfcRowId.Value);
                 }
@@ -386,7 +386,7 @@ public class ItemDetailWindow : Window, IDisposable
                 else
                 {
                     ImGui.TextColored(new Vector4(1f, 0.3f, 0.3f, 1f), $"    Unlock: Incomplete");
-                    if (ImGui.SmallButton("Start with Questionable"))
+                    if (ImGui.SmallButton($"Start with Questionable##quest_{sourceIdx}"))
                     {
                         TryStartWithQuestionable(src.QuestForUnlock.Value);
                     }
@@ -407,7 +407,7 @@ public class ItemDetailWindow : Window, IDisposable
             else
             {
                 ImGui.TextColored(new Vector4(1f, 0.3f, 0.3f, 1f), $"    Quest Incomplete");
-                if (ImGui.SmallButton("Start with Questionable"))
+                if (ImGui.SmallButton($"Start with Questionable##quest_{sourceIdx}"))
                 {
                     TryStartWithQuestionable(src.QuestForUnlock.Value);
                 }
@@ -596,3 +596,5 @@ public class ItemDetailWindow : Window, IDisposable
     {
     }
 }
+
+
