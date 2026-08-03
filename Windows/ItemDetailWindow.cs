@@ -465,7 +465,8 @@ public class ItemDetailWindow : Window, IDisposable
             var questionable = Plugin.PluginInterface.GetIpcSubscriber<string, bool>("Questionable.StartQuest");
             if (questionable.HasFunction)
             {
-                questionable.InvokeFunc(questRowId.ToString());
+                var questId = (uint)(questRowId & 0xFFFF);
+                var qResult = questionable.InvokeFunc(questId.ToString()); Plugin.Log.Information("[QUESTIONABLE] questRowId={QRow} questId={QId} result={R}", questRowId, questId, qResult);
                 Plugin.Log.Information("[QUESTIONABLE] StartQuest questId={QuestId}", questRowId);
             }
             else
@@ -596,6 +597,7 @@ public class ItemDetailWindow : Window, IDisposable
     {
     }
 }
+
 
 
 
