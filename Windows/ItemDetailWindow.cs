@@ -502,6 +502,17 @@ public class ItemDetailWindow : Window, IDisposable
     {
         try
         {
+            var stop = Plugin.PluginInterface.GetIpcSubscriber<string, bool>("Questionable.Stop");
+            if (stop.HasFunction)
+                stop.InvokeFunc("GlamSource");
+        }
+        catch (Exception ex)
+        {
+            Plugin.Log.Warning(ex, "[QUESTIONABLE] Stop failed for {QRow}", questRowId);
+        }
+
+        try
+        {
             var questionable = Plugin.PluginInterface.GetIpcSubscriber<string, bool>("Questionable.StartQuest");
             if (questionable.HasFunction)
             {
