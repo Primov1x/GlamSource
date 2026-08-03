@@ -475,7 +475,7 @@ public class ItemDetailWindow : Window, IDisposable
         }
         catch (Exception ex)
         {
-            Plugin.Log.Information("[QUESTIONABLE] IPC call failed: {ex.Message}");
+            Plugin.Log.Error(ex, "[QUESTIONABLE] IPC call failed");
         }
     }
 
@@ -596,6 +596,7 @@ public class ItemDetailWindow : Window, IDisposable
     {
     }
 }
+
 
 
 
