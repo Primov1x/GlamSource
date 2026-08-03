@@ -385,10 +385,22 @@ public class ItemDetailWindow : Window, IDisposable
                 }
                 else
                 {
-                    ImGui.TextColored(new Vector4(1f, 0.3f, 0.3f, 1f), $"    Unlock: Incomplete");
-                    if (ImGui.SmallButton($"Start with Questionable##quest_{sourceIdx}"))
+                    var isLocked = IsQuestLockedByQuestionable(src.QuestForUnlock.Value);
+                    if (isLocked)
                     {
-                        TryStartWithQuestionable(src.QuestForUnlock.Value);
+                        ImGui.TextColored(new Vector4(1f, 0.5f, 0f, 1f), "    Unlock: Quest locked (prerequisites incomplete)");
+                        if (ImGui.SmallButton($"Start Quest Chain##quest_{sourceIdx}"))
+                        {
+                            TryStartWithQuestionable(src.QuestForUnlock.Value);
+                        }
+                    }
+                    else
+                    {
+                        ImGui.TextColored(new Vector4(1f, 0.3f, 0.3f, 1f), $"    Unlock: Incomplete");
+                        if (ImGui.SmallButton($"Start with Questionable##quest_{sourceIdx}"))
+                        {
+                            TryStartWithQuestionable(src.QuestForUnlock.Value);
+                        }
                     }
                 }
             }
@@ -406,10 +418,22 @@ public class ItemDetailWindow : Window, IDisposable
             }
             else
             {
-                ImGui.TextColored(new Vector4(1f, 0.3f, 0.3f, 1f), $"    Quest Incomplete");
-                if (ImGui.SmallButton($"Start with Questionable##quest_{sourceIdx}"))
+                var isLocked = IsQuestLockedByQuestionable(src.QuestForUnlock.Value);
+                if (isLocked)
                 {
-                    TryStartWithQuestionable(src.QuestForUnlock.Value);
+                    ImGui.TextColored(new Vector4(1f, 0.5f, 0f, 1f), "    Quest: Locked (prerequisites incomplete)");
+                    if (ImGui.SmallButton($"Start Quest Chain##quest_{sourceIdx}"))
+                    {
+                        TryStartWithQuestionable(src.QuestForUnlock.Value);
+                    }
+                }
+                else
+                {
+                    ImGui.TextColored(new Vector4(1f, 0.3f, 0.3f, 1f), $"    Quest: Incomplete");
+                    if (ImGui.SmallButton($"Start with Questionable##quest_{sourceIdx}"))
+                    {
+                        TryStartWithQuestionable(src.QuestForUnlock.Value);
+                    }
                 }
             }
             ImGui.Unindent(20f);
@@ -456,6 +480,22 @@ public class ItemDetailWindow : Window, IDisposable
         {
             Console.WriteLine($"[CRAFTING] Failed to open RecipeNote for item {itemId}: {ex.Message}");
         }
+    }
+
+    private static bool IsQuestLockedByQuestionable(uint questRowId)
+    {
+        try
+        {
+            var questId = (uint)(questRowId & 0xFFFF);
+            var lockCheck = Plugin.PluginInterface.GetIpcSubscriber<string, bool>("Questionable.IsQuestLocked");
+            if (lockCheck.HasFunction)
+                return lockCheck.InvokeFunc(questId.ToString());
+        }
+        catch (Exception ex)
+        {
+            Plugin.Log.Error(ex, "[QUESTIONABLE] IsQuestLocked check failed for {QRow}", questRowId);
+        }
+        return false;
     }
 
     private static void TryStartWithQuestionable(uint questRowId)
