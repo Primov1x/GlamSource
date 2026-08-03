@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
 
+using Dalamud.Interface.Textures;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
@@ -180,6 +181,14 @@ public class ItemDetailWindow : Window, IDisposable
 
     private void DrawItemHeader(ItemDetail detail)
     {
+        if (_textureProvider != null && detail.IconId > 0)
+        {
+            var iconTexture = _textureProvider.GetFromGameIcon(new GameIconLookup(detail.IconId)).GetWrapOrEmpty();
+            var iconSize = new Vector2(ImGui.GetTextLineHeight());
+            ImGui.Image(iconTexture.Handle, iconSize);
+            ImGui.SameLine();
+        }
+
         ImGui.TextColored(new Vector4(1f, 0.85f, 0.3f, 1f), detail.Name);
         ImGui.SameLine();
         ImGui.TextDisabled($"({detail.ItemId})");
@@ -263,6 +272,13 @@ public class ItemDetailWindow : Window, IDisposable
             foreach (var mat in src.Materials)
             {
                 var status = mat.ItemId > 19 ? GetInventoryStatus(mat.ItemId, (int)mat.Count) : "";
+                if (_textureProvider != null && mat.IconId > 0)
+                {
+                    var iconTexture = _textureProvider.GetFromGameIcon(new GameIconLookup(mat.IconId)).GetWrapOrEmpty();
+                    var iconSize = new Vector2(ImGui.GetTextLineHeight() * 0.75f);
+                    ImGui.Image(iconTexture.Handle, iconSize);
+                    ImGui.SameLine();
+                }
                 ImGui.TextDisabled($"      \u2022 {mat.Name} x{FormatNumber(mat.Count)}{status}");
             }
             ImGui.Unindent(20f);
@@ -294,6 +310,13 @@ public class ItemDetailWindow : Window, IDisposable
                 else
                 {
                     var status = cost.ItemId > 19 ? GetInventoryStatus(cost.ItemId, (int)cost.Count) : "";
+                    if (_textureProvider != null && cost.IconId > 0)
+                    {
+                        var iconTexture = _textureProvider.GetFromGameIcon(new GameIconLookup(cost.IconId)).GetWrapOrEmpty();
+                        var iconSize = new Vector2(ImGui.GetTextLineHeight() * 0.75f);
+                        ImGui.Image(iconTexture.Handle, iconSize);
+                        ImGui.SameLine();
+                    }
                     ImGui.TextDisabled($"      \u2022 {FormatNumber(cost.Count)} {cost.Name}{status}");
 
                     var showInfoButton = cost.ItemId > 19

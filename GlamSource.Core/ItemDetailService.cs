@@ -430,12 +430,30 @@ public sealed class ItemDetailService : IItemDetailService
                             ? $"{exchangeType} Exchange: {shopName}"
                             : $"Shop: {shopName}";
 
-                        allSources.Add(new ItemSourceDetail(
-                            ItemSourceType.Vendor,
-                            displayDesc,
-                            null, null, null, null, null, null,
-                            currencyItemIds, null,
-                            questName, null, null, null, null, questForUnlock, null));
+                        var npcInfos = _shopNpcLookup.GetValueOrDefault(shopId);
+                        if (npcInfos != null)
+                        {
+                            foreach (var npc in npcInfos)
+                            {
+                                allSources.Add(new ItemSourceDetail(
+                                    ItemSourceType.Vendor,
+                                    displayDesc,
+                                    npc.NpcName, npc.ZoneName,
+                                    npc.MapX, npc.MapY,
+                                    npc.TerritoryTypeId, npc.MapId,
+                                    currencyItemIds, null,
+                                    questName, null, null, null, null, questForUnlock, null));
+                            }
+                        }
+                        else
+                        {
+                            allSources.Add(new ItemSourceDetail(
+                                ItemSourceType.Vendor,
+                                displayDesc,
+                                null, null, null, null, null, null,
+                                currencyItemIds, null,
+                                questName, null, null, null, null, questForUnlock, null));
+                        }
                         break;
                     }
                 }
@@ -542,6 +560,13 @@ public sealed class ItemDetailService : IItemDetailService
                     npcName, zoneName, mapX, mapY, territoryTypeId, mapId));
             }
         }
+
+        // SpecialShop → NPC: SpecialShop sheet has no NPC field in Lumina.
+        // PreHandler.Target links to SpecialShop but has no ENpcBase.
+        // TopicSelect.Shop[] links to SpecialShop but has no ENpcBase.
+        // The reference plugin (ItemVendorLocation) resolves NPC via game events
+        // (Interactable/EventMgr) when the shop UI opens — not from static sheets.
+        // ponytail: skip for now; shop name alone is sufficient for source display.
     }
 
     private void BuildDutyDropCache()

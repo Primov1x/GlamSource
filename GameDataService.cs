@@ -26,6 +26,7 @@ public unsafe class GameDataService : IGlamourService
     private readonly IGameGui _gameGui;
     private Dictionary<EquipmentSlotType, List<Item>>? _itemsBySlot;
     private bool _debugLogged;
+    private readonly Dictionary<ulong, (IReadOnlyList<EquipmentSlot> data, ulong targetGameObjectId)> _examineCache = new();
 
     public GameDataService(IDataManager dataManager, ITargetManager targetManager, IObjectTable objectTable, IGameGui gameGui, IItemSourceService? sourceService = null)
     {
@@ -91,14 +92,10 @@ public unsafe class GameDataService : IGlamourService
         if (target == null || target.Address == nint.Zero)
             return Array.Empty<EquipmentSlot>();
 
-        var localPlayer = _objectTable.LocalPlayer;
-        Plugin.Log.Information("[EQUIP] target.Id={TId} lp.Id={LpId} match={M}",
-            target.GameObjectId,
-            localPlayer?.GameObjectId ?? 0,
-            localPlayer != null && target.GameObjectId == localPlayer.GameObjectId);
-
-        if (localPlayer != null && target.GameObjectId == localPlayer.GameObjectId)
+        if (_objectTable.LocalPlayer != null && target.GameObjectId == _objectTable.LocalPlayer.GameObjectId)
             return GetOwnEquipment();
+
+        var targetId = target.GameObjectId;
 
         var examineAddon = _gameGui.GetAddonByName("CharacterInspect");
         if (examineAddon != nint.Zero)
@@ -107,6 +104,9 @@ public unsafe class GameDataService : IGlamourService
             if (examineData.Count > 0)
                 return examineData;
         }
+
+        if (_examineCache.TryGetValue(targetId, out var cached))
+            return cached.data;
 
         return GetDrawDataEquipment(target);
     }
@@ -173,6 +173,9 @@ public unsafe class GameDataService : IGlamourService
         if (container == null)
             return Array.Empty<EquipmentSlot>();
 
+        var target = _targetManager.Target;
+        var targetId = target?.GameObjectId ?? 0;
+
         var result = new List<EquipmentSlot>();
         var itemSheet = _dataManager.GetExcelSheet<Item>();
 
@@ -192,6 +195,9 @@ public unsafe class GameDataService : IGlamourService
 
             result.Add(CreateSlot(slotType.Value, itemId, itemName, glamourId, glamourName));
         }
+
+        if (targetId > 0)
+            _examineCache[targetId] = (result.AsReadOnly(), targetId);
 
         return result;
     }
