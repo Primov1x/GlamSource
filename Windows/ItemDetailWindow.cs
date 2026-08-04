@@ -276,9 +276,14 @@ public class ItemDetailWindow : Window, IDisposable
             .Where(x => x.source.Type == ItemSourceType.Vendor)
             .ToList();
 
+        var craftedSources = detail.Sources
+            .Select((s, i) => (source: s, index: i))
+            .Where(x => x.source.Type == ItemSourceType.Crafted)
+            .ToList();
+
         var otherSources = detail.Sources
             .Select((s, i) => (source: s, index: i))
-            .Where(x => x.source.Type != ItemSourceType.Vendor)
+            .Where(x => x.source.Type != ItemSourceType.Vendor && x.source.Type != ItemSourceType.Crafted)
             .ToList();
 
         foreach (var (src, idx) in otherSources)
@@ -287,36 +292,36 @@ public class ItemDetailWindow : Window, IDisposable
             DrawSourceCard(src, idx, fallbackStyle.Item1);
         }
 
+        if (craftedSources.Count > 0)
+        {
+            var craftedGroups = craftedSources
+                .GroupBy(s => GetMaterialKey(s.source))
+                .ToList();
+
+            for (int g = 0; g < craftedGroups.Count; g++)
+            {
+                var group = craftedGroups[g];
+                var sources = group.Select(x => x.source).ToList();
+                DrawCraftedCard(sources, g);
+            }
+        }
+
         if (vendorSources.Count > 0)
         {
             var vendorGroups = vendorSources
-                .GroupBy(x => x.source.Description)
+                .GroupBy(s => GetCostKey(s.source))
                 .ToList();
 
             for (int g = 0; g < vendorGroups.Count; g++)
             {
                 var group = vendorGroups[g];
-                var npcs = group.ToList();
-                DrawSourceCard(npcs[0].source, npcs[0].index, SourceStyles[ItemSourceType.Vendor].Item1);
-
-                if (npcs.Count > 1)
-                {
-                    var moreLabel = npcs.Count == 2 ? "1 more vendor" : $"{npcs.Count - 1} more vendors";
-                    if (ImGui.TreeNode($"{moreLabel}##vendor_{g}"))
-                    {
-                        for (int i = 1; i < npcs.Count; i++)
-                        {
-                            DrawNpcRow(npcs[i].source, npcs[i].index, i);
-                            ImGui.Spacing();
-                        }
-                        ImGui.TreePop();
-                    }
-                }
+                var npcs = group.Select(x => x.source).ToList();
+                DrawVendorCard(npcs, g, SourceStyles[ItemSourceType.Vendor].Item1);
             }
         }
     }
 
-    private void DrawSourceCard(ItemSourceDetail src, int sourceIdx, Vector4 borderColor)
+    private void DrawSourceCard(ItemSourceDetail src, int sourceIdx, Vector4 borderColor, string? titleOverride = null)
     {
         var bgDrawList = ImGui.GetBackgroundDrawList();
         var width = ImGui.GetContentRegionAvail().X;
@@ -331,7 +336,7 @@ public class ItemDetailWindow : Window, IDisposable
         DrawBadge(srcStyle.Item3, srcStyle.Item2);
 
         ImGui.SameLine();
-        ImGui.Text($"  {src.Description}");
+        ImGui.Text($"  {titleOverride ?? src.Description}");
         ImGui.Spacing();
 
         if (src.NpcName != null && (src.ZoneName != null || src.MapX.HasValue))
@@ -549,22 +554,138 @@ public class ItemDetailWindow : Window, IDisposable
         ImGui.SetCursorPosX(ImGui.GetCursorPosX() + textSize.X + padding.X * 2);
     }
 
-    private void DrawNpcRow(ItemSourceDetail src, int sourceIdx, int npcIdx)
+    private void DrawNpcRow(ItemSourceDetail src, int groupIdx, int npcIdx)
     {
-        ImGui.Text(src.NpcName ?? "Unknown");
+        ImGui.Text(src.NpcName ?? "Unknown vendor");
         if (src.ZoneName != null)
         {
             ImGui.SameLine();
             ImGui.TextDisabled($" \u00b7 {src.ZoneName}");
-            if (src.MapX.HasValue)
+        }
+        if (src.MapX.HasValue)
+        {
+            ImGui.SameLine();
+            ImGui.TextDisabled($" ({src.MapX:F1}, {src.MapY:F1})");
+            ImGui.SameLine();
+            if (ImGui.SmallButton($"Map##map_{groupIdx}_{npcIdx}"))
+                TryOpenMap(src.NpcName, src.ZoneName, src.TerritoryTypeId, src.MapId, src.MapX.Value, src.MapY.Value);
+        }
+    }
+
+    private void DrawVendorCard(List<ItemSourceDetail> vendors, int groupIdx, Vector4 borderColor)
+    {
+        var first = vendors[0];
+        var bgDrawList = ImGui.GetBackgroundDrawList();
+        var width = ImGui.GetContentRegionAvail().X;
+        var startY = ImGui.GetCursorPosY();
+        var startScreenX = ImGui.GetCursorScreenPos().X;
+
+        ImGui.Indent(12f);
+        ImGui.BeginGroup();
+        ImGui.Spacing();
+
+        var style = SourceStyles.GetValueOrDefault(first.Type, (Vector4.One, Vector4.One, "UNKNOWN"));
+        DrawBadge(style.Item3, style.Item2);
+        ImGui.SameLine();
+
+        var isGilOnly = first.Costs != null && first.Costs.All(c => c.ItemId == 0);
+
+        if (isGilOnly && first.Costs?.Count > 0)
+        {
+            ImGui.Text($"{FormatNumber(first.Costs[0].Count)} Gil");
+        }
+        else
+        {
+            ImGui.Text(first.Description);
+        }
+
+        ImGui.Spacing();
+
+        DrawNpcRow(first, groupIdx, 0);
+
+        if (vendors.Count > 1)
+        {
+            var moreLabel = vendors.Count == 2 ? "1 more vendor" : $"{vendors.Count - 1} more vendors";
+            if (ImGui.TreeNode($"{moreLabel}##vg_{groupIdx}"))
             {
-                ImGui.SameLine();
-                ImGui.TextDisabled($"({src.MapX:F1}, {src.MapY:F1})");
-                ImGui.SameLine();
-                if (ImGui.SmallButton($"Map##map_{sourceIdx}_{npcIdx}"))
-                    TryOpenMap(src.NpcName, src.ZoneName, src.TerritoryTypeId, src.MapId, src.MapX.Value, src.MapY.Value);
+                for (int i = 1; i < vendors.Count; i++)
+                {
+                    DrawNpcRow(vendors[i], groupIdx, i);
+                    ImGui.Spacing();
+                }
+                ImGui.TreePop();
             }
         }
+
+        if (!isGilOnly && first.Costs?.Count > 0)
+        {
+            ImGui.TextDisabled("    Cost:");
+            foreach (var cost in first.Costs)
+            {
+                if (cost.ItemId == 0)
+                {
+                    ImGui.TextColored(new Vector4(1f, 0.84f, 0f, 1f), $"      \u2022 {FormatNumber(cost.Count)} Gil");
+                }
+                else
+                {
+                    var status = cost.ItemId > 19 ? GetInventoryStatus(cost.ItemId, (int)cost.Count) : "";
+
+                    if (_textureProvider != null && cost.IconId > 0)
+                    {
+                        var iconTexture = _textureProvider.GetFromGameIcon(new GameIconLookup(cost.IconId)).GetWrapOrEmpty();
+                        var iconSize = new Vector2(ImGui.GetTextLineHeight() * 0.75f);
+                        ImGui.Image(iconTexture.Handle, iconSize);
+                        ImGui.SameLine();
+                    }
+                    ImGui.TextDisabled($"      \u2022 {FormatNumber(cost.Count)} {cost.Name}{status}");
+
+                    var breakdown = cost.ItemId > 19 ? GetInventoryBreakdown(cost.ItemId) : new Dictionary<string, int>();
+                    if (breakdown.Count > 0)
+                    {
+                        ImGui.Indent(20f);
+                        ImGui.TextDisabled($"        Breakdown: {string.Join(", ", breakdown.Select(kv => $"{kv.Key}: {kv.Value}"))}");
+                        ImGui.Unindent(20f);
+                    }
+
+                    if (cost.ItemId > 19 && !string.IsNullOrEmpty(cost.Name))
+                    {
+                        ImGui.SameLine();
+                        if (ImGui.SmallButton($"[i]##cost_{groupIdx}_{0}"))
+                        {
+                            _navigateToItemId = cost.ItemId;
+                            _navigateToSourceIdx = groupIdx;
+                        }
+                    }
+                }
+            }
+        }
+
+        ImGui.Spacing();
+        ImGui.EndGroup();
+        ImGui.Unindent(12f);
+
+        var endY = ImGui.GetCursorPosY();
+        var height = endY - startY;
+
+        if (height > 0)
+        {
+            var bgLeft = startScreenX;
+            var bgRight = startScreenX + width;
+
+            bgDrawList.AddRectFilled(
+                new Vector2(bgLeft, startY),
+                new Vector2(bgRight, startY + height),
+                ImGui.ColorConvertFloat4ToU32(new Vector4(0.12f, 0.12f, 0.22f, 1f)),
+                3f);
+
+            bgDrawList.AddRectFilled(
+                new Vector2(bgLeft, startY),
+                new Vector2(bgLeft + 3, startY + height),
+                ImGui.ColorConvertFloat4ToU32(borderColor));
+        }
+
+        ImGui.Spacing();
+        ImGui.Spacing();
     }
 
     private bool ShouldShowGatherButton(uint itemId)
@@ -877,6 +998,155 @@ public class ItemDetailWindow : Window, IDisposable
         {
             return new();
         }
+    }
+
+    private string GetCostKey(ItemSourceDetail src)
+    {
+        if (src.Costs == null || src.Costs.Count == 0)
+            return "free";
+        return string.Join("+", src.Costs
+            .OrderBy(c => c.ItemId)
+            .Select(c => $"{c.ItemId}x{c.Count}"));
+    }
+
+    private string GetCostTitle(ItemSourceDetail src)
+    {
+        if (src.Type != ItemSourceType.Vendor)
+            return src.Description;
+
+        if (src.Costs == null || src.Costs.Count == 0)
+            return src.Description;
+
+        return string.Join(", ", src.Costs
+            .Select(c => c.ItemId == 0
+                ? $"{FormatNumber(c.Count)} Gil"
+                : $"{FormatNumber(c.Count)} {c.Name}"));
+    }
+
+    private void DrawCraftedCard(List<ItemSourceDetail> sources, int groupIdx)
+    {
+        var first = sources[0];
+        var bgDrawList = ImGui.GetBackgroundDrawList();
+        var width = ImGui.GetContentRegionAvail().X;
+        var startY = ImGui.GetCursorPosY();
+        var startScreenX = ImGui.GetCursorScreenPos().X;
+
+        ImGui.Indent(12f);
+        ImGui.BeginGroup();
+        ImGui.Spacing();
+
+        var style = SourceStyles.GetValueOrDefault(first.Type, (Vector4.One, Vector4.One, "UNKNOWN"));
+        DrawBadge(style.Item3, style.Item2);
+        ImGui.SameLine();
+
+        var levels = sources.Select(s => ExtractLevel(s.Description)).Where(l => l > 0).Distinct().OrderBy(l => l);
+        var jobs = sources.Select(s => ExtractJobName(s.Description)).Where(j => !string.IsNullOrEmpty(j)).Distinct();
+        var levelStr = levels.Any() ? $"Lv.{levels.Min()}" : "";
+        var jobStr = string.Join(", ", jobs.Any() ? jobs : (object?)levelStr);
+        var title = levels.Any() && jobs.Any()
+            ? $"{levelStr} ({string.Join(", ", jobs)})"
+            : (levelStr ?? jobStr ?? "Crafted");
+        ImGui.Text(title);
+
+        ImGui.Spacing();
+
+        if (first.Materials != null && first.Materials.Count > 0)
+        {
+            ImGui.TextDisabled("    Materials:");
+            foreach (var mat in first.Materials)
+            {
+                var status = mat.ItemId > 19 ? GetInventoryStatus(mat.ItemId, (int)mat.Count) : "";
+                var showGatherBtn = ShouldShowGatherButton(mat.ItemId);
+
+                if (_textureProvider != null && mat.IconId > 0)
+                {
+                    var iconTexture = _textureProvider.GetFromGameIcon(new GameIconLookup(mat.IconId)).GetWrapOrEmpty();
+                    var iconSize = new Vector2(ImGui.GetTextLineHeight() * 0.75f);
+                    ImGui.Image(iconTexture.Handle, iconSize);
+                    ImGui.SameLine();
+                }
+                ImGui.TextDisabled($"      \u2022 {mat.Name} x{FormatNumber(mat.Count)}{status}");
+
+                if (showGatherBtn)
+                {
+                    ImGui.SameLine();
+                    if (ImGui.SmallButton($"Gather##gather_{groupIdx}_{mat.ItemId}"))
+                    {
+                        try
+                        {
+                            var gb = Plugin.PluginInterface
+                                .GetIpcSubscriber<string, bool>("GatherBuddy.IPC.SearchItem");
+                            if (gb.HasFunction)
+                                gb.InvokeFunc(mat.Name);
+                        }
+                        catch (Exception ex)
+                        {
+                            Plugin.Log?.Information($"[GATHER] GatherBuddy not available: {ex.Message}");
+                        }
+                    }
+                }
+            }
+        }
+
+        ImGui.Spacing();
+        ImGui.EndGroup();
+        ImGui.Unindent(12f);
+
+        var endY = ImGui.GetCursorPosY();
+        var height = endY - startY;
+
+        if (height > 0)
+        {
+            var bgLeft = startScreenX;
+            var bgRight = startScreenX + width;
+
+            bgDrawList.AddRectFilled(
+                new Vector2(bgLeft, startY),
+                new Vector2(bgRight, startY + height),
+                ImGui.ColorConvertFloat4ToU32(new Vector4(0.12f, 0.12f, 0.22f, 1f)),
+                3f);
+
+            bgDrawList.AddRectFilled(
+                new Vector2(bgLeft, startY),
+                new Vector2(bgLeft + 3, startY + height),
+                ImGui.ColorConvertFloat4ToU32(style.Item1));
+        }
+
+        ImGui.Spacing();
+        ImGui.Spacing();
+    }
+
+    private string GetMaterialKey(ItemSourceDetail src)
+    {
+        if (src.Materials == null || src.Materials.Count == 0)
+            return "none";
+        return string.Join("+", src.Materials
+            .Where(m => m.ItemId > 19 && m.Count > 0)
+            .OrderBy(m => m.ItemId)
+            .Select(m => $"{m.ItemId}x{m.Count}"));
+    }
+
+    private string ExtractJobName(string description)
+    {
+        var openParen = description.LastIndexOf('(');
+        var closeParen = description.LastIndexOf(')');
+        if (openParen >= 0 && closeParen > openParen)
+            return description.Substring(openParen + 1, closeParen - openParen - 1);
+        return "";
+    }
+
+    private int ExtractLevel(string description)
+    {
+        var lvIndex = description.IndexOf("Lv.");
+        if (lvIndex >= 0)
+        {
+            var start = lvIndex + 3;
+            var end = description.IndexOf(' ', start);
+            if (end < 0) end = description.Length;
+            if (int.TryParse(description.Substring(start, end - start), out var level))
+                return level;
+        }
+        return 0;
     }
 
     public void Dispose()
