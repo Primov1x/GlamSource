@@ -1,11 +1,14 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
+using System.Linq;
 using System.Numerics;
 using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
 
+using Dalamud.Interface;
 using Dalamud.Interface.Textures;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin.Services;
@@ -32,20 +35,60 @@ public class ItemDetailWindow : Window, IDisposable
     private uint _marketItemId;
     private Action<string, string, float, float>? _onOpenMap;
 
-    private static readonly Dictionary<ItemSourceType, Vector4> SourceColors = new()
+    private static readonly Dictionary<ItemSourceType, (Vector4 Border, Vector4 BadgeBg, string Label)> SourceStyles = new()
     {
-        [ItemSourceType.Crafted] = new Vector4(1f, 0.5f, 0f, 1f),
-        [ItemSourceType.Vendor] = new Vector4(0.5f, 0.5f, 1f, 1f),
-        [ItemSourceType.Quest] = new Vector4(0.5f, 1f, 0.5f, 1f),
-        [ItemSourceType.Dungeon] = new Vector4(1f, 0.3f, 0.3f, 1f),
-        [ItemSourceType.Trial] = new Vector4(1f, 0.8f, 0f, 1f),
-        [ItemSourceType.Raid] = new Vector4(0.8f, 0f, 1f, 1f),
-        [ItemSourceType.Unknown] = new Vector4(0.7f, 0.7f, 0.7f, 1f),
-        [ItemSourceType.Achievement] = new Vector4(0.9f, 0.9f, 0f, 1f),
-        [ItemSourceType.MogStation] = new Vector4(0.6f, 0.4f, 0.8f, 1f),
-        [ItemSourceType.PvP] = new Vector4(1f, 0.2f, 0.2f, 1f),
-        [ItemSourceType.TreasureHunt] = new Vector4(0.2f, 0.8f, 0.8f, 1f),
-        [ItemSourceType.Other] = new Vector4(0.7f, 0.7f, 0.7f, 1f),
+        [ItemSourceType.Crafted] = (
+            new Vector4(1f, 0.65f, 0.15f, 1f),
+            new Vector4(0.24f, 0.18f, 0.06f, 1f),
+            "CRAFTED"),
+        [ItemSourceType.Vendor] = (
+            new Vector4(0.36f, 0.42f, 0.75f, 1f),
+            new Vector4(0.10f, 0.10f, 0.24f, 1f),
+            "VENDOR"),
+        [ItemSourceType.Trial] = (
+            new Vector4(1f, 0.3f, 0.3f, 1f),
+            new Vector4(0.24f, 0.08f, 0.08f, 1f),
+            "TRIAL"),
+        [ItemSourceType.Raid] = (
+            new Vector4(1f, 0.3f, 0.3f, 1f),
+            new Vector4(0.24f, 0.08f, 0.08f, 1f),
+            "RAID"),
+        [ItemSourceType.Dungeon] = (
+            new Vector4(0.3f, 0.7f, 1f, 1f),
+            new Vector4(0.06f, 0.14f, 0.24f, 1f),
+            "DUNGEON"),
+        [ItemSourceType.Quest] = (
+            new Vector4(0.3f, 1f, 0.3f, 1f),
+            new Vector4(0.06f, 0.20f, 0.06f, 1f),
+            "QUEST"),
+        [ItemSourceType.Unknown] = (
+            new Vector4(0.5f, 0.5f, 0.5f, 1f),
+            new Vector4(0.15f, 0.15f, 0.15f, 1f),
+            "UNKNOWN"),
+        [ItemSourceType.Achievement] = (
+            new Vector4(0.9f, 0.9f, 0f, 1f),
+            new Vector4(0.20f, 0.20f, 0.05f, 1f),
+            "ACHIEVEMENT"),
+        [ItemSourceType.MogStation] = (
+            new Vector4(0.6f, 0.4f, 0.8f, 1f),
+            new Vector4(0.15f, 0.10f, 0.20f, 1f),
+            "MOG STATION"),
+        [ItemSourceType.PvP] = (
+            new Vector4(1f, 0.2f, 0.2f, 1f),
+            new Vector4(0.24f, 0.05f, 0.05f, 1f),
+            "PvP"),
+        [ItemSourceType.TreasureHunt] = (
+            new Vector4(0.2f, 0.8f, 0.8f, 1f),
+            new Vector4(0.05f, 0.20f, 0.20f, 1f),
+            "TREASURE HUNT"),
+        [ItemSourceType.Shop] = (
+            new Vector4(0.8f, 0.6f, 0.2f, 1f),
+            new Vector4(0.18f, 0.14f, 0.05f, 1f),
+            "SHOP"),
+        [ItemSourceType.Other] = (
+            new Vector4(0.5f, 0.5f, 0.5f, 1f),
+            new Vector4(0.15f, 0.15f, 0.15f, 1f),
+            "OTHER"),
     };
 
     public ItemDetailWindow(IItemDetailService detailService, IItemSourceService sourceService, IUniversalisService universalisService, ITextureProvider? textureProvider = null)
@@ -146,37 +189,17 @@ public class ItemDetailWindow : Window, IDisposable
 
         DrawItemHeader(detail);
         ImGui.Spacing();
+
+        if (_marketInfo != null && _marketItemId == detail.ItemId)
+            DrawMarketPricesCompact(_marketInfo);
+        else if (_marketLoading && _marketItemId == detail.ItemId)
+            ImGui.TextDisabled("Loading prices...");
+
         ImGui.Separator();
+        ImGui.TextDisabled("SOURCES");
         ImGui.Spacing();
 
-        DrawMarketPrices(detail);
-        ImGui.Spacing();
-        DrawSources(detail);
-    }
-
-    private void DrawMarketPrices(ItemDetail detail)
-    {
-        if (!detail.IsMarketable)
-            return;
-
-        if (_marketLoading && _marketItemId == detail.ItemId)
-        {
-            ImGui.TextDisabled("Loading market prices...");
-            return;
-        }
-
-        if (_marketInfo == null)
-            return;
-
-        var yellow = new Vector4(1f, 0.84f, 0f, 1f);
-        ImGui.TextColored(yellow, "Market Prices:");
-
-        if (_marketInfo.WorldMinPrice > 0)
-            ImGui.TextColored(yellow, $"  Shiva: {FormatNumber(_marketInfo.WorldMinPrice)} Gil (NQ) / {FormatNumber(_marketInfo.WorldMinPriceHQ)} Gil (HQ)");
-        if (_marketInfo.DcMinPrice > 0)
-            ImGui.TextColored(yellow, $"  Light DC cheapest: {FormatNumber(_marketInfo.DcMinPrice)} Gil (NQ) on {_marketInfo.DcWorldName ?? "unknown"}");
-        if (_marketInfo.DcMinPriceHQ > 0)
-            ImGui.TextColored(yellow, $"  Light DC cheapest HQ: {FormatNumber(_marketInfo.DcMinPriceHQ)} Gil on {_marketInfo.DcWorldName ?? "unknown"}");
+        DrawSourceCards(detail);
     }
 
     private void DrawItemHeader(ItemDetail detail)
@@ -189,56 +212,56 @@ public class ItemDetailWindow : Window, IDisposable
             ImGui.SameLine();
         }
 
-        ImGui.TextColored(new Vector4(1f, 0.85f, 0.3f, 1f), detail.Name);
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.31f, 0.76f, 0.97f, 1f));
+        ImGui.SetWindowFontScale(1.1f);
+        ImGui.Text(detail.Name);
+        ImGui.SetWindowFontScale(1.0f);
+        ImGui.PopStyleColor();
+
         ImGui.SameLine();
-        ImGui.TextDisabled($"({detail.ItemId})");
+        ImGui.TextDisabled($"({detail.ItemId})  |  iLvl {detail.ItemLevel}");
 
-        if (detail.ItemLevel > 0)
-        {
-            ImGui.SameLine();
-            ImGui.TextDisabled($" | iLvl {detail.ItemLevel}");
-        }
-
+        var rightX = ImGui.GetContentRegionAvail().X > 0
+            ? ImGui.GetWindowPos().X + ImGui.GetContentRegionAvail().X - 120
+            : ImGui.GetCursorPosX() + 120;
         ImGui.SameLine();
         if (ImGui.SmallButton($"Wiki##wiki_{detail.ItemId}"))
         {
             OpenWiki(detail.Name, detail.ItemId);
         }
-
-        if (detail.IsMarketable)
+        ImGui.SameLine();
+        if (detail.IsMarketable && ImGui.SmallButton($"Market##market_{detail.ItemId}"))
         {
-            ImGui.SameLine();
-            if (ImGui.SmallButton($"Market Prices##market_{detail.ItemId}"))
-            {
-                OpenMarketPrices(detail.ItemId);
-            }
+            OpenMarketPrices(detail.ItemId);
         }
     }
 
-    private static void OpenWiki(string itemName, uint itemId)
+    private void DrawMarketPricesCompact(MarketInfo market)
     {
-        var name = itemName.Replace(" ", "_");
-        var url = $"https://ffxiv.consolegameswiki.com/wiki/{name}";
-        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); }
-        catch { Console.WriteLine($"[WIKI] {url}"); }
+        ImGui.PushStyleColor(ImGuiCol.ChildBg, new Vector4(0.15f, 0.15f, 0.25f, 1f));
+        if (ImGui.BeginChild("##market", new Vector2(ImGui.GetContentRegionAvail().X, 24),
+            true))
+        {
+            ImGui.TextDisabled("Shiva:");
+            ImGui.SameLine();
+            ImGui.TextColored(new Vector4(1f, 0.84f, 0.25f, 1f),
+                $"{FormatNumber(market.WorldMinPrice)}");
+            ImGui.SameLine();
+            ImGui.TextDisabled("Gil (NQ)  |  Light DC:");
+            ImGui.SameLine();
+            ImGui.TextColored(new Vector4(0.41f, 0.94f, 0.68f, 1f),
+                $"{FormatNumber(market.DcMinPrice)}");
+            ImGui.SameLine();
+            ImGui.TextDisabled($"Gil on {market.DcWorldName}");
+        }
+        ImGui.EndChild();
+        ImGui.PopStyleColor();
     }
 
-    private static void OpenMarketPrices(uint itemId)
+    private void DrawSourceCards(ItemDetail detail)
     {
-        var url = $"https://universalis.app/market/{itemId}";
-        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); }
-        catch { Console.WriteLine($"[MARKET] {url}"); }
-    }
+        Console.WriteLine($"[UI] Drawing {detail.Sources.Count} sources for item {_showingItemId}");
 
-    private static void OpenRecipeBook(uint itemId)
-    {
-        var url = $"https://garlandtools.org/db/#item/{itemId}";
-        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); }
-        catch { Console.WriteLine($"[RECIPEBOOK] {url}"); }
-    }
-
-    private void DrawSources(ItemDetail detail)
-    {
         if (detail.Sources.Count == 0)
         {
             var grey = new Vector4(0.6f, 0.6f, 0.6f, 1f);
@@ -248,30 +271,84 @@ public class ItemDetailWindow : Window, IDisposable
             return;
         }
 
-        ImGui.TextColored(new Vector4(0.9f, 0.9f, 0.9f, 1f), "Sources:");
-        ImGui.Spacing();
+        var vendorSources = detail.Sources
+            .Select((s, i) => (source: s, index: i))
+            .Where(x => x.source.Type == ItemSourceType.Vendor)
+            .ToList();
 
-        for (int i = 0; i < detail.Sources.Count; i++)
+        var otherSources = detail.Sources
+            .Select((s, i) => (source: s, index: i))
+            .Where(x => x.source.Type != ItemSourceType.Vendor)
+            .ToList();
+
+        foreach (var (src, idx) in otherSources)
         {
-            DrawSourceDetail(detail.Sources[i], i);
-            ImGui.Spacing();
+            var fallbackStyle = SourceStyles.GetValueOrDefault(src.Type, (Vector4.One, Vector4.One, "UNKNOWN"));
+            DrawSourceCard(src, idx, fallbackStyle.Item1);
+        }
+
+        if (vendorSources.Count > 0)
+        {
+            var vendorGroups = vendorSources
+                .GroupBy(x => x.source.Description)
+                .ToList();
+
+            for (int g = 0; g < vendorGroups.Count; g++)
+            {
+                var group = vendorGroups[g];
+                var npcs = group.ToList();
+                DrawSourceCard(npcs[0].source, npcs[0].index, SourceStyles[ItemSourceType.Vendor].Item1);
+
+                if (npcs.Count > 1)
+                {
+                    var moreLabel = npcs.Count == 2 ? "1 more vendor" : $"{npcs.Count - 1} more vendors";
+                    if (ImGui.TreeNode($"{moreLabel}##vendor_{g}"))
+                    {
+                        for (int i = 1; i < npcs.Count; i++)
+                        {
+                            DrawNpcRow(npcs[i].source, npcs[i].index, i);
+                            ImGui.Spacing();
+                        }
+                        ImGui.TreePop();
+                    }
+                }
+            }
         }
     }
 
-    private void DrawSourceDetail(ItemSourceDetail src, int sourceIdx)
+    private void DrawSourceCard(ItemSourceDetail src, int sourceIdx, Vector4 borderColor)
     {
-        var color = SourceColors.TryGetValue(src.Type, out var c) ? c : new Vector4(0.7f, 0.7f, 0.7f, 1f);
+        var bgDrawList = ImGui.GetBackgroundDrawList();
+        var width = ImGui.GetContentRegionAvail().X;
+        var startY = ImGui.GetCursorPosY();
+        var startScreenX = ImGui.GetCursorScreenPos().X;
 
-        ImGui.TextColored(color, $"  \u25CE {src.Description}");
+        ImGui.Indent(12f);
+        ImGui.BeginGroup();
+        ImGui.Spacing();
 
-        // Crafting materials
+        var srcStyle = SourceStyles.GetValueOrDefault(src.Type, (Vector4.One, Vector4.One, "UNKNOWN"));
+        DrawBadge(srcStyle.Item3, srcStyle.Item2);
+
+        ImGui.SameLine();
+        ImGui.Text($"  {src.Description}");
+        ImGui.Spacing();
+
+        if (src.NpcName != null && (src.ZoneName != null || src.MapX.HasValue))
+        {
+            DrawNpcRow(src, sourceIdx, 0);
+        }
+
         if (src.Materials != null && src.Materials.Count > 0)
         {
-            ImGui.Indent(20f);
             ImGui.TextDisabled("    Materials:");
-            foreach (var mat in src.Materials)
+            for (int matIdx = 0; matIdx < src.Materials.Count; matIdx++)
             {
+                var mat = src.Materials[matIdx];
                 var status = mat.ItemId > 19 ? GetInventoryStatus(mat.ItemId, (int)mat.Count) : "";
+                var breakdown = mat.ItemId > 19 ? GetInventoryBreakdown(mat.ItemId) : new Dictionary<string, int>();
+                var showGatherBtn = ShouldShowGatherButton(mat.ItemId);
+
                 if (_textureProvider != null && mat.IconId > 0)
                 {
                     var iconTexture = _textureProvider.GetFromGameIcon(new GameIconLookup(mat.IconId)).GetWrapOrEmpty();
@@ -280,25 +357,45 @@ public class ItemDetailWindow : Window, IDisposable
                     ImGui.SameLine();
                 }
                 ImGui.TextDisabled($"      \u2022 {mat.Name} x{FormatNumber(mat.Count)}{status}");
-            }
-            ImGui.Unindent(20f);
 
-            // Open Crafting Log button
+                if (showGatherBtn)
+                {
+                    ImGui.SameLine();
+                    if (ImGui.SmallButton($"Gather##gather_{sourceIdx}_{matIdx}"))
+                    {
+                        try
+                        {
+                            var gb = Plugin.PluginInterface
+                                .GetIpcSubscriber<string, bool>("GatherBuddy.IPC.SearchItem");
+                            if (gb.HasFunction)
+                                gb.InvokeFunc(mat.Name);
+                        }
+                        catch (Exception ex)
+                        {
+                            Plugin.Log?.Information($"[GATHER] GatherBuddy not available: {ex.Message}");
+                        }
+                    }
+                }
+
+                if (breakdown.Count > 0)
+                {
+                    ImGui.Indent(20f);
+                    ImGui.TextDisabled($"        Breakdown: {string.Join(", ", breakdown.Select(kv => $"{kv.Key}: {kv.Value}"))}");
+                    ImGui.Unindent(20f);
+                }
+            }
+
             if (src.Type == ItemSourceType.Crafted)
             {
-                ImGui.Indent(20f);
                 if (ImGui.SmallButton($"Open Crafting Log##craft_{sourceIdx}"))
                 {
                     TryOpenCraftingLog(_showingItemId ?? 0);
                 }
-                ImGui.Unindent(20f);
             }
         }
 
-        // Vendor costs
         if (src.Costs != null && src.Costs.Count > 0)
         {
-            ImGui.Indent(20f);
             ImGui.TextDisabled("    Cost:");
             int costIdx = 0;
             foreach (var cost in src.Costs)
@@ -310,6 +407,8 @@ public class ItemDetailWindow : Window, IDisposable
                 else
                 {
                     var status = cost.ItemId > 19 ? GetInventoryStatus(cost.ItemId, (int)cost.Count) : "";
+                    var breakdown = cost.ItemId > 19 ? GetInventoryBreakdown(cost.ItemId) : new Dictionary<string, int>();
+
                     if (_textureProvider != null && cost.IconId > 0)
                     {
                         var iconTexture = _textureProvider.GetFromGameIcon(new GameIconLookup(cost.IconId)).GetWrapOrEmpty();
@@ -318,6 +417,13 @@ public class ItemDetailWindow : Window, IDisposable
                         ImGui.SameLine();
                     }
                     ImGui.TextDisabled($"      \u2022 {FormatNumber(cost.Count)} {cost.Name}{status}");
+
+                    if (breakdown.Count > 0)
+                    {
+                        ImGui.Indent(20f);
+                        ImGui.TextDisabled($"        Breakdown: {string.Join(", ", breakdown.Select(kv => $"{kv.Key}: {kv.Value}"))}");
+                        ImGui.Unindent(20f);
+                    }
 
                     var showInfoButton = cost.ItemId > 19
                         && !string.IsNullOrEmpty(cost.Name);
@@ -331,137 +437,154 @@ public class ItemDetailWindow : Window, IDisposable
                             _navigateToSourceIdx = sourceIdx;
                         }
                     }
+
+                    if (ShouldShowGatherButton(cost.ItemId))
+                    {
+                        ImGui.SameLine();
+                        if (ImGui.SmallButton($"Gather##gather_{sourceIdx}_{costIdx}"))
+                        {
+                            try
+                            {
+                                var gb = Plugin.PluginInterface
+                                    .GetIpcSubscriber<string, bool>("GatherBuddy.IPC.SearchItem");
+                                if (gb.HasFunction)
+                                    gb.InvokeFunc(cost.Name);
+                            }
+                            catch (Exception ex)
+                            {
+                                Plugin.Log?.Information($"[GATHER] GatherBuddy not available: {ex.Message}");
+                            }
+                        }
+                    }
                 }
                 costIdx++;
             }
-            ImGui.Unindent(20f);
         }
 
-        // Zone name + Coords + Map button
-        if (!string.IsNullOrEmpty(src.ZoneName) || (src.MapX.HasValue && src.MapY.HasValue))
+        if (src.Type == ItemSourceType.Trial || src.Type == ItemSourceType.Raid || src.Type == ItemSourceType.Dungeon)
         {
-            ImGui.Indent(20f);
-            var zoneStr = src.ZoneName ?? "Unknown Zone";
-            var coordStr = (src.MapX.HasValue && src.MapY.HasValue)
-                ? $" ({src.MapX:F1}, {src.MapY:F1})"
-                : "";
-            ImGui.TextDisabled($"    Zone: {zoneStr}{coordStr}");
-
-            if (src.MapX.HasValue && src.MapY.HasValue)
+            if (src.CfcRowId.HasValue && src.CfcName != null)
             {
-                ImGui.SameLine();
-                if (ImGui.SmallButton($"Open Map##map_{sourceIdx}"))
+                if (CheckUnlockStatus(src.CfcRowId.Value))
                 {
-                    TryOpenMap(src.NpcName, src.ZoneName, src.TerritoryTypeId, src.MapId, src.MapX.Value, src.MapY.Value);
+                    ImGui.TextColored(new Vector4(0.4f, 1f, 0.4f, 1f), $"  \u2713 {src.CfcName} unlocked");
                 }
-            }
-            ImGui.Unindent(20f);
-        }
-
-        // Quest requirements
-        if (!string.IsNullOrEmpty(src.QuestName))
-        {
-            ImGui.Indent(20f);
-            ImGui.TextColored(new Vector4(1f, 0.7f, 0.3f, 1f), $"    Requires: Quest \"{src.QuestName}\"");
-            ImGui.Unindent(20f);
-        }
-
-        // Trial/Dungeon info from ContentFinderCondition
-        if (!string.IsNullOrEmpty(src.CfcName) || !string.IsNullOrEmpty(src.CfcType))
-        {
-            ImGui.Indent(20f);
-            if (!string.IsNullOrEmpty(src.CfcName))
-            {
-                ImGui.TextDisabled($"    Duty: {src.CfcName}");
-            }
-            if (src.CfcRowId.HasValue && src.CfcRowId.Value > 0)
-            {
-                ImGui.SameLine();
                 if (ImGui.SmallButton($"Duty Finder##duty_{sourceIdx}"))
                 {
                     TryOpenDutyFinder(src.CfcRowId.Value);
                 }
             }
-            if (src.CfcRowIds != null && src.CfcRowIds.Count > 1)
-            {
-                ImGui.Indent(20f);
-                ImGui.TextDisabled($"    Other duties:");
-                foreach (var cfcId in src.CfcRowIds)
-                {
-                    if (cfcId > 0)
-                    {
-                        ImGui.SameLine();
-                        if (ImGui.SmallButton($"Duty Finder##cfc_{cfcId}"))
-                        {
-                            TryOpenDutyFinder(cfcId);
-                        }
-                    }
-                }
-                ImGui.Unindent(20f);
-            }
-            if (src.BossName != null && src.QuestForUnlock.HasValue && src.QuestForUnlock.Value > 0)
-            {
-                var isUnlocked = CheckUnlockStatus(src.QuestForUnlock.Value);
-                if (isUnlocked)
-                {
-                    ImGui.TextColored(new Vector4(0.3f, 1f, 0.3f, 1f), $"    Unlock: Complete");
-                }
-                else
-                {
-                    var isLocked = IsQuestLockedByQuestionable(src.QuestForUnlock.Value);
-                    if (isLocked)
-                    {
-                        ImGui.TextColored(new Vector4(1f, 0.5f, 0f, 1f), "    Unlock: Quest locked (prerequisites incomplete)");
-                        if (ImGui.SmallButton($"Start Quest Chain##quest_{sourceIdx}"))
-                        {
-                            TryStartWithQuestionable(src.QuestForUnlock.Value);
-                        }
-                    }
-                    else
-                    {
-                        ImGui.TextColored(new Vector4(1f, 0.3f, 0.3f, 1f), $"    Unlock: Incomplete");
-                        if (ImGui.SmallButton($"Start with Questionable##quest_{sourceIdx}"))
-                        {
-                            TryStartWithQuestionable(src.QuestForUnlock.Value);
-                        }
-                    }
-                }
-            }
-            ImGui.Unindent(20f);
         }
 
-        // Questionable quest button (Feature D)
-        if (src.Type == ItemSourceType.Quest && src.QuestForUnlock.HasValue && src.QuestForUnlock.Value > 0)
+        if (src.Type == ItemSourceType.Quest && src.QuestName != null)
         {
-            var isUnlocked = CheckUnlockStatus(src.QuestForUnlock.Value);
-            ImGui.Indent(20f);
-            if (isUnlocked)
+            if (src.NpcName != null && src.ZoneName != null)
             {
-                ImGui.TextColored(new Vector4(0.3f, 1f, 0.3f, 1f), $"    Quest Complete");
+                ImGui.SameLine();
+                DrawNpcRow(src, sourceIdx, -1);
             }
-            else
+
+            var questLocked = src.QuestForUnlock.HasValue && IsQuestLockedByQuestionable(src.QuestForUnlock.Value);
+            if (questLocked)
             {
-                var isLocked = IsQuestLockedByQuestionable(src.QuestForUnlock.Value);
-                if (isLocked)
+                ImGui.TextColored(new Vector4(1f, 0.4f, 0.4f, 1f), $"  \u2717 Locked (prerequisites incomplete)");
+                if (ImGui.SmallButton($"Start Quest##quest_{sourceIdx}"))
                 {
-                    ImGui.TextColored(new Vector4(1f, 0.5f, 0f, 1f), "    Quest: Locked (prerequisites incomplete)");
-                    if (ImGui.SmallButton($"Start Quest Chain##quest_{sourceIdx}"))
-                    {
-                        TryStartWithQuestionable(src.QuestForUnlock.Value);
-                    }
-                }
-                else
-                {
-                    ImGui.TextColored(new Vector4(1f, 0.3f, 0.3f, 1f), $"    Quest: Incomplete");
-                    if (ImGui.SmallButton($"Start with Questionable##quest_{sourceIdx}"))
-                    {
-                        TryStartWithQuestionable(src.QuestForUnlock.Value);
-                    }
+                    TryStartWithQuestionable(src.QuestForUnlock.Value);
                 }
             }
-            ImGui.Unindent(20f);
+            else if (src.QuestForUnlock.HasValue)
+            {
+                ImGui.TextColored(new Vector4(0.4f, 1f, 0.4f, 1f), $"  \u2713 Quest unlocked");
+            }
         }
 
+        ImGui.Spacing();
+        ImGui.EndGroup();
+        ImGui.Unindent(12f);
+
+        var endY = ImGui.GetCursorPosY();
+        var height = endY - startY;
+
+        if (height > 0)
+        {
+            var bgLeft = startScreenX;
+            var bgRight = startScreenX + width;
+
+            bgDrawList.AddRectFilled(
+                new Vector2(bgLeft, startY),
+                new Vector2(bgRight, startY + height),
+                ImGui.ColorConvertFloat4ToU32(new Vector4(0.12f, 0.12f, 0.22f, 1f)),
+                3f);
+
+            bgDrawList.AddRectFilled(
+                new Vector2(bgLeft, startY),
+                new Vector2(bgLeft + 3, startY + height),
+                ImGui.ColorConvertFloat4ToU32(borderColor));
+        }
+
+        ImGui.Spacing();
+        ImGui.Spacing();
+    }
+
+    private void DrawBadge(string label, Vector4 bgColor)
+    {
+        var drawList = ImGui.GetWindowDrawList();
+        var pos = ImGui.GetCursorScreenPos();
+        var textSize = ImGui.CalcTextSize(label);
+        var padding = new Vector2(6, 2);
+
+        drawList.AddRectFilled(
+            pos,
+            new Vector2(pos.X + textSize.X + padding.X * 2, pos.Y + textSize.Y + padding.Y * 2),
+            ImGui.ColorConvertFloat4ToU32(bgColor),
+            2f);
+
+        var textColor = new Vector4(1f, 1f, 1f, 1f);
+        ImGui.PushStyleColor(ImGuiCol.Text, textColor);
+        ImGui.SetCursorScreenPos(new Vector2(pos.X + padding.X, pos.Y + padding.Y));
+        ImGui.Text(label);
+        ImGui.PopStyleColor();
+
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + textSize.X + padding.X * 2);
+    }
+
+    private void DrawNpcRow(ItemSourceDetail src, int sourceIdx, int npcIdx)
+    {
+        ImGui.Text(src.NpcName ?? "Unknown");
+        if (src.ZoneName != null)
+        {
+            ImGui.SameLine();
+            ImGui.TextDisabled($" \u00b7 {src.ZoneName}");
+            if (src.MapX.HasValue)
+            {
+                ImGui.SameLine();
+                ImGui.TextDisabled($"({src.MapX:F1}, {src.MapY:F1})");
+                ImGui.SameLine();
+                if (ImGui.SmallButton($"Map##map_{sourceIdx}_{npcIdx}"))
+                    TryOpenMap(src.NpcName, src.ZoneName, src.TerritoryTypeId, src.MapId, src.MapX.Value, src.MapY.Value);
+            }
+        }
+    }
+
+    private bool ShouldShowGatherButton(uint itemId)
+    {
+        if (itemId == 0 || itemId > 500000)
+            return false;
+
+        try
+        {
+            var itemSheet = _detailService.GameData.GetExcelSheet<Lumina.Excel.Sheets.Item>();
+            if (itemSheet?.TryGetRow(itemId, out var item) != true)
+                return false;
+
+            var searchCat = item.ItemSearchCategory.RowId;
+            return searchCat == 35 || searchCat == 36;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private void DrawFallbackSources(uint itemId)
@@ -470,15 +593,15 @@ public class ItemDetailWindow : Window, IDisposable
         if (fallbackSources.Count == 0)
             return;
 
-        // Check if any sources are already shown
         var shownTypes = new HashSet<ItemSourceType>();
         foreach (var s in fallbackSources)
         {
             if (!shownTypes.Contains(s.Type))
             {
                 shownTypes.Add(s.Type);
-                var color = SourceColors.TryGetValue(s.Type, out var c) ? c : new Vector4(0.7f, 0.7f, 0.7f, 1f);
-                ImGui.TextColored(color, $"  \u25CE {s.Description}");
+                var style = SourceStyles.GetValueOrDefault(s.Type, (Vector4.One, Vector4.One, "UNKNOWN"));
+                var label = style.Item3;
+                ImGui.TextDisabled($"  {label}: {s.Description}");
                 ImGui.Spacing();
             }
         }
@@ -516,7 +639,7 @@ public class ItemDetailWindow : Window, IDisposable
         }
         catch (Exception ex)
         {
-            Plugin.Log.Error(ex, "[QUESTIONABLE] IsQuestLocked check failed for {QRow}", questRowId);
+            Console.WriteLine($"[QUESTIONABLE] IsQuestLocked failed: {ex.Message}");
         }
         return false;
     }
@@ -540,7 +663,8 @@ public class ItemDetailWindow : Window, IDisposable
             if (questionable.HasFunction)
             {
                 var questId = (uint)(questRowId & 0xFFFF);
-                var qResult = questionable.InvokeFunc(questId.ToString()); Plugin.Log.Information("[QUESTIONABLE] questRowId={QRow} questId={QId} result={R}", questRowId, questId, qResult);
+                var qResult = questionable.InvokeFunc(questId.ToString());
+                Plugin.Log.Information("[QUESTIONABLE] questRowId={QRow} questId={QId} result={R}", questRowId, questId, qResult);
                 Plugin.Log.Information("[QUESTIONABLE] StartQuest questId={QuestId}", questRowId);
             }
             else
@@ -611,6 +735,32 @@ public class ItemDetailWindow : Window, IDisposable
         return value.ToString("N1", CultureInfo.GetCultureInfo("de-DE"));
     }
 
+    private static void OpenWiki(string itemName, uint itemId)
+    {
+        try
+        {
+            var url = $"https://ffxiv.consolegameswiki.com/wiki/{itemName.Replace(' ', '_')}";
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            Plugin.Log.Error(ex, "[WIKI] Failed to open wiki for {Name}", itemName);
+        }
+    }
+
+    private void OpenMarketPrices(uint itemId)
+    {
+        try
+        {
+            var url = $"https://universalis.app/docs/index.html#/marketData?itemId={itemId}";
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            Plugin.Log.Error(ex, "[MARKET] Failed to open market for item {Id}", itemId);
+        }
+    }
+
     private static unsafe int GetItemCount(uint itemId)
     {
         if (itemId == 0 || itemId > 500000)
@@ -631,12 +781,21 @@ public class ItemDetailWindow : Window, IDisposable
                 InventoryType.Inventory4,
                 InventoryType.Crystals,
                 InventoryType.Currency,
+                InventoryType.RetainerPage1,
+                InventoryType.RetainerPage2,
+                InventoryType.RetainerPage3,
+                InventoryType.RetainerPage4,
+                InventoryType.RetainerPage5,
+                InventoryType.RetainerPage6,
+                InventoryType.RetainerPage7,
+                InventoryType.SaddleBag1,
+                InventoryType.SaddleBag2,
             };
 
             foreach (var type in containers)
             {
                 var container = im->GetInventoryContainer(type);
-                if (container == null)
+                if (container == null || !container->IsLoaded)
                     continue;
 
                 for (int i = 0; i < container->Size; i++)
@@ -667,17 +826,60 @@ public class ItemDetailWindow : Window, IDisposable
         return $" ({have}/{required})";
     }
 
+    private static unsafe Dictionary<string, int> GetInventoryBreakdown(uint itemId)
+    {
+        try
+        {
+            if (itemId == 0 || itemId > 500000)
+                return new();
+
+            var breakdown = new Dictionary<string, int>();
+            var im = InventoryManager.Instance();
+            if (im == null)
+                return breakdown;
+
+            int bags = 0, retainers = 0, saddlebag = 0;
+
+            void Scan(InventoryType type, ref int accumulator)
+            {
+                var container = im->GetInventoryContainer(type);
+                if (container == null || !container->IsLoaded)
+                    return;
+                for (int i = 0; i < container->Size; i++)
+                {
+                    if (container->Items[i].ItemId == itemId)
+                        accumulator += (int)container->Items[i].Quantity;
+                }
+            }
+
+            Scan(InventoryType.Inventory1, ref bags);
+            Scan(InventoryType.Inventory2, ref bags);
+            Scan(InventoryType.Inventory3, ref bags);
+            Scan(InventoryType.Inventory4, ref bags);
+            Scan(InventoryType.Crystals, ref bags);
+            Scan(InventoryType.Currency, ref bags);
+            Scan(InventoryType.RetainerPage1, ref retainers);
+            Scan(InventoryType.RetainerPage2, ref retainers);
+            Scan(InventoryType.RetainerPage3, ref retainers);
+            Scan(InventoryType.RetainerPage4, ref retainers);
+            Scan(InventoryType.RetainerPage5, ref retainers);
+            Scan(InventoryType.RetainerPage6, ref retainers);
+            Scan(InventoryType.RetainerPage7, ref retainers);
+            Scan(InventoryType.SaddleBag1, ref saddlebag);
+            Scan(InventoryType.SaddleBag2, ref saddlebag);
+
+            if (bags > 0) breakdown["Bags"] = bags;
+            if (retainers > 0) breakdown["Retainers"] = retainers;
+            if (saddlebag > 0) breakdown["Saddlebag"] = saddlebag;
+            return breakdown;
+        }
+        catch
+        {
+            return new();
+        }
+    }
+
     public void Dispose()
     {
     }
 }
-
-
-
-
-
-
-
-
-
-

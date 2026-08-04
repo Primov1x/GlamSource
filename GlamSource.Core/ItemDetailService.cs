@@ -4,6 +4,8 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using GlamSource.Core;
 using Lumina;
+using Lumina.Data.Files;
+using Lumina.Data.Parsing.Layer;
 using Lumina.Excel;
 using Lumina.Excel.Sheets;
 using LuminaSupplemental.Excel.Model;
@@ -46,6 +48,7 @@ public record ItemSourceDetail(
 public interface IItemDetailService
 {
     ItemDetail? GetDetail(uint itemId);
+    GameData GameData { get; }
 }
 
 public sealed class ItemDetailService : IItemDetailService
@@ -69,7 +72,8 @@ public sealed class ItemDetailService : IItemDetailService
     // ponytail: CostItemId → (bossName, cfcName, cfcRowId) from "Totem Gear (X)" shop name
     private readonly Dictionary<uint, (string bossName, string? cfcName, uint? cfcRowId, uint? questId)> _totemCostToBoss = new();
 
-
+    // Name-only fallback for NPCs with no location data
+    private readonly Dictionary<uint, string> _shopNpcNameOnly = new();
 
     public ItemDetailService(GameData gameData)
     {
@@ -78,6 +82,8 @@ public sealed class ItemDetailService : IItemDetailService
         BuildCaches();
         BuildDutyDropCache();
     }
+
+    public GameData GameData => _gameData;
 
     public ItemDetail? GetDetail(uint itemId)
     {
@@ -239,10 +245,43 @@ public sealed class ItemDetailService : IItemDetailService
                         if (reward.RowId == itemId)
                         {
                             var questName = quest.Name.ToString() ?? "Unknown Quest";
+
+                            string? questNpcName = null;
+                            string? questZoneName = null;
+                            float? questMapX = null, questMapY = null;
+                            uint? questTerritoryId = null, questMapId = null;
+
+                            var issuerStart = quest.IssuerStart;
+                            if (issuerStart.RowId > 0)
+                            {
+                                var resident = _gameData.GetExcelSheet<ENpcResident>()?.GetRow(issuerStart.RowId);
+                                questNpcName = resident?.Singular.ToString();
+                            }
+
+                            var issuerLocation = quest.IssuerLocation;
+                            if (issuerLocation.RowId > 0)
+                            {
+                                var level = issuerLocation.ValueNullable;
+                                if (level != null)
+                                {
+                                    var map = level.Value.Map.ValueNullable;
+                                    if (map != null)
+                                    {
+                                        questMapX = ToMapCoordinate(level.Value.X, map.Value.SizeFactor, map.Value.OffsetX);
+                                        questMapY = ToMapCoordinate(level.Value.Z, map.Value.SizeFactor, map.Value.OffsetY);
+                                        questZoneName = map.Value.PlaceName.ValueNullable?.Name.ToString();
+                                        questTerritoryId = map.Value.TerritoryType.RowId;
+                                        questMapId = map.Value.RowId;
+                                    }
+                                }
+                            }
+
                             results.Add(new ItemSourceDetail(
                                 ItemSourceType.Quest,
                                 $"Quest Reward: {questName}",
-                                null, null, null, null, null, null,
+                                questNpcName, questZoneName,
+                                questMapX, questMapY,
+                                questTerritoryId, questMapId,
                                 null, null,
                                 questName, null, null, null, null, quest.RowId, null));
                             break;
@@ -431,7 +470,12 @@ public sealed class ItemDetailService : IItemDetailService
                             : $"Shop: {shopName}";
 
                         var npcInfos = _shopNpcLookup.GetValueOrDefault(shopId);
-                        if (npcInfos != null)
+                        if (npcInfos == null && _shopNpcNameOnly.TryGetValue(shopId, out var nameOnly))
+                        {
+                            npcInfos = new List<NpcLocationInfo> { new(nameOnly, "", 0, 0, 0, 0) };
+                        }
+
+                        if (npcInfos != null && npcInfos.Count > 0)
                         {
                             foreach (var npc in npcInfos)
                             {
@@ -518,7 +562,6 @@ public sealed class ItemDetailService : IItemDetailService
             return;
 
         // Level lookup: ENpcBase.RowId → (MapId, Map, X, Z)
-        // Note: FFXIV uses X/Z for map coordinates (Z = Y on 2D map)
         var npcLevelLookup = new Dictionary<uint, (uint mapId, Map map, float x, float z)>();
         foreach (var level in levelSheet)
         {
@@ -531,6 +574,29 @@ public sealed class ItemDetailService : IItemDetailService
                 npcLevelLookup[level.Object.RowId] = (mapId, level.Map.Value, level.X, level.Z);
             }
         }
+
+        // ENpcPlace fallback: supplemental NPC positions for NPCs without Level entry
+        var enpcPlaces = CsvLoader.LoadResource<ENpcPlace>(
+            CsvLoader.ENpcPlaceResourceName, true, out _, out _, _gameData);
+
+        var supplementalNpcLocations = new Dictionary<uint, ENpcPlace>();
+        foreach (var place in enpcPlaces)
+        {
+            if (place.ENpcResidentId > 0 && !supplementalNpcLocations.ContainsKey(place.ENpcResidentId))
+                supplementalNpcLocations[place.ENpcResidentId] = place;
+        }
+
+        // Track NPCs that still have no location after Level + ENpcPlace
+        var missingNpcs = new HashSet<uint>();
+        foreach (var npcBase in enpcBaseSheet)
+        {
+            var npcId = npcBase.RowId;
+            if (!_npcNameCache.ContainsKey(npcId)) continue;
+            if (npcLevelLookup.ContainsKey(npcId)) continue;
+            if (supplementalNpcLocations.ContainsKey(npcId)) continue;
+            missingNpcs.Add(npcId);
+        }
+
         // ENpcBase → Shop RowIds
         foreach (var npcBase in enpcBaseSheet)
         {
@@ -539,7 +605,32 @@ public sealed class ItemDetailService : IItemDetailService
                 continue;
 
             if (!npcLevelLookup.TryGetValue(npcId, out var levelInfo))
+            {
+                // Fallback: ENpcPlace supplemental data
+                if (supplementalNpcLocations.TryGetValue(npcId, out var place))
+                {
+                    var mapRow = mapSheet?.GetRow(place.MapId);
+                    var supZoneName = mapRow?.PlaceName.ValueNullable?.Name.ToString() ?? "";
+                    var supTerritoryTypeId = place.TerritoryTypeId;
+                    var supMapId = place.MapId;
+                    // Position is already in map coordinates
+                    var supMapX = place.Position.X;
+                    var supMapY = place.Position.Y;
+
+                    foreach (var dataRef in npcBase.ENpcData)
+                    {
+                        if (dataRef.RowId == 0)
+                            continue;
+
+                        var shopId = dataRef.RowId;
+                        if (!_shopNpcLookup.ContainsKey(shopId))
+                            _shopNpcLookup[shopId] = new();
+                        _shopNpcLookup[shopId].Add(new NpcLocationInfo(
+                            npcName, supZoneName, supMapX, supMapY, supTerritoryTypeId, supMapId));
+                    }
+                }
                 continue;
+            }
 
             var zoneName = levelInfo.map.PlaceName.ValueNullable?.Name.ToString() ?? "";
             var territoryTypeId = levelInfo.map.TerritoryType.RowId;
@@ -561,12 +652,85 @@ public sealed class ItemDetailService : IItemDetailService
             }
         }
 
-        // SpecialShop → NPC: SpecialShop sheet has no NPC field in Lumina.
-        // PreHandler.Target links to SpecialShop but has no ENpcBase.
-        // TopicSelect.Shop[] links to SpecialShop but has no ENpcBase.
-        // The reference plugin (ItemVendorLocation) resolves NPC via game events
-        // (Interactable/EventMgr) when the shop UI opens — not from static sheets.
-        // ponytail: skip for now; shop name alone is sufficient for source display.
+        // Stage 2: LGB fallback for NPCs still missing locations
+        if (missingNpcs.Count > 0)
+        {
+            var territorySheet = _gameData.GetExcelSheet<TerritoryType>();
+            if (territorySheet != null)
+            {
+                foreach (var territory in territorySheet)
+                {
+                    var bg = territory.Bg.ToString();
+                    if (string.IsNullOrEmpty(bg)) continue;
+
+                    try
+                    {
+                        var lgbIdx = bg.IndexOf("/level/");
+                        if (lgbIdx < 0) continue;
+                        var lgbFileName = "bg/" + bg[..(lgbIdx + 1)] + "level/planevent.lgb";
+                        var lgbFile = _gameData.GetFile<LgbFile>(lgbFileName);
+                        if (lgbFile == null) continue;
+
+                        foreach (var layer in lgbFile.Layers)
+                        {
+                            foreach (var obj in layer.InstanceObjects)
+                            {
+                                if (obj.AssetType != LayerEntryType.EventNPC) continue;
+
+                                var eventNpc = (LayerCommon.ENPCInstanceObject)obj.Object;
+                                var npcId = eventNpc.ParentData.ParentData.BaseId;
+
+                                if (!missingNpcs.Contains(npcId)) continue;
+
+                                var pos = obj.Transform.Translation;
+                                var map = territory.Map.ValueNullable;
+                                if (map == null) continue;
+
+                                var mapX = ToMapCoordinate(pos.X, map.Value.SizeFactor, map.Value.OffsetX);
+                                var mapY = ToMapCoordinate(pos.Z, map.Value.SizeFactor, map.Value.OffsetY);
+                                var zoneName = map.Value.PlaceName.ValueNullable?.Name.ToString() ?? "";
+
+                                var npcName = _npcNameCache.GetValueOrDefault(npcId, "");
+                                if (string.IsNullOrEmpty(npcName)) continue;
+
+                                var npcBase = enpcBaseSheet.GetRow(npcId);
+                                foreach (var dataRef in npcBase.ENpcData)
+                                {
+                                    if (dataRef.RowId == 0) continue;
+                                    if (!_shopNpcLookup.ContainsKey(dataRef.RowId))
+                                        _shopNpcLookup[dataRef.RowId] = new();
+                                    _shopNpcLookup[dataRef.RowId].Add(new NpcLocationInfo(
+                                        npcName, zoneName, mapX, mapY,
+                                        territory.RowId, map.Value.RowId));
+                                }
+
+                                missingNpcs.Remove(npcId);
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        // LGB file missing or corrupt — skip
+                    }
+
+                    if (missingNpcs.Count == 0) break;
+                }
+            }
+        }
+
+        // Stage 3: name-only fallback for NPCs with no location data at all
+        foreach (var npcId in missingNpcs)
+        {
+            var npcName = _npcNameCache.GetValueOrDefault(npcId, "");
+            if (string.IsNullOrEmpty(npcName)) continue;
+
+            var npcBase = enpcBaseSheet.GetRow(npcId);
+            foreach (var dataRef in npcBase.ENpcData)
+            {
+                if (dataRef.RowId > 0 && !_shopNpcNameOnly.ContainsKey(dataRef.RowId))
+                    _shopNpcNameOnly[dataRef.RowId] = npcName;
+            }
+        }
     }
 
     private void BuildDutyDropCache()
@@ -955,4 +1119,6 @@ public sealed class ItemDetailService : IItemDetailService
     }
 
 }
+
+
 
