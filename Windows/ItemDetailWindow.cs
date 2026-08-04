@@ -323,20 +323,16 @@ public class ItemDetailWindow : Window, IDisposable
 
     private void DrawSourceCard(ItemSourceDetail src, int sourceIdx, Vector4 borderColor, string? titleOverride = null)
     {
-        var contentMin = ImGui.GetWindowContentRegionMin() + ImGui.GetWindowPos();
-        var contentMax = ImGui.GetWindowContentRegionMax() + ImGui.GetWindowPos();
-        ImGui.GetWindowDrawList().PushClipRect(contentMin, contentMax, true);
-
-        var bgDrawList = ImGui.GetWindowDrawList();
-        var width = ImGui.GetContentRegionAvail().X;
-        var startY = ImGui.GetCursorPosY();
-        var startScreenX = ImGui.GetCursorScreenPos().X;
-
-        ImGui.Indent(12f);
-        ImGui.BeginGroup();
-        ImGui.Spacing();
-
         var srcStyle = SourceStyles.GetValueOrDefault(src.Type, (Vector4.One, Vector4.One, "UNKNOWN"));
+
+        ImGui.PushStyleColor(ImGuiCol.ChildBg, new Vector4(0.12f, 0.12f, 0.22f, 1f));
+        ImGui.PushStyleColor(ImGuiCol.Border, ImGui.ColorConvertU32ToFloat4(
+            ImGui.ColorConvertFloat4ToU32(borderColor)));
+        ImGui.PushStyleVar(ImGuiStyleVar.ChildRounding, 3f);
+        ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(8f, 6f));
+        ImGui.Indent(12f);
+        ImGui.BeginChild($"##card_{sourceIdx}", new Vector2(-1, 0), true);
+
         DrawBadge(srcStyle.Item3, srcStyle.Item2);
 
         ImGui.SameLine();
@@ -518,33 +514,13 @@ public class ItemDetailWindow : Window, IDisposable
         }
 
         ImGui.Spacing();
-        ImGui.EndGroup();
+        ImGui.EndChild();
+        ImGui.PopStyleVar(2);
+        ImGui.PopStyleColor(2);
         ImGui.Unindent(12f);
 
-        var endY = ImGui.GetCursorPosY();
-        var height = endY - startY;
-
-        if (height > 0)
-        {
-            var bgLeft = startScreenX;
-            var bgRight = startScreenX + width;
-
-            bgDrawList.AddRectFilled(
-                new Vector2(bgLeft, startY),
-                new Vector2(bgRight, startY + height),
-                ImGui.ColorConvertFloat4ToU32(new Vector4(0.12f, 0.12f, 0.22f, 1f)),
-                3f);
-
-            bgDrawList.AddRectFilled(
-                new Vector2(bgLeft, startY),
-                new Vector2(bgLeft + 3, startY + height),
-                ImGui.ColorConvertFloat4ToU32(borderColor));
-        }
-
+        ImGui.Separator();
         ImGui.Spacing();
-        ImGui.Spacing();
-
-        ImGui.GetWindowDrawList().PopClipRect();
     }
 
     private void DrawBadge(string label, Vector4 bgColor)
