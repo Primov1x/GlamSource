@@ -323,6 +323,10 @@ public class ItemDetailWindow : Window, IDisposable
 
     private void DrawSourceCard(ItemSourceDetail src, int sourceIdx, Vector4 borderColor, string? titleOverride = null)
     {
+        var contentMin = ImGui.GetWindowContentRegionMin() + ImGui.GetWindowPos();
+        var contentMax = ImGui.GetWindowContentRegionMax() + ImGui.GetWindowPos();
+        ImGui.GetWindowDrawList().PushClipRect(contentMin, contentMax, true);
+
         var bgDrawList = ImGui.GetWindowDrawList();
         var width = ImGui.GetContentRegionAvail().X;
         var startY = ImGui.GetCursorPosY();
@@ -539,6 +543,8 @@ public class ItemDetailWindow : Window, IDisposable
 
         ImGui.Spacing();
         ImGui.Spacing();
+
+        ImGui.GetWindowDrawList().PopClipRect();
     }
 
     private void DrawBadge(string label, Vector4 bgColor)
