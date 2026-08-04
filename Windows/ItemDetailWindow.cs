@@ -334,9 +334,8 @@ public class ItemDetailWindow : Window, IDisposable
         ImGui.BeginChild($"##card_{sourceIdx}", new Vector2(-1, 0), true);
 
         DrawBadge(srcStyle.Item3, srcStyle.Item2);
-
         ImGui.SameLine();
-        ImGui.Text($"  {titleOverride ?? src.Description}");
+        ImGui.Text($" {titleOverride ?? src.Description}");
         if (src.SourceItemId.HasValue)
         {
             ImGui.SameLine();
@@ -346,20 +345,21 @@ public class ItemDetailWindow : Window, IDisposable
                 _navigateToSourceIdx = sourceIdx;
             }
         }
-        ImGui.Spacing();
-
         if (src.NpcName != null && (src.ZoneName != null || src.MapX.HasValue))
         {
+            ImGui.Spacing();
             DrawNpcRow(src, sourceIdx, 0);
         }
 
         if (src.Materials != null && src.Materials.Count > 0)
         {
-            ImGui.TextDisabled("    Materials:");
+            ImGui.Spacing();
+            ImGui.TextDisabled("Materials:");
             for (int matIdx = 0; matIdx < src.Materials.Count; matIdx++)
             {
                 var mat = src.Materials[matIdx];
-                var status = mat.ItemId > 19 ? GetInventoryStatus(mat.ItemId, (int)mat.Count) : "";
+                var have = mat.ItemId > 19 ? GetItemCount(mat.ItemId) : 0;
+                var sufficient = have >= mat.Count;
                 var breakdown = mat.ItemId > 19 ? GetInventoryBreakdown(mat.ItemId) : new Dictionary<string, int>();
                 var showGatherBtn = ShouldShowGatherButton(mat.ItemId);
 
@@ -370,7 +370,25 @@ public class ItemDetailWindow : Window, IDisposable
                     ImGui.Image(iconTexture.Handle, iconSize);
                     ImGui.SameLine();
                 }
-                ImGui.TextDisabled($"      \u2022 {mat.Name} x{FormatNumber(mat.Count)}{status}");
+
+                if (mat.ItemId > 19)
+                {
+                    var checkColor = sufficient
+                        ? ImGui.ColorConvertFloat4ToU32(new Vector4(0.25f, 0.75f, 0.25f, 1f))
+                        : ImGui.ColorConvertFloat4ToU32(new Vector4(0.5f, 0.5f, 0.5f, 1f));
+                    var drawList = ImGui.GetWindowDrawList();
+                    var cursorPos = ImGui.GetCursorScreenPos();
+                    drawList.AddText(cursorPos, checkColor, sufficient ? "\u2713" : "\u25CB");
+                    ImGui.SameLine();
+                    ImGui.SetCursorPosY(ImGui.GetCursorPosY() - 1f);
+                }
+
+                ImGui.TextDisabled($" {mat.Name} x{FormatNumber(mat.Count)}");
+                if (mat.ItemId > 19)
+                {
+                    ImGui.SameLine();
+                    ImGui.TextDisabled($"({have}/{mat.Count})");
+                }
 
                 if (showGatherBtn)
                 {
@@ -394,7 +412,7 @@ public class ItemDetailWindow : Window, IDisposable
                 if (breakdown.Count > 0)
                 {
                     ImGui.Indent(20f);
-                    ImGui.TextDisabled($"        Breakdown: {string.Join(", ", breakdown.Select(kv => $"{kv.Key}: {kv.Value}"))}");
+                    ImGui.TextDisabled($"Breakdown: {string.Join(", ", breakdown.Select(kv => $"{kv.Key}: {kv.Value}"))}");
                     ImGui.Unindent(20f);
                 }
             }
@@ -410,17 +428,19 @@ public class ItemDetailWindow : Window, IDisposable
 
         if (src.Costs != null && src.Costs.Count > 0)
         {
-            ImGui.TextDisabled("    Cost:");
+            ImGui.Spacing();
+            ImGui.TextDisabled("Cost:");
             int costIdx = 0;
             foreach (var cost in src.Costs)
             {
                 if (cost.ItemId == 0)
                 {
-                    ImGui.TextColored(new Vector4(1f, 0.84f, 0f, 1f), $"      \u2022 {FormatNumber(cost.Count)} Gil");
+                    ImGui.TextColored(new Vector4(1f, 0.84f, 0f, 1f), $" {FormatNumber(cost.Count)} Gil");
                 }
                 else
                 {
-                    var status = cost.ItemId > 19 ? GetInventoryStatus(cost.ItemId, (int)cost.Count) : "";
+                    var have = GetItemCount(cost.ItemId);
+                    var sufficient = have >= cost.Count;
                     var breakdown = cost.ItemId > 19 ? GetInventoryBreakdown(cost.ItemId) : new Dictionary<string, int>();
 
                     if (_textureProvider != null && cost.IconId > 0)
@@ -430,12 +450,30 @@ public class ItemDetailWindow : Window, IDisposable
                         ImGui.Image(iconTexture.Handle, iconSize);
                         ImGui.SameLine();
                     }
-                    ImGui.TextDisabled($"      \u2022 {FormatNumber(cost.Count)} {cost.Name}{status}");
+
+                    if (cost.ItemId > 19)
+                    {
+                        var checkColor = sufficient
+                            ? ImGui.ColorConvertFloat4ToU32(new Vector4(0.25f, 0.75f, 0.25f, 1f))
+                            : ImGui.ColorConvertFloat4ToU32(new Vector4(0.5f, 0.5f, 0.5f, 1f));
+                        var drawList = ImGui.GetWindowDrawList();
+                        var cursorPos = ImGui.GetCursorScreenPos();
+                        drawList.AddText(cursorPos, checkColor, sufficient ? "\u2713" : "\u25CB");
+                        ImGui.SameLine();
+                        ImGui.SetCursorPosY(ImGui.GetCursorPosY() - 1f);
+                    }
+
+                    ImGui.TextDisabled($" {FormatNumber(cost.Count)} {cost.Name}");
+                    if (cost.ItemId > 19)
+                    {
+                        ImGui.SameLine();
+                        ImGui.TextDisabled($"({have}/{cost.Count})");
+                    }
 
                     if (breakdown.Count > 0)
                     {
                         ImGui.Indent(20f);
-                        ImGui.TextDisabled($"        Breakdown: {string.Join(", ", breakdown.Select(kv => $"{kv.Key}: {kv.Value}"))}");
+                        ImGui.TextDisabled($"Breakdown: {string.Join(", ", breakdown.Select(kv => $"{kv.Key}: {kv.Value}"))}");
                         ImGui.Unindent(20f);
                     }
 
