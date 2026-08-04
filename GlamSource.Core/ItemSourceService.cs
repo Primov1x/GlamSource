@@ -13,6 +13,7 @@ public enum ItemSourceType
     MogStation,
     PvP,
     TreasureHunt,
+    Shop,
     Other
 }
 
