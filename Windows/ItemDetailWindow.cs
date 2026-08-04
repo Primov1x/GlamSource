@@ -323,7 +323,7 @@ public class ItemDetailWindow : Window, IDisposable
 
     private void DrawSourceCard(ItemSourceDetail src, int sourceIdx, Vector4 borderColor, string? titleOverride = null)
     {
-        var bgDrawList = ImGui.GetBackgroundDrawList();
+        var bgDrawList = ImGui.GetWindowDrawList();
         var width = ImGui.GetContentRegionAvail().X;
         var startY = ImGui.GetCursorPosY();
         var startScreenX = ImGui.GetCursorScreenPos().X;
@@ -337,6 +337,15 @@ public class ItemDetailWindow : Window, IDisposable
 
         ImGui.SameLine();
         ImGui.Text($"  {titleOverride ?? src.Description}");
+        if (src.SourceItemId.HasValue)
+        {
+            ImGui.SameLine();
+            if (ImGui.SmallButton($"[i]##source_{sourceIdx}"))
+            {
+                _navigateToItemId = src.SourceItemId.Value;
+                _navigateToSourceIdx = sourceIdx;
+            }
+        }
         ImGui.Spacing();
 
         if (src.NpcName != null && (src.ZoneName != null || src.MapX.HasValue))

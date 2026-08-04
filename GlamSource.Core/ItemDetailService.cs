@@ -43,7 +43,8 @@ public record ItemSourceDetail(
     string? CfcType,
     string? BossName,
     uint? QuestForUnlock,
-    IReadOnlyList<uint>? CfcRowIds);
+    IReadOnlyList<uint>? CfcRowIds,
+    uint? SourceItemId = null);
 
 public interface IItemDetailService
 {
@@ -71,6 +72,9 @@ public sealed class ItemDetailService : IItemDetailService
 
     // ponytail: CostItemId → (bossName, cfcName, cfcRowId) from "Totem Gear (X)" shop name
     private readonly Dictionary<uint, (string bossName, string? cfcName, uint? cfcRowId, uint? questId)> _totemCostToBoss = new();
+
+    // ponytail: ItemId → List<ItemSupplement> (Loot/Desynth/Reduction sources)
+    private Dictionary<uint, List<ItemSupplement>> _itemSupplementCache = new();
 
     // Name-only fallback for NPCs with no location data
     private readonly Dictionary<uint, string> _shopNpcNameOnly = new();
@@ -293,7 +297,29 @@ public sealed class ItemDetailService : IItemDetailService
             }
         }
 
-        // 6. Generic fallback — nothing found
+        // 6. ItemSupplement (Loot, Gardening, PoD, etc. — NOT Desynth/Reduction)
+        if (_itemSupplementCache.TryGetValue(itemId, out var supplements))
+        {
+            var relevant = supplements
+                .Where(s => s.ItemSupplementSource != ItemSupplementSource.Desynth
+                         && s.ItemSupplementSource != ItemSupplementSource.Reduction)
+                .ToList();
+            foreach (var supp in relevant)
+            {
+                var sourceItemName = GetItemName(supp.SourceItemId) ?? "Unknown";
+                var desc = supp.ItemSupplementSource switch
+                {
+                    ItemSupplementSource.Loot => $"Obtained from: {sourceItemName}",
+                    _ => $"{supp.ItemSupplementSource}: {sourceItemName}"
+                };
+                results.Add(new ItemSourceDetail(
+                    ItemSourceType.Other, desc,
+                    null, null, null, null, null, null,
+                    null, null, null, null, null, null, null, null, null, supp.SourceItemId));
+            }
+        }
+
+        // 7. Generic fallback — nothing found
         if (results.Count == 0)
         {
             results.Add(new ItemSourceDetail(
@@ -791,6 +817,18 @@ public sealed class ItemDetailService : IItemDetailService
             if (!_itemToDutyMap[drop.ItemId].Contains(drop.ContentFinderConditionId))
                 _itemToDutyMap[drop.ItemId].Add(drop.ContentFinderConditionId);
         }
+
+        // Load ItemSupplement (Loot/Desynth/Reduction)
+        var supplements = CsvLoader.LoadResource<ItemSupplement>(
+            CsvLoader.ItemSupplementResourceName,
+            includesHeaders: true,
+            out _,
+            out _,
+            gameData: null);
+        _itemSupplementCache = supplements
+            .Where(s => s.ItemId != 0 && s.SourceItemId != 0)
+            .GroupBy(s => s.ItemId)
+            .ToDictionary(g => g.Key, g => g.ToList());
 
         BuildTotemLookupCache();
     }

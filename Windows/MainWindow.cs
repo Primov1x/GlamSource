@@ -127,19 +127,41 @@ public class MainWindow : Window, IDisposable
             ImGui.TableSetupColumn("Overlay", ImGuiTableColumnFlags.WidthFixed, 60f);
             ImGui.TableHeadersRow();
 
-            foreach (var slot in slots)
+            foreach (var (slot, idx) in slots.Select((s, i) => (s, i)))
             {
                 ImGui.TableNextRow();
                 ImGui.TableSetColumnIndex(0);
                 ImGui.Text($"{slot.Slot}");
 
                 ImGui.TableSetColumnIndex(1);
-                ImGui.Text($"{slot.ActualItemName} ({slot.ActualItemId})");
+                if (slot.ActualItemId > 0)
+                {
+                    ImGui.PushStyleColor(ImGuiCol.Button, Vector4.Zero);
+                    ImGui.PushStyleColor(ImGuiCol.ButtonHovered, Vector4.Zero);
+                    ImGui.PushStyleColor(ImGuiCol.ButtonActive, Vector4.Zero);
+                    if (ImGui.Selectable($"{slot.ActualItemName} ({slot.ActualItemId})##worn_{idx}", false))
+                    {
+                        _itemDetailWindow?.ShowItem(slot.ActualItemId);
+                    }
+                    ImGui.PopStyleColor(3);
+                }
+                else
+                {
+                    ImGui.TextDisabled("Empty");
+                }
 
                 ImGui.TableSetColumnIndex(2);
-                if (slot.IsGlamoured)
+                if (slot.IsGlamoured && slot.GlamourItemId.HasValue)
                 {
-                    ImGui.TextColored(new Vector4(0.3f, 0.8f, 0.3f, 1f), $"{slot.GlamourItemName} ({slot.GlamourItemId})");
+                    ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.3f, 0.8f, 0.3f, 1f));
+                    ImGui.PushStyleColor(ImGuiCol.Button, Vector4.Zero);
+                    ImGui.PushStyleColor(ImGuiCol.ButtonHovered, Vector4.Zero);
+                    ImGui.PushStyleColor(ImGuiCol.ButtonActive, Vector4.Zero);
+                    if (ImGui.Selectable($"{slot.GlamourItemName} ({slot.GlamourItemId})##glam_{idx}", false))
+                    {
+                        _itemDetailWindow?.ShowItem(slot.GlamourItemId.Value);
+                    }
+                    ImGui.PopStyleColor(4);
                 }
                 else
                 {
@@ -156,21 +178,21 @@ public class MainWindow : Window, IDisposable
                 }
                 else
                 {
+                    if (slot.IsGlamoured && hasGlamourSources)
+                    {
+                        foreach (var src in slot.GlamourItemSources)
+                        {
+                            var color = GetSourceColor(src.Type);
+                            ImGui.TextColored(color, $"Glam: {FormatSource(src)}");
+                        }
+                    }
+
                     if (hasActualSources)
                     {
                         foreach (var src in slot.ActualItemSources)
                         {
                             var color = GetSourceColor(src.Type);
                             ImGui.TextColored(color, $"Worn: {FormatSource(src)}");
-                        }
-                    }
-
-                    if (hasGlamourSources)
-                    {
-                        foreach (var src in slot.GlamourItemSources)
-                        {
-                            var color = GetSourceColor(src.Type);
-                            ImGui.TextColored(color, $"Glam: {FormatSource(src)}");
                         }
                     }
                 }
