@@ -5,7 +5,7 @@ Stand: 30.07.2026 | Dalamud API Level 15 | Lumina 7.6.0 | .NET 10
 ---
 
 ## 1. Projekt-Architektur
-
+KNOWLEDGEBASE-Regel: Program.cs ist der Mock-Einstiegspunkt. NIEMALS löschen.
 ### Verzeichnisstruktur
 ```
 GlamSource/

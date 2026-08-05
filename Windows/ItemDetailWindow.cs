@@ -165,7 +165,6 @@ public class ItemDetailWindow : Window, IDisposable
         if (detail == null)
         {
             ImGui.TextDisabled("Item not found.");
-            ImGui.End();
             return;
         }
 
@@ -177,18 +176,7 @@ public class ItemDetailWindow : Window, IDisposable
             return;
         }
 
-        if (_history.Count > 0)
-        {
-            if (ImGui.SmallButton("← Back"))
-            {
-                var previousId = _history.Pop();
-                LoadItemDetail(previousId);
-            }
-            ImGui.SameLine();
-        }
-
         DrawItemHeader(detail);
-        ImGui.Spacing();
 
         if (_marketInfo != null && _marketItemId == detail.ItemId)
             DrawMarketPricesCompact(_marketInfo);
@@ -204,64 +192,75 @@ public class ItemDetailWindow : Window, IDisposable
 
     private void DrawItemHeader(ItemDetail detail)
     {
+        var iconSize = new Vector2(40f, 40f);
         if (_textureProvider != null && detail.IconId > 0)
         {
             var iconTexture = _textureProvider.GetFromGameIcon(new GameIconLookup(detail.IconId)).GetWrapOrEmpty();
-            var iconSize = new Vector2(ImGui.GetTextLineHeight());
             ImGui.Image(iconTexture.Handle, iconSize);
             ImGui.SameLine();
         }
 
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.31f, 0.76f, 0.97f, 1f));
-        ImGui.SetWindowFontScale(1.1f);
+        ImGui.BeginGroup();
         ImGui.Text(detail.Name);
-        ImGui.SetWindowFontScale(1.0f);
-        ImGui.PopStyleColor();
+        ImGui.TextDisabled($"Item ID {detail.ItemId}  \u00b7  iLvl {detail.ItemLevel}");
+        ImGui.EndGroup();
 
-        ImGui.SameLine();
-        ImGui.TextDisabled($"({detail.ItemId})  |  iLvl {detail.ItemLevel}");
+        ImGui.Spacing();
 
-        var rightX = ImGui.GetContentRegionAvail().X > 0
-            ? ImGui.GetWindowPos().X + ImGui.GetContentRegionAvail().X - 120
-            : ImGui.GetCursorPosX() + 120;
-        ImGui.SameLine();
-        if (ImGui.SmallButton($"Wiki##wiki_{detail.ItemId}"))
+        if (_history.Count > 0)
+        {
+            if (ImGui.SmallButton("← Back"))
+            {
+                var previousId = _history.Pop();
+                LoadItemDetail(previousId);
+            }
+            ImGui.SameLine();
+        }
+
+        if (ImGui.SmallButton("Wiki"))
         {
             OpenWiki(detail.Name, detail.ItemId);
         }
         ImGui.SameLine();
-        if (detail.IsMarketable && ImGui.SmallButton($"Market##market_{detail.ItemId}"))
+        if (detail.IsMarketable && ImGui.SmallButton("Market prices"))
         {
             OpenMarketPrices(detail.ItemId);
         }
+        ImGui.Spacing();
     }
 
     private void DrawMarketPricesCompact(MarketInfo market)
     {
-        ImGui.PushStyleColor(ImGuiCol.ChildBg, new Vector4(0.15f, 0.15f, 0.25f, 1f));
-        if (ImGui.BeginChild("##market", new Vector2(ImGui.GetContentRegionAvail().X, 24),
-            true))
-        {
-            ImGui.TextDisabled("Shiva:");
-            ImGui.SameLine();
-            ImGui.TextColored(new Vector4(1f, 0.84f, 0.25f, 1f),
-                $"{FormatNumber(market.WorldMinPrice)}");
-            ImGui.SameLine();
-            ImGui.TextDisabled("Gil (NQ)  |  Light DC:");
-            ImGui.SameLine();
-            ImGui.TextColored(new Vector4(0.41f, 0.94f, 0.68f, 1f),
-                $"{FormatNumber(market.DcMinPrice)}");
-            ImGui.SameLine();
-            ImGui.TextDisabled($"Gil on {market.DcWorldName}");
-        }
-        ImGui.EndChild();
-        ImGui.PopStyleColor();
+        var drawList = ImGui.GetWindowDrawList();
+        var pos = ImGui.GetCursorScreenPos();
+        var textSize = ImGui.CalcTextSize($"World: {FormatNumber(market.WorldMinPrice)} Gil  |  DC ({market.DcWorldName}): {FormatNumber(market.DcMinPrice)} Gil");
+        var boxHeight = ImGui.GetTextLineHeightWithSpacing();
+        var boxWidth = ImGui.GetWindowContentRegionMax().X - ImGui.GetWindowPos().X - 10f;
+        var boxColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0.12f, 0.12f, 0.12f, 1f));
+        drawList.AddRectFilled(
+            new Vector2(pos.X, pos.Y),
+            new Vector2(pos.X + boxWidth, pos.Y + boxHeight),
+            boxColor,
+            4f);
+
+        ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + 300f);
+        ImGui.TextDisabled("World:");
+        ImGui.SameLine();
+        ImGui.TextColored(new Vector4(1f, 0.84f, 0.25f, 1f),
+            $"{FormatNumber(market.WorldMinPrice)} Gil  |  ");
+        ImGui.TextDisabled($"DC ({market.DcWorldName}):");
+        ImGui.SameLine();
+        ImGui.TextColored(new Vector4(0.41f, 0.94f, 0.68f, 1f),
+            $"{FormatNumber(market.DcMinPrice)} Gil");
+        ImGui.PopTextWrapPos();
+
+        ImGui.Dummy(new Vector2(boxWidth, boxHeight));
+        ImGui.Spacing();
+        ImGui.Separator();
     }
 
     private void DrawSourceCards(ItemDetail detail)
     {
-        Console.WriteLine($"[UI] Drawing {detail.Sources.Count} sources for item {_showingItemId}");
-
         if (detail.Sources.Count == 0)
         {
             var grey = new Vector4(0.6f, 0.6f, 0.6f, 1f);
@@ -271,37 +270,54 @@ public class ItemDetailWindow : Window, IDisposable
             return;
         }
 
-        var vendorSources = detail.Sources
-            .Select((s, i) => (source: s, index: i))
-            .Where(x => x.source.Type == ItemSourceType.Vendor)
-            .ToList();
-
-        var craftedSources = detail.Sources
-            .Select((s, i) => (source: s, index: i))
-            .Where(x => x.source.Type == ItemSourceType.Crafted)
-            .ToList();
-
-        var otherSources = detail.Sources
-            .Select((s, i) => (source: s, index: i))
-            .Where(x => x.source.Type != ItemSourceType.Vendor && x.source.Type != ItemSourceType.Crafted)
-            .ToList();
-
-        foreach (var (src, idx) in otherSources)
+        var priority = new Dictionary<ItemSourceType, int>
         {
-            var fallbackStyle = SourceStyles.GetValueOrDefault(src.Type, (Vector4.One, Vector4.One, "UNKNOWN"));
-            DrawSourceCard(src, idx, fallbackStyle.Item1);
-        }
+            { ItemSourceType.Crafted, 0 },
+            { ItemSourceType.Vendor, 1 },
+            { ItemSourceType.Shop, 2 },
+            { ItemSourceType.Quest, 3 },
+            { ItemSourceType.Trial, 4 },
+            { ItemSourceType.Raid, 5 },
+            { ItemSourceType.Dungeon, 6 },
+            { ItemSourceType.Other, 9 }
+        };
+
+        var sortedSources = detail.Sources
+            .OrderBy(s => priority.GetValueOrDefault(s.Type, 9))
+            .ToList();
+
+        var vendorSources = sortedSources
+            .Where(s => s.Type == ItemSourceType.Vendor)
+            .ToList();
+
+        var craftedSources = sortedSources
+            .Where(s => s.Type == ItemSourceType.Crafted)
+            .ToList();
+
+        var questSources = sortedSources
+            .Where(s => s.Type == ItemSourceType.Quest)
+            .ToList();
+
+        var dutySources = sortedSources
+            .Where(s => s.Type == ItemSourceType.Trial || s.Type == ItemSourceType.Raid || s.Type == ItemSourceType.Dungeon)
+            .ToList();
+
+        var otherSources = sortedSources
+            .Where(s => s.Type != ItemSourceType.Vendor && s.Type != ItemSourceType.Crafted
+                     && s.Type != ItemSourceType.Quest && s.Type != ItemSourceType.Trial
+                     && s.Type != ItemSourceType.Raid && s.Type != ItemSourceType.Dungeon)
+            .ToList();
 
         if (craftedSources.Count > 0)
         {
             var craftedGroups = craftedSources
-                .GroupBy(s => GetMaterialKey(s.source))
+                .GroupBy(s => GetMaterialKey(s))
                 .ToList();
 
             for (int g = 0; g < craftedGroups.Count; g++)
             {
                 var group = craftedGroups[g];
-                var sources = group.Select(x => x.source).ToList();
+                var sources = group.ToList();
                 DrawCraftedCard(sources, g);
             }
         }
@@ -309,29 +325,54 @@ public class ItemDetailWindow : Window, IDisposable
         if (vendorSources.Count > 0)
         {
             var vendorGroups = vendorSources
-                .GroupBy(s => GetCostKey(s.source))
+                .GroupBy(s => GetCostKey(s))
                 .ToList();
 
             for (int g = 0; g < vendorGroups.Count; g++)
             {
                 var group = vendorGroups[g];
-                var npcs = group.Select(x => x.source).ToList();
+                var npcs = group.ToList();
                 DrawVendorCard(npcs, g, SourceStyles[ItemSourceType.Vendor].Item1);
             }
+        }
+
+        foreach (var src in questSources)
+        {
+            DrawSourceCard(src, sortedSources.IndexOf(src), SourceStyles.GetValueOrDefault(src.Type, (Vector4.One, Vector4.One, "UNKNOWN")).Item1);
+        }
+
+        foreach (var src in dutySources)
+        {
+            DrawSourceCard(src, sortedSources.IndexOf(src), SourceStyles.GetValueOrDefault(src.Type, (Vector4.One, Vector4.One, "UNKNOWN")).Item1);
+        }
+
+        foreach (var src in otherSources)
+        {
+            DrawSourceCard(src, sortedSources.IndexOf(src), SourceStyles.GetValueOrDefault(src.Type, (Vector4.One, Vector4.One, "UNKNOWN")).Item1);
         }
     }
 
     private void DrawSourceCard(ItemSourceDetail src, int sourceIdx, Vector4 borderColor, string? titleOverride = null)
     {
         var srcStyle = SourceStyles.GetValueOrDefault(src.Type, (Vector4.One, Vector4.One, "UNKNOWN"));
+        var hasContent = (src.Materials != null && src.Materials.Count > 0)
+                      || (src.Costs != null && src.Costs.Count > 0)
+                      || (src.NpcName != null && (src.ZoneName != null || src.MapX.HasValue))
+                      || (src.QuestName != null)
+                      || (src.CfcRowId.HasValue && src.CfcName != null)
+                      || (src.SourceItemId.HasValue && src.SourceItemId.Value > 0);
 
-        ImGui.PushStyleColor(ImGuiCol.ChildBg, new Vector4(0.12f, 0.12f, 0.22f, 1f));
-        ImGui.PushStyleColor(ImGuiCol.Border, ImGui.ColorConvertU32ToFloat4(
-            ImGui.ColorConvertFloat4ToU32(borderColor)));
-        ImGui.PushStyleVar(ImGuiStyleVar.ChildRounding, 3f);
-        ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(8f, 6f));
-        ImGui.Indent(12f);
-        ImGui.BeginChild($"##card_{sourceIdx}", new Vector2(-1, 0), true);
+        ImGui.Separator();
+        ImGui.Spacing();
+
+        if (!hasContent)
+        {
+            DrawBadge(srcStyle.Item3, srcStyle.Item2);
+            ImGui.SameLine();
+            ImGui.TextDisabled($" {titleOverride ?? src.Description}");
+            ImGui.Spacing();
+            return;
+        }
 
         DrawBadge(srcStyle.Item3, srcStyle.Item2);
         ImGui.SameLine();
@@ -357,64 +398,7 @@ public class ItemDetailWindow : Window, IDisposable
             ImGui.TextDisabled("Materials:");
             for (int matIdx = 0; matIdx < src.Materials.Count; matIdx++)
             {
-                var mat = src.Materials[matIdx];
-                var have = mat.ItemId > 19 ? GetItemCount(mat.ItemId) : 0;
-                var sufficient = have >= mat.Count;
-                var breakdown = mat.ItemId > 19 ? GetInventoryBreakdown(mat.ItemId) : new Dictionary<string, int>();
-                var showGatherBtn = ShouldShowGatherButton(mat.ItemId);
-
-                if (_textureProvider != null && mat.IconId > 0)
-                {
-                    var iconTexture = _textureProvider.GetFromGameIcon(new GameIconLookup(mat.IconId)).GetWrapOrEmpty();
-                    var iconSize = new Vector2(ImGui.GetTextLineHeight() * 0.75f);
-                    ImGui.Image(iconTexture.Handle, iconSize);
-                    ImGui.SameLine();
-                }
-
-                if (mat.ItemId > 19)
-                {
-                    var checkColor = sufficient
-                        ? ImGui.ColorConvertFloat4ToU32(new Vector4(0.25f, 0.75f, 0.25f, 1f))
-                        : ImGui.ColorConvertFloat4ToU32(new Vector4(0.5f, 0.5f, 0.5f, 1f));
-                    var drawList = ImGui.GetWindowDrawList();
-                    var cursorPos = ImGui.GetCursorScreenPos();
-                    drawList.AddText(cursorPos, checkColor, sufficient ? "\u2713" : "\u25CB");
-                    ImGui.SameLine();
-                    ImGui.SetCursorPosY(ImGui.GetCursorPosY() - 1f);
-                }
-
-                ImGui.TextDisabled($" {mat.Name} x{FormatNumber(mat.Count)}");
-                if (mat.ItemId > 19)
-                {
-                    ImGui.SameLine();
-                    ImGui.TextDisabled($"({have}/{mat.Count})");
-                }
-
-                if (showGatherBtn)
-                {
-                    ImGui.SameLine();
-                    if (ImGui.SmallButton($"Gather##gather_{sourceIdx}_{matIdx}"))
-                    {
-                        try
-                        {
-                            var gb = Plugin.PluginInterface
-                                .GetIpcSubscriber<string, bool>("GatherBuddy.IPC.SearchItem");
-                            if (gb.HasFunction)
-                                gb.InvokeFunc(mat.Name);
-                        }
-                        catch (Exception ex)
-                        {
-                            Plugin.Log?.Information($"[GATHER] GatherBuddy not available: {ex.Message}");
-                        }
-                    }
-                }
-
-                if (breakdown.Count > 0)
-                {
-                    ImGui.Indent(20f);
-                    ImGui.TextDisabled($"Breakdown: {string.Join(", ", breakdown.Select(kv => $"{kv.Key}: {kv.Value}"))}");
-                    ImGui.Unindent(20f);
-                }
+                DrawMaterialRow(src.Materials[matIdx], sourceIdx, matIdx);
             }
 
             if (src.Type == ItemSourceType.Crafted)
@@ -433,132 +417,179 @@ public class ItemDetailWindow : Window, IDisposable
             int costIdx = 0;
             foreach (var cost in src.Costs)
             {
-                if (cost.ItemId == 0)
-                {
-                    ImGui.TextColored(new Vector4(1f, 0.84f, 0f, 1f), $" {FormatNumber(cost.Count)} Gil");
-                }
-                else
-                {
-                    var have = GetItemCount(cost.ItemId);
-                    var sufficient = have >= cost.Count;
-                    var breakdown = cost.ItemId > 19 ? GetInventoryBreakdown(cost.ItemId) : new Dictionary<string, int>();
-
-                    if (_textureProvider != null && cost.IconId > 0)
-                    {
-                        var iconTexture = _textureProvider.GetFromGameIcon(new GameIconLookup(cost.IconId)).GetWrapOrEmpty();
-                        var iconSize = new Vector2(ImGui.GetTextLineHeight() * 0.75f);
-                        ImGui.Image(iconTexture.Handle, iconSize);
-                        ImGui.SameLine();
-                    }
-
-                    if (cost.ItemId > 19)
-                    {
-                        var checkColor = sufficient
-                            ? ImGui.ColorConvertFloat4ToU32(new Vector4(0.25f, 0.75f, 0.25f, 1f))
-                            : ImGui.ColorConvertFloat4ToU32(new Vector4(0.5f, 0.5f, 0.5f, 1f));
-                        var drawList = ImGui.GetWindowDrawList();
-                        var cursorPos = ImGui.GetCursorScreenPos();
-                        drawList.AddText(cursorPos, checkColor, sufficient ? "\u2713" : "\u25CB");
-                        ImGui.SameLine();
-                        ImGui.SetCursorPosY(ImGui.GetCursorPosY() - 1f);
-                    }
-
-                    ImGui.TextDisabled($" {FormatNumber(cost.Count)} {cost.Name}");
-                    if (cost.ItemId > 19)
-                    {
-                        ImGui.SameLine();
-                        ImGui.TextDisabled($"({have}/{cost.Count})");
-                    }
-
-                    if (breakdown.Count > 0)
-                    {
-                        ImGui.Indent(20f);
-                        ImGui.TextDisabled($"Breakdown: {string.Join(", ", breakdown.Select(kv => $"{kv.Key}: {kv.Value}"))}");
-                        ImGui.Unindent(20f);
-                    }
-
-                    var showInfoButton = cost.ItemId > 19
-                        && !string.IsNullOrEmpty(cost.Name);
-
-                    if (showInfoButton)
-                    {
-                        ImGui.SameLine();
-                        if (ImGui.SmallButton($"[i]##cost_{sourceIdx}_{costIdx}"))
-                        {
-                            _navigateToItemId = cost.ItemId;
-                            _navigateToSourceIdx = sourceIdx;
-                        }
-                    }
-
-                    if (ShouldShowGatherButton(cost.ItemId))
-                    {
-                        ImGui.SameLine();
-                        if (ImGui.SmallButton($"Gather##gather_{sourceIdx}_{costIdx}"))
-                        {
-                            try
-                            {
-                                var gb = Plugin.PluginInterface
-                                    .GetIpcSubscriber<string, bool>("GatherBuddy.IPC.SearchItem");
-                                if (gb.HasFunction)
-                                    gb.InvokeFunc(cost.Name);
-                            }
-                            catch (Exception ex)
-                            {
-                                Plugin.Log?.Information($"[GATHER] GatherBuddy not available: {ex.Message}");
-                            }
-                        }
-                    }
-                }
+                DrawCostRow(cost, sourceIdx, costIdx);
                 costIdx++;
             }
         }
 
-        if (src.Type == ItemSourceType.Trial || src.Type == ItemSourceType.Raid || src.Type == ItemSourceType.Dungeon)
+        DrawDutyFinderRow(src, sourceIdx);
+        DrawQuestRow(src, sourceIdx);
+
+        ImGui.Spacing();
+    }
+
+    private void DrawMaterialRow(CostEntry mat, int sourceIdx, int matIdx, bool showCheckmark = true, string? prefix = null)
+    {
+        var have = mat.ItemId > 19 ? GetItemCount(mat.ItemId) : 0;
+        var sufficient = have >= mat.Count;
+        var breakdown = mat.ItemId > 19 ? GetInventoryBreakdown(mat.ItemId) : new Dictionary<string, int>();
+        var showGatherBtn = ShouldShowGatherButton(mat.ItemId);
+
+        if (_textureProvider != null && mat.IconId > 0)
         {
-            if (src.CfcRowId.HasValue && src.CfcName != null)
-            {
-                if (CheckUnlockStatus(src.CfcRowId.Value))
-                {
-                    ImGui.TextColored(new Vector4(0.4f, 1f, 0.4f, 1f), $"  \u2713 {src.CfcName} unlocked");
-                }
-                if (ImGui.SmallButton($"Duty Finder##duty_{sourceIdx}"))
-                {
-                    TryOpenDutyFinder(src.CfcRowId.Value);
-                }
-            }
+            var iconTexture = _textureProvider.GetFromGameIcon(new GameIconLookup(mat.IconId)).GetWrapOrEmpty();
+            float imageSize = ImGui.GetTextLineHeight() * 0.75f;
+            var iconSize = new Vector2(imageSize, imageSize);
+            // Vertically center icon with text
+            float textHeight = ImGui.GetTextLineHeight();
+            float offsetY = (textHeight - imageSize) * 0.5f;
+            var cursorPos = ImGui.GetCursorPos();
+            ImGui.SetCursorPosY(cursorPos.Y + offsetY);
+            ImGui.Image(iconTexture.Handle, iconSize);
+            ImGui.SameLine();
+            ImGui.SetCursorPosY(cursorPos.Y);
         }
 
-        if (src.Type == ItemSourceType.Quest && src.QuestName != null)
+        var nameColor = sufficient
+            ? ImGui.ColorConvertFloat4ToU32(new Vector4(0.25f, 0.75f, 0.25f, 1f))
+            : ImGui.ColorConvertFloat4ToU32(new Vector4(0.5f, 0.5f, 0.5f, 1f));
+        ImGui.PushStyleColor(ImGuiCol.Text, nameColor);
+        ImGui.Text($"{mat.Name} x{FormatNumber(mat.Count)}");
+        ImGui.PopStyleColor();
+        if (mat.ItemId > 19)
         {
-            if (src.NpcName != null && src.ZoneName != null)
+            ImGui.SameLine();
+            var countColor = sufficient
+                ? ImGui.ColorConvertFloat4ToU32(new Vector4(0.3f, 0.8f, 0.3f, 1f))
+                : ImGui.ColorConvertFloat4ToU32(new Vector4(0.6f, 0.6f, 0.6f, 1f));
+            ImGui.PushStyleColor(ImGuiCol.Text, countColor);
+            ImGui.Text($"({have}/{mat.Count})");
+            ImGui.PopStyleColor();
+            if (showCheckmark)
             {
                 ImGui.SameLine();
-                DrawNpcRow(src, sourceIdx, -1);
+                ImGui.SetCursorPosY(ImGui.GetCursorPosY() - 1f);
+                var checkColor = sufficient
+                    ? ImGui.ColorConvertFloat4ToU32(new Vector4(0.25f, 0.75f, 0.25f, 1f))
+                    : ImGui.ColorConvertFloat4ToU32(new Vector4(0.5f, 0.5f, 0.5f, 1f));
+                ImGui.PushStyleColor(ImGuiCol.Text, checkColor);
+                ImGui.Text(sufficient ? "\u2713" : "\u25CB");
+                ImGui.PopStyleColor();
             }
 
-            var questLocked = src.QuestForUnlock.HasValue && IsQuestLockedByQuestionable(src.QuestForUnlock.Value);
-            if (questLocked)
+            ImGui.SameLine();
+            if (ImGui.SmallButton($"[i]##mat_{sourceIdx}_{matIdx}"))
             {
-                ImGui.TextColored(new Vector4(1f, 0.4f, 0.4f, 1f), $"  \u2717 Locked (prerequisites incomplete)");
-                if (ImGui.SmallButton($"Start Quest##quest_{sourceIdx}"))
-                {
-                    TryStartWithQuestionable(src.QuestForUnlock.Value);
-                }
-            }
-            else if (src.QuestForUnlock.HasValue)
-            {
-                ImGui.TextColored(new Vector4(0.4f, 1f, 0.4f, 1f), $"  \u2713 Quest unlocked");
+                _navigateToItemId = mat.ItemId;
+                _navigateToSourceIdx = sourceIdx;
             }
         }
 
-        ImGui.Spacing();
-        ImGui.EndChild();
-        ImGui.PopStyleVar(2);
-        ImGui.PopStyleColor(2);
-        ImGui.Unindent(12f);
+        if (showGatherBtn)
+        {
+            ImGui.SameLine();
+            if (ImGui.SmallButton($"Gather##gather_{sourceIdx}_{matIdx}"))
+            {
+                try
+                {
+                    var gb = Plugin.PluginInterface
+                        .GetIpcSubscriber<string, bool>("GatherBuddy.IPC.SearchItem");
+                    if (gb.HasFunction)
+                        gb.InvokeFunc(mat.Name);
+                }
+                catch (Exception ex)
+                {
+                    Plugin.Log?.Information($"[GATHER] GatherBuddy not available: {ex.Message}");
+                }
+            }
+        }
 
-        ImGui.Separator();
-        ImGui.Spacing();
+        if (breakdown.Count > 0)
+        {
+            ImGui.Indent(20f);
+            ImGui.TextDisabled($"Breakdown: {string.Join(", ", breakdown.Select(kv => $"{kv.Key}: {kv.Value}"))}");
+            ImGui.Unindent(20f);
+        }
+    }
+
+    private void DrawCostRow(CostEntry cost, int sourceIdx, int costIdx, bool showInfoButton = true, string? prefix = null)
+    {
+        if (cost.ItemId == 0)
+        {
+            ImGui.TextColored(new Vector4(1f, 0.84f, 0f, 1f), $"{prefix} {FormatNumber(cost.Count)} Gil");
+        }
+        else
+        {
+            var have = GetItemCount(cost.ItemId);
+            var sufficient = have >= cost.Count;
+            var breakdown = cost.ItemId > 19 ? GetInventoryBreakdown(cost.ItemId) : new Dictionary<string, int>();
+
+if (_textureProvider != null && cost.IconId > 0)
+        {
+            var iconTexture = _textureProvider.GetFromGameIcon(new GameIconLookup(cost.IconId)).GetWrapOrEmpty();
+            float imageSize = ImGui.GetTextLineHeight() * 0.75f;
+            var iconSize = new Vector2(imageSize, imageSize);
+            // Vertically center icon with text
+            float textHeight = ImGui.GetTextLineHeight();
+            float offsetY = (textHeight - imageSize) * 0.5f;
+            var cursorPos = ImGui.GetCursorPos();
+            ImGui.SetCursorPosY(cursorPos.Y + offsetY);
+            ImGui.Image(iconTexture.Handle, iconSize);
+            ImGui.SameLine();
+            ImGui.SetCursorPosY(cursorPos.Y);
+        }
+
+            var nameColor = sufficient
+                ? ImGui.ColorConvertFloat4ToU32(new Vector4(0.25f, 0.75f, 0.25f, 1f))
+                : ImGui.ColorConvertFloat4ToU32(new Vector4(0.5f, 0.5f, 0.5f, 1f));
+            ImGui.PushStyleColor(ImGuiCol.Text, nameColor);
+            ImGui.Text($"{cost.Name} x{FormatNumber(cost.Count)}");
+            ImGui.PopStyleColor();
+
+            ImGui.SameLine();
+            var countColor = sufficient
+                ? ImGui.ColorConvertFloat4ToU32(new Vector4(0.3f, 0.8f, 0.3f, 1f))
+                : ImGui.ColorConvertFloat4ToU32(new Vector4(0.6f, 0.6f, 0.6f, 1f));
+            ImGui.PushStyleColor(ImGuiCol.Text, countColor);
+            ImGui.Text($"({have}/{cost.Count})");
+            ImGui.PopStyleColor();
+
+            if (breakdown.Count > 0)
+            {
+                ImGui.Indent(20f);
+                ImGui.TextDisabled($"Breakdown: {string.Join(", ", breakdown.Select(kv => $"{kv.Key}: {kv.Value}"))}");
+                ImGui.Unindent(20f);
+            }
+
+            if (showInfoButton && cost.ItemId > 19 && !string.IsNullOrEmpty(cost.Name))
+            {
+                ImGui.SameLine();
+                if (ImGui.SmallButton($"[i]##cost_{sourceIdx}_{costIdx}"))
+                {
+                    _navigateToItemId = cost.ItemId;
+                    _navigateToSourceIdx = sourceIdx;
+                }
+            }
+
+            if (ShouldShowGatherButton(cost.ItemId))
+            {
+                ImGui.SameLine();
+                if (ImGui.SmallButton($"Gather##gather_{sourceIdx}_{costIdx}"))
+                {
+                    try
+                    {
+                        var gb = Plugin.PluginInterface
+                            .GetIpcSubscriber<string, bool>("GatherBuddy.IPC.SearchItem");
+                        if (gb.HasFunction)
+                            gb.InvokeFunc(cost.Name);
+                    }
+                    catch (Exception ex)
+                    {
+                        Plugin.Log?.Information($"[GATHER] GatherBuddy not available: {ex.Message}");
+                    }
+                }
+            }
+        }
     }
 
     private void DrawBadge(string label, Vector4 bgColor)
@@ -566,25 +597,30 @@ public class ItemDetailWindow : Window, IDisposable
         var drawList = ImGui.GetWindowDrawList();
         var pos = ImGui.GetCursorScreenPos();
         var textSize = ImGui.CalcTextSize(label);
-        var padding = new Vector2(6, 2);
+        var padX = 10f;
+        var padY = 3f;
+        var height = textSize.Y + padY * 2;
+        var width = textSize.X + padX * 2;
+        var radius = height / 2;
 
         drawList.AddRectFilled(
             pos,
-            new Vector2(pos.X + textSize.X + padding.X * 2, pos.Y + textSize.Y + padding.Y * 2),
+            new Vector2(pos.X + width, pos.Y + height),
             ImGui.ColorConvertFloat4ToU32(bgColor),
-            2f);
+            radius);
 
-        var textColor = new Vector4(1f, 1f, 1f, 1f);
-        ImGui.PushStyleColor(ImGuiCol.Text, textColor);
-        ImGui.SetCursorScreenPos(new Vector2(pos.X + padding.X, pos.Y + padding.Y));
-        ImGui.Text(label);
-        ImGui.PopStyleColor();
+        drawList.AddText(
+            new Vector2(pos.X + padX, pos.Y + padY),
+            ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 1f, 1f, 1f)),
+            label);
 
-        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + textSize.X + padding.X * 2);
+        ImGui.Dummy(new Vector2(width, height));
     }
 
     private void DrawNpcRow(ItemSourceDetail src, int groupIdx, int npcIdx)
     {
+        ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1f), "👤");
+        ImGui.SameLine();
         ImGui.Text(src.NpcName ?? "Unknown vendor");
         if (src.ZoneName != null)
         {
@@ -601,16 +637,51 @@ public class ItemDetailWindow : Window, IDisposable
         }
     }
 
+    private void DrawDutyFinderRow(ItemSourceDetail src, int sourceIdx)
+    {
+        if (src.Type != ItemSourceType.Trial && src.Type != ItemSourceType.Raid && src.Type != ItemSourceType.Dungeon)
+            return;
+        if (!src.CfcRowId.HasValue || src.CfcName == null)
+            return;
+        if (CheckUnlockStatus(src.CfcRowId.Value))
+        {
+            ImGui.TextColored(new Vector4(0.4f, 1f, 0.4f, 1f), "✓ Unlocked");
+        }
+        if (ImGui.SmallButton($"Duty Finder##duty_{sourceIdx}"))
+        {
+            TryOpenDutyFinder(src.CfcRowId.Value);
+        }
+    }
+
+    private void DrawQuestRow(ItemSourceDetail src, int sourceIdx)
+    {
+        if (src.Type != ItemSourceType.Quest || src.QuestName == null)
+            return;
+        if (src.NpcName != null && src.ZoneName != null)
+        {
+            ImGui.SameLine();
+            DrawNpcRow(src, sourceIdx, -1);
+        }
+        var questLocked = src.QuestForUnlock.HasValue && IsQuestLockedByQuestionable(src.QuestForUnlock.Value);
+        if (questLocked)
+        {
+            ImGui.TextColored(new Vector4(1f, 0.6f, 0f, 1f), "🔒 Locked (prerequisites incomplete)");
+            if (ImGui.SmallButton($"▶ Start quest chain##quest_{sourceIdx}"))
+            {
+                TryStartWithQuestionable(src.QuestForUnlock.Value);
+            }
+        }
+        else if (src.QuestForUnlock.HasValue)
+        {
+            ImGui.TextColored(new Vector4(0.4f, 1f, 0.4f, 1f), "✓ Quest unlocked");
+        }
+    }
+
     private void DrawVendorCard(List<ItemSourceDetail> vendors, int groupIdx, Vector4 borderColor)
     {
         var first = vendors[0];
-        var bgDrawList = ImGui.GetBackgroundDrawList();
-        var width = ImGui.GetContentRegionAvail().X;
-        var startY = ImGui.GetCursorPosY();
-        var startScreenX = ImGui.GetCursorScreenPos().X;
 
-        ImGui.Indent(12f);
-        ImGui.BeginGroup();
+        ImGui.Separator();
         ImGui.Spacing();
 
         var style = SourceStyles.GetValueOrDefault(first.Type, (Vector4.One, Vector4.One, "UNKNOWN"));
@@ -648,72 +719,14 @@ public class ItemDetailWindow : Window, IDisposable
 
         if (!isGilOnly && first.Costs?.Count > 0)
         {
-            ImGui.TextDisabled("    Cost:");
-            foreach (var cost in first.Costs)
+            ImGui.Spacing();
+            ImGui.TextDisabled("Cost:");
+            for (int costIdx = 0; costIdx < first.Costs.Count; costIdx++)
             {
-                if (cost.ItemId == 0)
-                {
-                    ImGui.TextColored(new Vector4(1f, 0.84f, 0f, 1f), $"      \u2022 {FormatNumber(cost.Count)} Gil");
-                }
-                else
-                {
-                    var status = cost.ItemId > 19 ? GetInventoryStatus(cost.ItemId, (int)cost.Count) : "";
-
-                    if (_textureProvider != null && cost.IconId > 0)
-                    {
-                        var iconTexture = _textureProvider.GetFromGameIcon(new GameIconLookup(cost.IconId)).GetWrapOrEmpty();
-                        var iconSize = new Vector2(ImGui.GetTextLineHeight() * 0.75f);
-                        ImGui.Image(iconTexture.Handle, iconSize);
-                        ImGui.SameLine();
-                    }
-                    ImGui.TextDisabled($"      \u2022 {FormatNumber(cost.Count)} {cost.Name}{status}");
-
-                    var breakdown = cost.ItemId > 19 ? GetInventoryBreakdown(cost.ItemId) : new Dictionary<string, int>();
-                    if (breakdown.Count > 0)
-                    {
-                        ImGui.Indent(20f);
-                        ImGui.TextDisabled($"        Breakdown: {string.Join(", ", breakdown.Select(kv => $"{kv.Key}: {kv.Value}"))}");
-                        ImGui.Unindent(20f);
-                    }
-
-                    if (cost.ItemId > 19 && !string.IsNullOrEmpty(cost.Name))
-                    {
-                        ImGui.SameLine();
-                        if (ImGui.SmallButton($"[i]##cost_{groupIdx}_{0}"))
-                        {
-                            _navigateToItemId = cost.ItemId;
-                            _navigateToSourceIdx = groupIdx;
-                        }
-                    }
-                }
+                DrawCostRow(first.Costs[costIdx], groupIdx, costIdx, showInfoButton: false, prefix: "\u2022");
             }
         }
 
-        ImGui.Spacing();
-        ImGui.EndGroup();
-        ImGui.Unindent(12f);
-
-        var endY = ImGui.GetCursorPosY();
-        var height = endY - startY;
-
-        if (height > 0)
-        {
-            var bgLeft = startScreenX;
-            var bgRight = startScreenX + width;
-
-            bgDrawList.AddRectFilled(
-                new Vector2(bgLeft, startY),
-                new Vector2(bgRight, startY + height),
-                ImGui.ColorConvertFloat4ToU32(new Vector4(0.12f, 0.12f, 0.22f, 1f)),
-                3f);
-
-            bgDrawList.AddRectFilled(
-                new Vector2(bgLeft, startY),
-                new Vector2(bgLeft + 3, startY + height),
-                ImGui.ColorConvertFloat4ToU32(borderColor));
-        }
-
-        ImGui.Spacing();
         ImGui.Spacing();
     }
 
@@ -1055,13 +1068,8 @@ public class ItemDetailWindow : Window, IDisposable
     private void DrawCraftedCard(List<ItemSourceDetail> sources, int groupIdx)
     {
         var first = sources[0];
-        var bgDrawList = ImGui.GetBackgroundDrawList();
-        var width = ImGui.GetContentRegionAvail().X;
-        var startY = ImGui.GetCursorPosY();
-        var startScreenX = ImGui.GetCursorScreenPos().X;
 
-        ImGui.Indent(12f);
-        ImGui.BeginGroup();
+        ImGui.Separator();
         ImGui.Spacing();
 
         var style = SourceStyles.GetValueOrDefault(first.Type, (Vector4.One, Vector4.One, "UNKNOWN"));
@@ -1081,67 +1089,14 @@ public class ItemDetailWindow : Window, IDisposable
 
         if (first.Materials != null && first.Materials.Count > 0)
         {
-            ImGui.TextDisabled("    Materials:");
-            foreach (var mat in first.Materials)
+            ImGui.Spacing();
+            ImGui.TextDisabled("Materials:");
+            for (int matIdx = 0; matIdx < first.Materials.Count; matIdx++)
             {
-                var status = mat.ItemId > 19 ? GetInventoryStatus(mat.ItemId, (int)mat.Count) : "";
-                var showGatherBtn = ShouldShowGatherButton(mat.ItemId);
-
-                if (_textureProvider != null && mat.IconId > 0)
-                {
-                    var iconTexture = _textureProvider.GetFromGameIcon(new GameIconLookup(mat.IconId)).GetWrapOrEmpty();
-                    var iconSize = new Vector2(ImGui.GetTextLineHeight() * 0.75f);
-                    ImGui.Image(iconTexture.Handle, iconSize);
-                    ImGui.SameLine();
-                }
-                ImGui.TextDisabled($"      \u2022 {mat.Name} x{FormatNumber(mat.Count)}{status}");
-
-                if (showGatherBtn)
-                {
-                    ImGui.SameLine();
-                    if (ImGui.SmallButton($"Gather##gather_{groupIdx}_{mat.ItemId}"))
-                    {
-                        try
-                        {
-                            var gb = Plugin.PluginInterface
-                                .GetIpcSubscriber<string, bool>("GatherBuddy.IPC.SearchItem");
-                            if (gb.HasFunction)
-                                gb.InvokeFunc(mat.Name);
-                        }
-                        catch (Exception ex)
-                        {
-                            Plugin.Log?.Information($"[GATHER] GatherBuddy not available: {ex.Message}");
-                        }
-                    }
-                }
+                DrawMaterialRow(first.Materials[matIdx], groupIdx, matIdx, showCheckmark: false, prefix: "\u2022");
             }
         }
 
-        ImGui.Spacing();
-        ImGui.EndGroup();
-        ImGui.Unindent(12f);
-
-        var endY = ImGui.GetCursorPosY();
-        var height = endY - startY;
-
-        if (height > 0)
-        {
-            var bgLeft = startScreenX;
-            var bgRight = startScreenX + width;
-
-            bgDrawList.AddRectFilled(
-                new Vector2(bgLeft, startY),
-                new Vector2(bgRight, startY + height),
-                ImGui.ColorConvertFloat4ToU32(new Vector4(0.12f, 0.12f, 0.22f, 1f)),
-                3f);
-
-            bgDrawList.AddRectFilled(
-                new Vector2(bgLeft, startY),
-                new Vector2(bgLeft + 3, startY + height),
-                ImGui.ColorConvertFloat4ToU32(style.Item1));
-        }
-
-        ImGui.Spacing();
         ImGui.Spacing();
     }
 
