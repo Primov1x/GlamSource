@@ -173,6 +173,16 @@ public class FixtureGlamourServiceTests
         Assert.Contains("The Stone Vigil", sources[0].Description);
     }
 
+    [Fact]
+    public void GetSources_PvP_ReturnsPvpSource()
+    {
+        var mock = new MockItemSourceService();
+        var sources = mock.GetSources(38901);
+        Assert.Single(sources);
+        Assert.Equal(ItemSourceType.PvP, sources[0].Type);
+        Assert.Contains("PvP Reward", sources[0].Description);
+    }
+
     private sealed class MockItemSourceService : IItemSourceService
     {
         // ponytail: one source per fixture item so the UI can test rendering all types
