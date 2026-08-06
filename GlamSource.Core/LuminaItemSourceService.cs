@@ -156,7 +156,15 @@ public sealed class LuminaItemSourceService : IItemSourceService
             sources.Add(new ItemSource(ItemSourceType.Coffer, $"Coffer: {cofferName}"));
         }
 
-        // 9. DungeonDrop — duty drops
+        // 9. DungeonBossChest — boss chest drops
+        if (!sources.Any(s => s.Type == ItemSourceType.Coffer) && _itemToDungeonChestMap.TryGetValue(itemId, out var chestIds))
+        {
+            var dutySheet = _gameData.GetExcelSheet<ContentFinderCondition>();
+            var dutyName = string.Join(", ", chestIds.Select(id => dutySheet?.GetRow(id).Name.ExtractText() ?? $"{id}"));
+            sources.Add(new ItemSource(ItemSourceType.Coffer, $"Boss Chest: {dutyName}"));
+        }
+
+        // 10. DungeonDrop — duty drops
         if (!sources.Any(s => s.Type == ItemSourceType.Coffer) && _itemToDungeonDropMap.TryGetValue(itemId, out var dropDutyIds))
         {
             var dutySheet = _gameData.GetExcelSheet<ContentFinderCondition>();
@@ -164,7 +172,7 @@ public sealed class LuminaItemSourceService : IItemSourceService
             sources.Add(new ItemSource(ItemSourceType.Coffer, $"Dungeon Drop: {dutyName}"));
         }
 
-        // 10. FieldOpCoffer — Pagos/Pyros/Hydatos/Occult chests
+        // 11. FieldOpCoffer — Pagos/Pyros/Hydatos/Occult chests
         if (!sources.Any(s => s.Type == ItemSourceType.Coffer) && _itemToFieldOpCofferMap.TryGetValue(itemId, out var fieldOpEntries))
         {
             var desc = string.Join("; ", fieldOpEntries.Select(e => $"{e.Type} {e.CofferType}"));

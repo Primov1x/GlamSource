@@ -85,6 +85,12 @@ public sealed class ItemDetailService : IItemDetailService
     // ponytail: ItemId → List<ItemSupplement> (Loot/Desynth/Reduction sources)
     private Dictionary<uint, List<ItemSupplement>> _itemSupplementCache = new();
 
+    // ponytail: ItemId → List<CofferItemId> from ItemSupplement source=Coffer
+    private readonly Dictionary<uint, List<uint>> _itemToCofferMap = new();
+
+    // ponytail: ItemId → List<(FieldOpType, FieldOpCofferType)> from FieldOpCoffer
+    private readonly Dictionary<uint, List<(FieldOpType Type, FieldOpCofferType CofferType)>> _itemToFieldOpCofferMap = new();
+
     // Name-only fallback for NPCs with no location data
     private readonly Dictionary<uint, string> _shopNpcNameOnly = new();
 
@@ -377,6 +383,27 @@ public sealed class ItemDetailService : IItemDetailService
             }
         }
 
+        // 6b. ItemSupplement Coffer — coffer items and their contents
+        if (!results.Any(s => s.Type == ItemSourceType.Coffer) && _itemToCofferMap.TryGetValue(itemId, out var cofferIds))
+        {
+            var cofferSheet = _gameData.GetExcelSheet<Item>();
+            var cofferName = string.Join(", ", cofferIds.Select(id => cofferSheet?.GetRow(id).Name.ExtractText() ?? $"{id}"));
+            results.Add(new ItemSourceDetail(
+                ItemSourceType.Coffer, $"Coffer: {cofferName}",
+                null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null));
+        }
+
+        // 6c. FieldOpCoffer — Pagos/Pyros/Hydatos/Occult chests
+        if (!results.Any(s => s.Type == ItemSourceType.Coffer) && _itemToFieldOpCofferMap.TryGetValue(itemId, out var fieldOpEntries))
+        {
+            var desc = string.Join("; ", fieldOpEntries.Select(e => $"{e.Type} {e.CofferType}"));
+            results.Add(new ItemSourceDetail(
+                ItemSourceType.Coffer, $"Field Op Coffer: {desc}",
+                null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null));
+        }
+
         // 7. Generic fallback — nothing found
         if (results.Count == 0)
         {
@@ -429,7 +456,6 @@ public sealed class ItemDetailService : IItemDetailService
                     continue;
 
                 var npcInfos = _shopNpcLookup.GetValueOrDefault(shopId);
-                Console.WriteLine($"[NPC-DIAG] GilShop match: shopId={shopId} inLookup={npcInfos != null} itemId={itemId}");
 
                 if (npcInfos != null)
                 {
@@ -892,6 +918,8 @@ public sealed class ItemDetailService : IItemDetailService
         BuildFateDropCache();
         BuildMobDropCache();
         BuildHouseVendorCache();
+        BuildItemSupplementCofferCache();
+        BuildFieldOpCofferCache();
     }
 
     private static readonly Regex _totemBossRegex = new(@"\((.+)\)");
@@ -1001,6 +1029,39 @@ public sealed class ItemDetailService : IItemDetailService
 
         // ponytail: ENpcShop has ShopId→ENpcResidentId, but we lack Shop→Item mapping here.
         // Keep HouseVendor only (ItemId→ENpcResidentId) for the vendor lookup path.
+    }
+
+    private void BuildItemSupplementCofferCache()
+    {
+        var supplements = CsvLoader.LoadResource<ItemSupplement>(
+            CsvLoader.ItemSupplementResourceName, includesHeaders: true, out _, out _, gameData: null);
+
+        foreach (var sup in supplements)
+        {
+            if (sup.ItemId == 0 || sup.ItemSupplementSource != ItemSupplementSource.Coffer)
+                continue;
+            if (!_itemToCofferMap.ContainsKey(sup.ItemId))
+                _itemToCofferMap[sup.ItemId] = new();
+            if (!_itemToCofferMap[sup.ItemId].Contains(sup.SourceItemId))
+                _itemToCofferMap[sup.ItemId].Add(sup.SourceItemId);
+        }
+    }
+
+    private void BuildFieldOpCofferCache()
+    {
+        var coffers = CsvLoader.LoadResource<FieldOpCoffer>(
+            CsvLoader.FieldOpCofferResourceName, includesHeaders: true, out _, out _, gameData: null);
+
+        foreach (var coffer in coffers)
+        {
+            if (coffer.ItemId == 0)
+                continue;
+            if (!_itemToFieldOpCofferMap.ContainsKey(coffer.ItemId))
+                _itemToFieldOpCofferMap[coffer.ItemId] = new();
+            var entry = (coffer.Type, coffer.CofferType);
+            if (!_itemToFieldOpCofferMap[coffer.ItemId].Contains(entry))
+                _itemToFieldOpCofferMap[coffer.ItemId].Add(entry);
+        }
     }
 
     private void BuildTotemLookupCache()
