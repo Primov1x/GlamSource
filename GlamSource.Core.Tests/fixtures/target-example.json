@@ -82,5 +82,19 @@
     "actualItemName": "Strength Ring",
     "glamourItemId": null,
     "glamourItemName": null
+  },
+  {
+    "slot": "Ear",
+    "actualItemId": 38907,
+    "actualItemName": "Loose Fit Attire Coffer",
+    "glamourItemId": null,
+    "glamourItemName": null
+  },
+  {
+    "slot": "Waist",
+    "actualItemId": 38908,
+    "actualItemName": "Stone Vigil Chest Key",
+    "glamourItemId": null,
+    "glamourItemName": null
   }
 ]

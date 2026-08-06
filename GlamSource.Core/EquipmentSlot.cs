@@ -10,10 +10,12 @@ public enum EquipmentSlotType
     Legs,
     Feet,
     Earrings,
+    Ear,
     Necklace,
     Bracelets,
     RingRight,
-    RingLeft
+    RingLeft,
+    Waist
 }
 
 public sealed record EquipmentSlot(

@@ -14,6 +14,9 @@ public enum ItemSourceType
     PvP,
     TreasureHunt,
     Shop,
+    Fate,
+    Mob,
+    Coffer,
     Other
 }
 

@@ -70,6 +70,15 @@ public sealed class ItemDetailService : IItemDetailService
     // ponytail: ItemId → List<ContentFinderCondition RowId> from LuminaSupplemental DungeonDrop
     private readonly Dictionary<uint, List<uint>> _itemToDutyMap = new();
 
+    // ponytail: ItemId → List<FateId> from LuminaSupplemental FateItem
+    private readonly Dictionary<uint, List<uint>> _itemToFateMap = new();
+
+    // ponytail: ItemId → List<BNpcNameId> from LuminaSupplemental MobDrop
+    private readonly Dictionary<uint, List<uint>> _itemToMobMap = new();
+
+    // ponytail: ItemId → List<ENpcResidentId> from LuminaSupplemental HouseVendor (hv.ParentId = ItemId)
+    private readonly Dictionary<uint, List<uint>> _shopToNpcIds = new();
+
     // ponytail: CostItemId → (bossName, cfcName, cfcRowId) from "Totem Gear (X)" shop name
     private readonly Dictionary<uint, (string bossName, string? cfcName, uint? cfcRowId, uint? questId)> _totemCostToBoss = new();
 
@@ -295,6 +304,55 @@ public sealed class ItemDetailService : IItemDetailService
                         break;
                 }
             }
+        }
+
+        // 5b. Fate drops
+        if (results.Count == 0 && _itemToFateMap.TryGetValue(itemId, out var fateIds))
+        {
+            var fateSheet = _gameData.GetExcelSheet<Fate>();
+            foreach (var fateId in fateIds)
+            {
+                var fateRow = fateSheet?.GetRow(fateId);
+                var fateName = fateRow?.Name.ToString();
+                if (!string.IsNullOrEmpty(fateName))
+                {
+                    results.Add(new ItemSourceDetail(
+                        ItemSourceType.Fate,
+                        $"Fate Drop: {fateName}",
+                        null, null, null, null, null, null,
+                        null, null, null, null, null, null, null, null, null));
+                }
+            }
+        }
+
+        // 5c. Mob drops
+        if (results.Count == 0 && _itemToMobMap.TryGetValue(itemId, out var mobIds))
+        {
+            var npcSheet = _gameData.GetExcelSheet<BNpcName>();
+            foreach (var npcId in mobIds)
+            {
+                var npcRow = npcSheet?.GetRow(npcId);
+                var npcName = npcRow?.Singular.ToString();
+                if (!string.IsNullOrEmpty(npcName))
+                {
+                    results.Add(new ItemSourceDetail(
+                        ItemSourceType.Mob,
+                        $"Mob Drop: {npcName}",
+                        null, null, null, null, null, null,
+                        null, null, null, null, null, null, null, null, null));
+                }
+            }
+        }
+
+        // 5d. House Vendor — parent ID is the item, ENpcResidentId is the NPC
+        if (results.Count == 0 && _shopToNpcIds.TryGetValue(itemId, out var hvNpcs) && hvNpcs.Count > 0)
+        {
+            var npcName = _npcNameCache.GetValueOrDefault(hvNpcs[0]);
+            results.Add(new ItemSourceDetail(
+                ItemSourceType.Vendor,
+                $"House Vendor: {npcName ?? "Unknown"}",
+                npcName, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null));
         }
 
         // 6. ItemSupplement (Loot, Gardening, PoD, etc. — NOT Desynth/Reduction)
@@ -831,6 +889,9 @@ public sealed class ItemDetailService : IItemDetailService
             .ToDictionary(g => g.Key, g => g.ToList());
 
         BuildTotemLookupCache();
+        BuildFateDropCache();
+        BuildMobDropCache();
+        BuildHouseVendorCache();
     }
 
     private static readonly Regex _totemBossRegex = new(@"\((.+)\)");
@@ -881,6 +942,66 @@ public sealed class ItemDetailService : IItemDetailService
         ["Doomtrain"] = 1077,
         ["Enuo"] = 1116,
     };
+
+    private void BuildFateDropCache()
+    {
+        var fateItems = CsvLoader.LoadResource<FateItem>(
+            CsvLoader.FateItemResourceName,
+            includesHeaders: true,
+            out _, out _,
+            gameData: null);
+
+        foreach (var fi in fateItems)
+        {
+            if (fi.ItemId == 0 || fi.FateId == 0)
+                continue;
+            if (!_itemToFateMap.ContainsKey(fi.ItemId))
+                _itemToFateMap[fi.ItemId] = new();
+            if (!_itemToFateMap[fi.ItemId].Contains(fi.FateId))
+                _itemToFateMap[fi.ItemId].Add(fi.FateId);
+        }
+    }
+
+    private void BuildMobDropCache()
+    {
+        var mobDrops = CsvLoader.LoadResource<MobDrop>(
+            CsvLoader.MobDropResourceName,
+            includesHeaders: true,
+            out _, out _,
+            gameData: null);
+
+        foreach (var md in mobDrops)
+        {
+            if (md.ItemId == 0 || md.BNpcNameId == 0)
+                continue;
+            if (!_itemToMobMap.ContainsKey(md.ItemId))
+                _itemToMobMap[md.ItemId] = new();
+            if (!_itemToMobMap[md.ItemId].Contains(md.BNpcNameId))
+                _itemToMobMap[md.ItemId].Add(md.BNpcNameId);
+        }
+    }
+
+    private void BuildHouseVendorCache()
+    {
+        var houseVendors = CsvLoader.LoadResource<HouseVendor>(
+            CsvLoader.HouseVendorResourceName,
+            includesHeaders: true,
+            out _, out _,
+            gameData: null);
+
+        foreach (var hv in houseVendors)
+        {
+            if (hv.ENpcResidentId == 0 || hv.ParentId == 0)
+                continue;
+            if (!_shopToNpcIds.ContainsKey(hv.ParentId))
+                _shopToNpcIds[hv.ParentId] = new();
+            if (!_shopToNpcIds[hv.ParentId].Contains(hv.ENpcResidentId))
+                _shopToNpcIds[hv.ParentId].Add(hv.ENpcResidentId);
+        }
+
+        // ponytail: ENpcShop has ShopId→ENpcResidentId, but we lack Shop→Item mapping here.
+        // Keep HouseVendor only (ItemId→ENpcResidentId) for the vendor lookup path.
+    }
 
     private void BuildTotemLookupCache()
     {
