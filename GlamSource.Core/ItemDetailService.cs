@@ -96,7 +96,9 @@ public sealed class ItemDetailService : IItemDetailService
     private readonly Dictionary<uint, List<uint>> _itemToAchievementMap = new();
 
     // ponytail: PvP items from SpecialShop (tome currencies), PvPSeries tier rewards
-    private readonly Dictionary<uint, string> _pvpItemToSeason = new();
+    private readonly Dictionary<uint, uint> _pvpItemToSeason = new();
+    private readonly HashSet<uint> _pvpVendorItems = new();
+    private uint _currentPvpSeasonId;
 
     // Name-only fallback for NPCs with no location data
     private readonly Dictionary<uint, string> _shopNpcNameOnly = new();
@@ -427,12 +429,25 @@ public sealed class ItemDetailService : IItemDetailService
         }
 
         // 7. PvP – SpecialShop (tome currencies), PvPSeries tier rewards
-        if (results.Count == 0 && _pvpItemToSeason.TryGetValue(itemId, out var seasonName))
+        if (results.Count == 0)
         {
-            results.Add(new ItemSourceDetail(
-                ItemSourceType.PvP, seasonName,
-                null, null, null, null, null, null,
-                null, null, null, null, null, null, null, null, null));
+            if (_pvpVendorItems.Contains(itemId))
+            {
+                results.Add(new ItemSourceDetail(
+                    ItemSourceType.PvP, "PvP Vendor Reward",
+                    null, null, null, null, null, null,
+                    null, null, null, null, null, null, null, null, null));
+            }
+            else if (_pvpItemToSeason.TryGetValue(itemId, out var seasonId))
+            {
+                results.Add(new ItemSourceDetail(
+                    ItemSourceType.PvP,
+                    seasonId == _currentPvpSeasonId
+                    ? $"PvP Season {seasonId} (currently available)"
+                    : $"PvP Season {seasonId} (series ended)",
+                    null, null, null, null, null, null,
+                    null, null, null, null, null, null, null, null, null));
+            }
         }
 
         // 8. Generic fallback â€” nothing found
@@ -971,7 +986,7 @@ public sealed class ItemDetailService : IItemDetailService
             {
                 foreach (var receiveItem in itemStruct.ReceiveItems)
                 {
-                    _pvpItemToSeason[receiveItem.Item.RowId] = "PvP";
+                    _pvpVendorItems.Add(receiveItem.Item.RowId);
                     
                 }
             }
@@ -1000,7 +1015,8 @@ public sealed class ItemDetailService : IItemDetailService
                     if (itemId != 0)
                     {
                         // ponytail: PvPSeries has no name column (col 1 = Unknown0 int)
-                        _pvpItemToSeason[itemId] = "PvP";
+                        _pvpItemToSeason[itemId] = row.RowId;
+                        if (row.RowId > _currentPvpSeasonId) _currentPvpSeasonId = row.RowId;
                     }
                 }
             }
