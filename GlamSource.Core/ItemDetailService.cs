@@ -91,6 +91,9 @@ public sealed class ItemDetailService : IItemDetailService
     // ponytail: ItemId → List<(FieldOpType, FieldOpCofferType)> from FieldOpCoffer
     private readonly Dictionary<uint, List<(FieldOpType Type, FieldOpCofferType CofferType)>> _itemToFieldOpCofferMap = new();
 
+    // ponytail: ItemId → List<Achievement RowId> from SpecialShop.ItemStruct.AchievementUnlock
+    private readonly Dictionary<uint, List<uint>> _itemToAchievementMap = new();
+
     // Name-only fallback for NPCs with no location data
     private readonly Dictionary<uint, string> _shopNpcNameOnly = new();
 
@@ -394,7 +397,22 @@ public sealed class ItemDetailService : IItemDetailService
                 null, null, null, null, null, null, null, null, null));
         }
 
-        // 6c. FieldOpCoffer — Pagos/Pyros/Hydatos/Occult chests
+        // 6c. Achievement unlock → Item (via SpecialShop.ItemStruct.AchievementUnlock)
+        if (!results.Any(s => s.Type == ItemSourceType.Achievement) && _itemToAchievementMap.TryGetValue(itemId, out var achievementIds))
+        {
+            var achSheet = _gameData.GetExcelSheet<Achievement>();
+            var achNames = achievementIds.Select(aid => {
+                    if (achSheet != null && achSheet.TryGetRow(aid, out var ach))
+                        return ach.Name.ToString() ?? $"{aid}";
+                    return $"{aid}";
+                }).Distinct();
+            results.Add(new ItemSourceDetail(
+                ItemSourceType.Achievement, $"Achievement(s): {string.Join(", ", achNames)}",
+                null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null));
+        }
+
+        // 6d. FieldOpCoffer — Pagos/Pyros/Hydatos/Occult chests
         if (!results.Any(s => s.Type == ItemSourceType.Coffer) && _itemToFieldOpCofferMap.TryGetValue(itemId, out var fieldOpEntries))
         {
             var desc = string.Join("; ", fieldOpEntries.Select(e => $"{e.Type} {e.CofferType}"));
@@ -920,6 +938,7 @@ public sealed class ItemDetailService : IItemDetailService
         BuildHouseVendorCache();
         BuildItemSupplementCofferCache();
         BuildFieldOpCofferCache();
+        BuildAchievementCache();
     }
 
     private static readonly Regex _totemBossRegex = new(@"\((.+)\)");
@@ -1061,6 +1080,30 @@ public sealed class ItemDetailService : IItemDetailService
             var entry = (coffer.Type, coffer.CofferType);
             if (!_itemToFieldOpCofferMap[coffer.ItemId].Contains(entry))
                 _itemToFieldOpCofferMap[coffer.ItemId].Add(entry);
+        }
+    }
+
+    // ponytail: ItemId → List<Achievement RowId> via SpecialShop.ItemStruct.AchievementUnlock
+    private void BuildAchievementCache()
+    {
+        var specialShops = _gameData.GetExcelSheet<SpecialShop>()?.ToArray() ?? Array.Empty<SpecialShop>();
+        foreach (var shop in specialShops)
+        {
+            foreach (var itemStruct in shop.Item)
+            {
+                if (itemStruct.AchievementUnlock.RowId == 0)
+                    continue;
+                foreach (var receiveItem in itemStruct.ReceiveItems)
+                {
+                    var itemId = receiveItem.Item.RowId;
+                    if (itemId == 0)
+                        continue;
+                    if (!_itemToAchievementMap.ContainsKey(itemId))
+                        _itemToAchievementMap[itemId] = new();
+                    if (!_itemToAchievementMap[itemId].Contains(itemStruct.AchievementUnlock.RowId))
+                        _itemToAchievementMap[itemId].Add(itemStruct.AchievementUnlock.RowId);
+                }
+            }
         }
     }
 
