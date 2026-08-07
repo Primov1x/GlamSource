@@ -1,9 +1,10 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 using GlamSource.Core;
 using Lumina;
+using Lumina.Data;
 using Lumina.Data.Files;
 using Lumina.Data.Parsing.Layer;
 using Lumina.Excel;
@@ -67,42 +68,42 @@ public sealed class ItemDetailService : IItemDetailService
         uint TerritoryTypeId, uint MapId);
     private readonly Dictionary<uint, string> _itemNameCache = new();
 
-    // ponytail: ItemId → List<ContentFinderCondition RowId> from LuminaSupplemental DungeonDrop
+    // ponytail: ItemId â†’ List<ContentFinderCondition RowId> from LuminaSupplemental DungeonDrop
     private readonly Dictionary<uint, List<uint>> _itemToDutyMap = new();
 
-    // ponytail: ItemId → List<FateId> from LuminaSupplemental FateItem
+    // ponytail: ItemId â†’ List<FateId> from LuminaSupplemental FateItem
     private readonly Dictionary<uint, List<uint>> _itemToFateMap = new();
 
-    // ponytail: ItemId → List<BNpcNameId> from LuminaSupplemental MobDrop
+    // ponytail: ItemId â†’ List<BNpcNameId> from LuminaSupplemental MobDrop
     private readonly Dictionary<uint, List<uint>> _itemToMobMap = new();
 
-    // ponytail: ItemId → List<ENpcResidentId> from LuminaSupplemental HouseVendor (hv.ParentId = ItemId)
+    // ponytail: ItemId â†’ List<ENpcResidentId> from LuminaSupplemental HouseVendor (hv.ParentId = ItemId)
     private readonly Dictionary<uint, List<uint>> _shopToNpcIds = new();
 
-    // ponytail: CostItemId → (bossName, cfcName, cfcRowId) from "Totem Gear (X)" shop name
+    // ponytail: CostItemId â†’ (bossName, cfcName, cfcRowId) from "Totem Gear (X)" shop name
     private readonly Dictionary<uint, (string bossName, string? cfcName, uint? cfcRowId, uint? questId)> _totemCostToBoss = new();
 
-    // ponytail: ItemId → List<ItemSupplement> (Loot/Desynth/Reduction sources)
+    // ponytail: ItemId â†’ List<ItemSupplement> (Loot/Desynth/Reduction sources)
     private Dictionary<uint, List<ItemSupplement>> _itemSupplementCache = new();
 
-    // ponytail: ItemId → List<CofferItemId> from ItemSupplement source=Coffer
+    // ponytail: ItemId â†’ List<CofferItemId> from ItemSupplement source=Coffer
     private readonly Dictionary<uint, List<uint>> _itemToCofferMap = new();
 
-    // ponytail: ItemId → List<(FieldOpType, FieldOpCofferType)> from FieldOpCoffer
+    // ponytail: ItemId â†’ List<(FieldOpType, FieldOpCofferType)> from FieldOpCoffer
     private readonly Dictionary<uint, List<(FieldOpType Type, FieldOpCofferType CofferType)>> _itemToFieldOpCofferMap = new();
 
-    // ponytail: ItemId → List<Achievement RowId> from SpecialShop.ItemStruct.AchievementUnlock
+    // ponytail: ItemId â†’ List<Achievement RowId> from SpecialShop.ItemStruct.AchievementUnlock
     private readonly Dictionary<uint, List<uint>> _itemToAchievementMap = new();
 
-    private readonly IGarlandToolsService? _garlandService;
+    // ponytail: PvP items from SpecialShop (tome currencies), PvPSeries tier rewards
+    private readonly Dictionary<uint, string> _pvpItemToSeason = new();
 
     // Name-only fallback for NPCs with no location data
     private readonly Dictionary<uint, string> _shopNpcNameOnly = new();
 
-    public ItemDetailService(GameData gameData, IGarlandToolsService? garlandService = null)
+    public ItemDetailService(GameData gameData)
     {
         _gameData = gameData ?? throw new ArgumentNullException(nameof(gameData));
-        _garlandService = garlandService;
 
         BuildCaches();
         BuildDutyDropCache();
@@ -137,7 +138,7 @@ public sealed class ItemDetailService : IItemDetailService
     {
         var results = new List<ItemSourceDetail>();
 
-        // 1. Crafted — from Recipe sheet (grouped by material set)
+        // 1. Crafted â€” from Recipe sheet (grouped by material set)
         if (_recipeByResult.TryGetValue(itemId, out var recipes))
         {
             var materialGroups = recipes.GroupBy(r => GetMaterialKey(r));
@@ -181,11 +182,11 @@ public sealed class ItemDetailService : IItemDetailService
             }
         }
 
-        // 2. GilShop — Vendor
+        // 2. GilShop â€” Vendor
         var gilShopSources = FindGilShopSources(itemId);
         results.AddRange(gilShopSources);
 
-        // 3. SpecialShop — Vendor (tomestones etc.)
+        // 3. SpecialShop â€” Vendor (tomestones etc.)
         var specialShopSources = FindSpecialShopSources(itemId);
         results.AddRange(specialShopSources);
 
@@ -225,7 +226,7 @@ public sealed class ItemDetailService : IItemDetailService
             }
         }
 
-        // 4b. CostItem → Totem boss name from "Totem Gear (X)" shop name
+        // 4b. CostItem â†’ Totem boss name from "Totem Gear (X)" shop name
         if (results.Count == 0 && _totemCostToBoss.TryGetValue(itemId, out var totemInfo))
         {
             var dutyType = totemInfo.cfcRowId.HasValue ? GetDutyType(totemInfo.cfcRowId.Value) : "Trial";
@@ -238,7 +239,7 @@ public sealed class ItemDetailService : IItemDetailService
                 totemInfo.bossName, totemInfo.questId, null));
         }
 
-        // 4c. Exchange token → Savage/Trial shop classification
+        // 4c. Exchange token â†’ Savage/Trial shop classification
         if (results.Count == 0 && _exchangeCostToShopCfcs.TryGetValue(itemId, out var exchangeInfo))
         {
             var (exchangeType, shopName, cfcRowIds) = exchangeInfo;
@@ -257,7 +258,7 @@ public sealed class ItemDetailService : IItemDetailService
                 null, null, cfcRowIds));
         }
 
-        // 5. Quest — Quest Reward
+        // 5. Quest â€” Quest Reward
         if (!results.Any(s => s.Type == ItemSourceType.Quest))
         {
             var questSheet = _gameData.GetExcelSheet<Quest>();
@@ -356,7 +357,7 @@ public sealed class ItemDetailService : IItemDetailService
             }
         }
 
-        // 5d. House Vendor — parent ID is the item, ENpcResidentId is the NPC
+        // 5d. House Vendor â€” parent ID is the item, ENpcResidentId is the NPC
         if (results.Count == 0 && _shopToNpcIds.TryGetValue(itemId, out var hvNpcs) && hvNpcs.Count > 0)
         {
             var npcName = _npcNameCache.GetValueOrDefault(hvNpcs[0]);
@@ -367,7 +368,7 @@ public sealed class ItemDetailService : IItemDetailService
                 null, null, null, null, null, null, null, null, null));
         }
 
-        // 6. ItemSupplement (Loot, Gardening, PoD, etc. — NOT Desynth/Reduction)
+        // 6. ItemSupplement (Loot, Gardening, PoD, etc. â€” NOT Desynth/Reduction)
         if (_itemSupplementCache.TryGetValue(itemId, out var supplements))
         {
             var relevant = supplements
@@ -389,7 +390,7 @@ public sealed class ItemDetailService : IItemDetailService
             }
         }
 
-        // 6b. ItemSupplement Coffer — coffer items and their contents
+        // 6b. ItemSupplement Coffer â€” coffer items and their contents
         if (!results.Any(s => s.Type == ItemSourceType.Coffer) && _itemToCofferMap.TryGetValue(itemId, out var cofferIds))
         {
             var cofferSheet = _gameData.GetExcelSheet<Item>();
@@ -400,7 +401,7 @@ public sealed class ItemDetailService : IItemDetailService
                 null, null, null, null, null, null, null, null, null));
         }
 
-        // 6c. Achievement unlock → Item (via SpecialShop.ItemStruct.AchievementUnlock)
+        // 6c. Achievement unlock â†’ Item (via SpecialShop.ItemStruct.AchievementUnlock)
         if (!results.Any(s => s.Type == ItemSourceType.Achievement) && _itemToAchievementMap.TryGetValue(itemId, out var achievementIds))
         {
             var achSheet = _gameData.GetExcelSheet<Achievement>();
@@ -415,7 +416,7 @@ public sealed class ItemDetailService : IItemDetailService
                 null, null, null, null, null, null, null, null, null));
         }
 
-        // 6d. FieldOpCoffer — Pagos/Pyros/Hydatos/Occult chests
+        // 6d. FieldOpCoffer â€” Pagos/Pyros/Hydatos/Occult chests
         if (!results.Any(s => s.Type == ItemSourceType.Coffer) && _itemToFieldOpCofferMap.TryGetValue(itemId, out var fieldOpEntries))
         {
             var desc = string.Join("; ", fieldOpEntries.Select(e => $"{e.Type} {e.CofferType}"));
@@ -425,29 +426,16 @@ public sealed class ItemDetailService : IItemDetailService
                 null, null, null, null, null, null, null, null, null));
         }
 
-        // 7. Garland Tools fallback — PvP, Online Store, Events not in Lumina
-        if (results.Count == 0 && _garlandService != null)
+        // 7. PvP – SpecialShop (tome currencies), PvPSeries tier rewards
+        if (results.Count == 0 && _pvpItemToSeason.TryGetValue(itemId, out var seasonName))
         {
-            try
-            {
-                var garlandInfo = _garlandService.GetItemInfoAsync(itemId).GetAwaiter().GetResult();
-                if (garlandInfo != null)
-                {
-                    var sourceType = ClassifyGarlandSource(garlandInfo.SourceTypes);
-                    var desc = BuildGarlandDescription(itemId, garlandInfo, sourceType);
-                    results.Add(new ItemSourceDetail(
-                        sourceType, desc,
-                        null, null, null, null, null, null,
-                        null, null, null, null, null, null, null, null, null));
-                }
-            }
-            catch
-            {
-                // Garland failed — fall through to generic fallback
-            }
+            results.Add(new ItemSourceDetail(
+                ItemSourceType.PvP, seasonName,
+                null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null));
         }
 
-        // 8. Generic fallback — nothing found
+        // 8. Generic fallback â€” nothing found
         if (results.Count == 0)
         {
             results.Add(new ItemSourceDetail(
@@ -674,7 +662,7 @@ public sealed class ItemDetailService : IItemDetailService
             }
         }
 
-        // Recipe → result cache
+        // Recipe â†’ result cache
         var recipeSheet = _gameData.GetExcelSheet<Recipe>();
         if (recipeSheet != null)
         {
@@ -689,7 +677,7 @@ public sealed class ItemDetailService : IItemDetailService
             }
         }
 
-        // NPC name cache (ENpcResident → singular name)
+        // NPC name cache (ENpcResident â†’ singular name)
         var enpcResidentSheet = _gameData.GetExcelSheet<ENpcResident>();
         if (enpcResidentSheet != null)
         {
@@ -701,7 +689,7 @@ public sealed class ItemDetailService : IItemDetailService
             }
         }
 
-        // Shop → NPC/Zone reverse map
+        // Shop â†’ NPC/Zone reverse map
         BuildShopNpcCache();
     }
 
@@ -714,7 +702,7 @@ public sealed class ItemDetailService : IItemDetailService
         if (enpcBaseSheet == null || levelSheet == null || mapSheet == null)
             return;
 
-        // Level lookup: ENpcBase.RowId → (MapId, Map, X, Z)
+        // Level lookup: ENpcBase.RowId â†’ (MapId, Map, X, Z)
         var npcLevelLookup = new Dictionary<uint, (uint mapId, Map map, float x, float z)>();
         foreach (var level in levelSheet)
         {
@@ -750,7 +738,7 @@ public sealed class ItemDetailService : IItemDetailService
             missingNpcs.Add(npcId);
         }
 
-        // ENpcBase → Shop RowIds
+        // ENpcBase â†’ Shop RowIds
         foreach (var npcBase in enpcBaseSheet)
         {
             var npcId = npcBase.RowId;
@@ -863,7 +851,7 @@ public sealed class ItemDetailService : IItemDetailService
                     }
                     catch
                     {
-                        // LGB file missing or corrupt — skip
+                        // LGB file missing or corrupt â€” skip
                     }
 
                     if (missingNpcs.Count == 0) break;
@@ -964,6 +952,59 @@ public sealed class ItemDetailService : IItemDetailService
         BuildItemSupplementCofferCache();
         BuildFieldOpCofferCache();
         BuildAchievementCache();
+        BuildPvpItemCache();
+    }
+
+    private void BuildPvpItemCache()
+    {
+        // 1. SpecialShop â€” items costing tomestones (Wolf Marks 25, Trophy Crystals 36656)
+        var specialShops = _gameData.GetExcelSheet<SpecialShop>()?.ToArray() ?? Array.Empty<SpecialShop>();
+        
+        foreach (var shop in specialShops)
+        {
+            var shopName = shop.Name.ToString();
+            if (string.IsNullOrEmpty(shopName)) continue;
+            var costs = new[] { "Wolf Mark", "Trophy Crystal" };
+            if (!costs.Any(c => shopName.Contains(c, StringComparison.OrdinalIgnoreCase))) continue;
+
+            foreach (var itemStruct in shop.Item)
+            {
+                foreach (var receiveItem in itemStruct.ReceiveItems)
+                {
+                    _pvpItemToSeason[receiveItem.Item.RowId] = "PvP";
+                    
+                }
+            }
+        }
+
+        // 2. PvPSeries â€” tier reward items
+        // ponytail: Sheet name is "PvPSeries", item IDs at columns 8,13,18,23,28
+        var pvpSeriesSheet = _gameData.GetExcelSheet<RawRow>(null, "PvPSeries");
+        if (pvpSeriesSheet != null)
+        {
+            var itemCols = new[] { 8u, 13u, 18u, 23u, 28u };
+            foreach (var row in pvpSeriesSheet)
+            {
+                foreach (var col in itemCols)
+                {
+                    var val = row.ReadColumn((int)col);
+                    uint itemId;
+                    if (val is uint u)
+                        itemId = u;
+                    else if (val is long l)
+                        itemId = (uint)l;
+                    else if (val is int i)
+                        itemId = (uint)i;
+                    else
+                        itemId = 0;
+                    if (itemId != 0)
+                    {
+                        // ponytail: PvPSeries has no name column (col 1 = Unknown0 int)
+                        _pvpItemToSeason[itemId] = "PvP";
+                    }
+                }
+            }
+        }
     }
 
     private static readonly Regex _totemBossRegex = new(@"\((.+)\)");
@@ -1071,8 +1112,8 @@ public sealed class ItemDetailService : IItemDetailService
                 _shopToNpcIds[hv.ParentId].Add(hv.ENpcResidentId);
         }
 
-        // ponytail: ENpcShop has ShopId→ENpcResidentId, but we lack Shop→Item mapping here.
-        // Keep HouseVendor only (ItemId→ENpcResidentId) for the vendor lookup path.
+        // ponytail: ENpcShop has ShopIdâ†’ENpcResidentId, but we lack Shopâ†’Item mapping here.
+        // Keep HouseVendor only (ItemIdâ†’ENpcResidentId) for the vendor lookup path.
     }
 
     private void BuildItemSupplementCofferCache()
@@ -1108,7 +1149,7 @@ public sealed class ItemDetailService : IItemDetailService
         }
     }
 
-    // ponytail: ItemId → List<Achievement RowId> via SpecialShop.ItemStruct.AchievementUnlock
+    // ponytail: ItemId â†’ List<Achievement RowId> via SpecialShop.ItemStruct.AchievementUnlock
     private void BuildAchievementCache()
     {
         var specialShops = _gameData.GetExcelSheet<SpecialShop>()?.ToArray() ?? Array.Empty<SpecialShop>();
@@ -1268,7 +1309,7 @@ public sealed class ItemDetailService : IItemDetailService
         if (cfcSheet == null)
             return null;
 
-        // Stage 1: Hardcoded Boss→CFC RowId map
+        // Stage 1: Hardcoded Bossâ†’CFC RowId map
         if (BossToCfcRowId.TryGetValue(bossName, out var hardcodedCfcId))
         {
             if (cfcSheet.TryGetRow(hardcodedCfcId, out var cfc))
@@ -1377,63 +1418,6 @@ public sealed class ItemDetailService : IItemDetailService
         return "???";
     }
 
-    private static ItemSourceType ClassifyGarlandSource(IReadOnlyList<string> sourceTypes)
-    {
-        // ponytail: single-pass classification, PvP/OnlineStore first (most specific)
-        foreach (var st in sourceTypes)
-        {
-            switch (st)
-            {
-                case "PvP": return ItemSourceType.PvP;
-                case "OnlineStore": return ItemSourceType.MogStation;
-                case "Event":
-                case "Seasonal": return ItemSourceType.Other;
-                case "Raid": return ItemSourceType.Raid;
-                case "Trial": return ItemSourceType.Trial;
-                case "Ultimate": return ItemSourceType.Raid; // closest match
-                case "Dungeon": return ItemSourceType.Dungeon;
-                case "Alliance": return ItemSourceType.Raid;
-                case "Delubrum": return ItemSourceType.Raid;
-                case "FATE": return ItemSourceType.Fate;
-                case "Treasure": return ItemSourceType.TreasureHunt;
-                case "Mob":
-                case "Enemy": return ItemSourceType.Mob;
-                case "NpcShop":
-                case "GCShop": return ItemSourceType.Vendor;
-                case "Quest":
-                case "QuestTurnIn": return ItemSourceType.Quest;
-                case "Crafting":
-                case "ItemSynthesis":
-                case "Synergy":
-                case "Jewelcraft": return ItemSourceType.Crafted;
-                case "Loot":
-                case "LootBag": return ItemSourceType.Other;
-                default: break;
-            }
-        }
-        return ItemSourceType.Other;
-    }
-
-    private string BuildGarlandDescription(uint itemId, GarlandItemInfo info, ItemSourceType sourceType)
-    {
-        // ponytail: show source types + instances (item model links) for context
-        var parts = new List<string>(info.SourceTypes);
-        var instanceNames = new List<string>();
-        var itemSheet = _gameData.GetExcelSheet<Item>();
-        foreach (var instId in info.Instances)
-        {
-            if (instId == 0 || instId == itemId)
-                continue;
-            var name = itemSheet?.GetRow(instId).Name.ToString();
-            if (!string.IsNullOrEmpty(name))
-                instanceNames.Add($"{name} ({instId})");
-        }
-        var desc = string.Join(", ", parts);
-        if (instanceNames.Count > 0)
-            desc += $" — related: {string.Join(", ", instanceNames)}";
-        return desc;
-    }
-
     private string GetMaterialKey(Recipe recipe)
     {
         var ingredientArray = recipe.Ingredient.Cast<dynamic>().ToArray();
@@ -1461,9 +1445,5 @@ public sealed class ItemDetailService : IItemDetailService
 
         parts.Sort((a, b) => a.id.CompareTo(b.id));
         return string.Join(",", parts.Select(p => $"{p.id}:{p.amount}"));
-    }
-
 }
-
-
-
+}
