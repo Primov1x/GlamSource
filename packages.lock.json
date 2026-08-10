@@ -58,10 +58,15 @@
         "resolved": "30.0.1",
         "contentHash": "rcZtgbWR+As4G3Vpgx0AMNmShGuQLFjkHAPIIflzrfkJCx8/AOd4m96ZRmiU1Wi39qS5UVjV0P8qdgqOo5Cwyg=="
       },
+      "dnlib": {
+        "type": "Transitive",
+        "resolved": "4.5.0",
+        "contentHash": "YkwstIbjyiJ12uGIAN8oSmImgVFkPHit7MJXPHvJqeKV1DMNqxZWszjHfykgiSs4Y/XmjnZts7pI2/AYme5/uA=="
+      },
       "Lumina": {
         "type": "Transitive",
-        "resolved": "7.6.0",
-        "contentHash": "rvlUbb72dd/9sWVcJQ1FG6POQRDd8TKy64VWTHwXbm1s54gFK5jssRDB7sVmlKUFLzpORmH4Xt8G8DISHYzMQg==",
+        "resolved": "7.1.0",
+        "contentHash": "7zjreOpMXOhf+m5uTefoLZO6Mt3y68XhK036eDOS5JJ8yuIjAgFteWkzdCRcss8+PH5skMnDMDUZoTJJefQCtg==",
         "dependencies": {
           "BCnEncoder.Net": "2.2.1",
           "Microsoft.Extensions.ObjectPool": "10.0.0"
@@ -82,6 +87,11 @@
         "resolved": "10.0.0",
         "contentHash": "bpeCq0IYmVLACyEUMzFIOQX+zZUElG1t+nu1lSxthe7B+1oNYking7b91305+jNB6iwojp9fqTY9O+Nh7ULQxg=="
       },
+      "SharpCompress": {
+        "type": "Transitive",
+        "resolved": "0.50.4",
+        "contentHash": "/hxjUR7DEX6mky8/LQXyrnrKioOL6D6veAID1EZpro+q4s02x5dHEYBV3qjEN6lDYYilDoQQ76BcmQj+lRx51w=="
+      },
       "Sylvan.Data.Csv": {
         "type": "Transitive",
         "resolved": "1.4.3",
@@ -90,10 +100,10 @@
       "glamsource.core": {
         "type": "Project",
         "dependencies": {
-          "Lumina": "[7.6.0, )",
-          "Lumina.Excel": "[7.4.3, )",
           "LuminaSupplemental.Excel": "[5.1.0, )",
-          "Newtonsoft.Json": "[13.0.3, )"
+          "Newtonsoft.Json": "[13.0.3, )",
+          "SharpCompress": "[0.50.4, )",
+          "dnlib": "[4.5.0, )"
         }
       }
     }

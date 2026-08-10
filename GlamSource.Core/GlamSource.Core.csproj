@@ -6,11 +6,20 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <DalamudLibPath>C:\Users\t.fritzen\Projects\Private\GlamSource\reference\Dalamud\bin\Debug\</DalamudLibPath>
+  </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Lumina" Version="7.6.0" />
-    <PackageReference Include="Lumina.Excel" Version="7.4.3" />
     <PackageReference Include="LuminaSupplemental.Excel" Version="5.1.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="Lumina">
+      <HintPath>$(DalamudLibPath)Lumina.dll</HintPath>
+    </Reference>
+    <Reference Include="Lumina.Excel">
+      <HintPath>$(DalamudLibPath)Lumina.Excel.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
 </Project>

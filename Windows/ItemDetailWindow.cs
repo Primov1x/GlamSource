@@ -24,6 +24,7 @@ public class ItemDetailWindow : Window, IDisposable
     private readonly IItemSourceService _sourceService;
     private readonly IUniversalisService _universalisService;
     private readonly ITextureProvider _textureProvider;
+    private readonly GatherBuddyRebornIpc _gbIpc;
     private readonly Stack<uint> _history = new();
     private uint? _showingItemId;
     private bool _isOpen;
@@ -91,13 +92,14 @@ public class ItemDetailWindow : Window, IDisposable
             "OTHER"),
     };
 
-    public ItemDetailWindow(IItemDetailService detailService, IItemSourceService sourceService, IUniversalisService universalisService, ITextureProvider? textureProvider = null)
+    public ItemDetailWindow(IItemDetailService detailService, IItemSourceService sourceService, IUniversalisService universalisService, ITextureProvider? textureProvider = null, GatherBuddyRebornIpc? gbIpc = null)
         : base($"Item Detail###ItemDetailWindow", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
     {
         _detailService = detailService;
         _sourceService = sourceService;
         _universalisService = universalisService;
         _textureProvider = textureProvider;
+        _gbIpc = gbIpc ?? new GatherBuddyRebornIpc(Plugin.PluginInterface);
         SizeConstraints = new WindowSizeConstraints
         {
             MinimumSize = new Vector2(380, 250),
@@ -386,6 +388,15 @@ public class ItemDetailWindow : Window, IDisposable
                 _navigateToSourceIdx = sourceIdx;
             }
         }
+        // Actions row: Crafting Log (for crafted sources)
+        if (src.Type == ItemSourceType.Crafted)
+        {
+            ImGui.SameLine();
+            if (ImGui.SmallButton($"Open Crafting Log##craft_{sourceIdx}"))
+            {
+                TryOpenCraftingLog(_showingItemId ?? 0);
+            }
+        }
         if (src.NpcName != null && (src.ZoneName != null || src.MapX.HasValue))
         {
             ImGui.Spacing();
@@ -399,14 +410,6 @@ public class ItemDetailWindow : Window, IDisposable
             for (int matIdx = 0; matIdx < src.Materials.Count; matIdx++)
             {
                 DrawMaterialRow(src.Materials[matIdx], sourceIdx, matIdx);
-            }
-
-            if (src.Type == ItemSourceType.Crafted)
-            {
-                if (ImGui.SmallButton($"Open Crafting Log##craft_{sourceIdx}"))
-                {
-                    TryOpenCraftingLog(_showingItemId ?? 0);
-                }
             }
         }
 
@@ -492,10 +495,9 @@ public class ItemDetailWindow : Window, IDisposable
             {
                 try
                 {
-                    var gb = Plugin.PluginInterface
-                        .GetIpcSubscriber<string, bool>("GatherBuddy.IPC.SearchItem");
-                    if (gb.HasFunction)
-                        gb.InvokeFunc(mat.Name);
+                    var itemId = _gbIpc.IdentifyItem(mat.Name);
+                    if (itemId > 0)
+                        _gbIpc.SetAutoGatherEnabled(true);
                 }
                 catch (Exception ex)
                 {
@@ -578,10 +580,9 @@ if (_textureProvider != null && cost.IconId > 0)
                 {
                     try
                     {
-                        var gb = Plugin.PluginInterface
-                            .GetIpcSubscriber<string, bool>("GatherBuddy.IPC.SearchItem");
-                        if (gb.HasFunction)
-                            gb.InvokeFunc(cost.Name);
+                        var itemId = _gbIpc.IdentifyItem(cost.Name);
+                        if (itemId > 0)
+                            _gbIpc.SetAutoGatherEnabled(true);
                     }
                     catch (Exception ex)
                     {
@@ -732,6 +733,7 @@ if (_textureProvider != null && cost.IconId > 0)
 
     private bool ShouldShowGatherButton(uint itemId)
     {
+        if (!_gbIpc.IsAvailable) return false;
         // ponytail: broad filter — let GatherBuddy IPC decide if item is gatherable
         return itemId > 0 && itemId < 500000;
     }
@@ -1071,6 +1073,20 @@ if (_textureProvider != null && cost.IconId > 0)
             : (levelStr ?? jobStr ?? "Crafted");
         ImGui.Text(title);
 
+        // Actions row: GBR batch gather (if GBR loaded and materials missing)
+        if (first.Materials != null && first.Materials.Count > 0 && GatherBuddyRebornIpc.IsGbrAssemblyLoaded)
+        {
+            var missingCount = first.Materials.Count(m => m.ItemId > 19 && GetItemCount(m.ItemId) < m.Count);
+            if (missingCount > 0)
+            {
+                ImGui.SameLine();
+                if (ImGui.SmallButton($"Add missing to GBR list ({missingCount})##gbr_batch_{groupIdx}"))
+                {
+                    TryCreateGbrBatchList(_detailService.GetDetail(_showingItemId ?? 0)?.Name ?? "Unknown", first.Materials);
+                }
+            }
+        }
+
         ImGui.Spacing();
 
         if (first.Materials != null && first.Materials.Count > 0)
@@ -1084,6 +1100,29 @@ if (_textureProvider != null && cost.IconId > 0)
         }
 
         ImGui.Spacing();
+    }
+
+    private void TryCreateGbrBatchList(string itemName, IReadOnlyList<CostEntry> materials)
+    {
+        try
+        {
+            var missing = materials
+                .Where(m => m.ItemId > 19 && GetItemCount(m.ItemId) < m.Count)
+                .GroupBy(m => m.ItemId)
+                .ToDictionary(
+                    g => g.Key,
+                    g => (int)g.Sum(m => m.Count - GetItemCount(m.ItemId)));
+
+            if (missing.Count == 0) return;
+
+            var success = _gbIpc.CreatePersistentGatherList(itemName, new Dictionary<uint, int>(missing));
+            Plugin.Log?.Information("[GBR] Created batch list '{Name}' with {Count} missing materials, success={Success}",
+                itemName, missing.Count, success);
+        }
+        catch (Exception ex)
+        {
+            Plugin.Log?.Error(ex, "[GBR] Failed to create batch list for '{Name}'", itemName);
+        }
     }
 
     private string GetMaterialKey(ItemSourceDetail src)

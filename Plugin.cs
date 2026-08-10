@@ -51,7 +51,6 @@ public class Plugin : IAsyncDalamudPlugin
     private readonly ContextMenuService contextMenuService;
     private readonly ItemDetailWindow itemDetailWindow;
     private readonly UniversalisService? _universalisService;
-    private readonly GarlandToolsService? _garlandService;
     public static IGlamourService? GlamourServiceOverride;
 
     public Plugin(
@@ -96,9 +95,7 @@ public class Plugin : IAsyncDalamudPlugin
         configWindow = new ConfigWindow(this);
         mainWindow = new MainWindow(gameDataService, itemDetailWindow);
 
-        var garlandHttpClient = new System.Net.Http.HttpClient();
-        _garlandService = new GarlandToolsService(garlandHttpClient);
-        var itemDetailService = new ItemDetailService(DataManager.GameData, _garlandService);
+        var itemDetailService = new ItemDetailService(DataManager.GameData);
         var universalisHttpClient = new System.Net.Http.HttpClient();
         _universalisService = new UniversalisService(universalisHttpClient, "Shiva", "Light");
         itemDetailWindow = new ItemDetailWindow(itemDetailService, sourceService, _universalisService, textureProvider);
@@ -142,7 +139,6 @@ public class Plugin : IAsyncDalamudPlugin
         itemDetailWindow.Dispose();
         contextMenuService.Dispose();
         _universalisService?.Dispose();
-        _garlandService?.Dispose();
 
         CommandManager.RemoveHandler(CommandName);
 
