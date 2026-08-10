@@ -992,31 +992,21 @@ public sealed class ItemDetailService : IItemDetailService
             }
         }
 
-        // 2. PvPSeries â€” tier reward items
-        // ponytail: Sheet name is "PvPSeries", item IDs at columns 8,13,18,23,28
-        var pvpSeriesSheet = _gameData.GetExcelSheet<RawRow>(null, "PvPSeries");
+        // 2. PvPSeries — tier rewards (Malmstone)
+        var pvpSeriesSheet = _gameData.GetExcelSheet<PvPSeries>();
         if (pvpSeriesSheet != null)
         {
-            var itemCols = new[] { 8u, 13u, 18u, 23u, 28u };
             foreach (var row in pvpSeriesSheet)
             {
-                foreach (var col in itemCols)
+                if (row.RowId > _currentPvpSeasonId)
+                    _currentPvpSeasonId = row.RowId;
+
+                foreach (var levelReward in row.LevelRewards)
                 {
-                    var val = row.ReadColumn((int)col);
-                    uint itemId;
-                    if (val is uint u)
-                        itemId = u;
-                    else if (val is long l)
-                        itemId = (uint)l;
-                    else if (val is int i)
-                        itemId = (uint)i;
-                    else
-                        itemId = 0;
-                    if (itemId != 0)
+                    foreach (var itemRef in levelReward.LevelRewardItem)
                     {
-                        // ponytail: PvPSeries has no name column (col 1 = Unknown0 int)
-                        _pvpItemToSeason[itemId] = row.RowId;
-                        if (row.RowId > _currentPvpSeasonId) _currentPvpSeasonId = row.RowId;
+                        if (itemRef.RowId > 0)
+                            _pvpItemToSeason[itemRef.RowId] = row.RowId;
                     }
                 }
             }

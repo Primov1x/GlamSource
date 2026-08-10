@@ -732,22 +732,8 @@ if (_textureProvider != null && cost.IconId > 0)
 
     private bool ShouldShowGatherButton(uint itemId)
     {
-        if (itemId == 0 || itemId > 500000)
-            return false;
-
-        try
-        {
-            var itemSheet = _detailService.GameData.GetExcelSheet<Lumina.Excel.Sheets.Item>();
-            if (itemSheet?.TryGetRow(itemId, out var item) != true)
-                return false;
-
-            var searchCat = item.ItemSearchCategory.RowId;
-            return searchCat == 35 || searchCat == 36;
-        }
-        catch
-        {
-            return false;
-        }
+        // ponytail: broad filter — let GatherBuddy IPC decide if item is gatherable
+        return itemId > 0 && itemId < 500000;
     }
 
     private void DrawFallbackSources(uint itemId)
