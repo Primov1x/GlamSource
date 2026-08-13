@@ -17,7 +17,11 @@ public class ConfigWindow : Window, IDisposable
         Flags = ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoScrollbar |
                 ImGuiWindowFlags.NoScrollWithMouse;
 
-        Size = new Vector2(232, 90);
+        SizeConstraints = new WindowSizeConstraints
+        {
+            MinimumSize = new Vector2(150, 80),
+        };
+        // ponytail: allow scaling with user font settings
         SizeCondition = ImGuiCond.Always;
 
         configuration = plugin.Configuration;
@@ -48,6 +52,13 @@ public class ConfigWindow : Window, IDisposable
         if (ImGui.Checkbox("Movable Config Window", ref movable))
         {
             configuration.IsConfigWindowMovable = movable;
+            configuration.Save();
+        }
+
+        var showCraftingSavings = configuration.ShowCraftingSavings;
+        if (ImGui.Checkbox("Show Crafting Savings", ref showCraftingSavings))
+        {
+            configuration.ShowCraftingSavings = showCraftingSavings;
             configuration.Save();
         }
     }

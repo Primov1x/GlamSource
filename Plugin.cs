@@ -51,6 +51,7 @@ public class Plugin : IAsyncDalamudPlugin
     private readonly ContextMenuService contextMenuService;
     private readonly ItemDetailWindow itemDetailWindow;
     private readonly UniversalisService? _universalisService;
+    public readonly CraftingCostService CraftingCostService;
     public static IGlamourService? GlamourServiceOverride;
 
     public Plugin(
@@ -98,7 +99,10 @@ public class Plugin : IAsyncDalamudPlugin
         var itemDetailService = new ItemDetailService(DataManager.GameData);
         var universalisHttpClient = new System.Net.Http.HttpClient();
         _universalisService = new UniversalisService(universalisHttpClient, "Shiva", "Light");
+        var craftingCostService = new CraftingCostService(itemDetailService, _universalisService!);
+        CraftingCostService = craftingCostService;
         itemDetailWindow = new ItemDetailWindow(itemDetailService, sourceService, _universalisService, textureProvider);
+        itemDetailWindow.SetPlugin(this);
         WindowSystem.AddWindow(itemDetailWindow);
 
         contextMenuService = new ContextMenuService(ContextMenu, _gameGui, itemId =>
@@ -139,6 +143,7 @@ public class Plugin : IAsyncDalamudPlugin
         itemDetailWindow.Dispose();
         contextMenuService.Dispose();
         _universalisService?.Dispose();
+        CraftingCostService?.Dispose();
 
         CommandManager.RemoveHandler(CommandName);
 

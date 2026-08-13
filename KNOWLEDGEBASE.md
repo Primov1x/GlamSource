@@ -2,6 +2,9 @@
 
 Stand: 30.07.2026 | Dalamud API Level 15 | Lumina 7.6.0 | .NET 10
 
+
+Graphify-Nutzung: Vor jedem neuen Feature das externe APIs benutzt (Dalamud, GBR, Glamourer, IPC generell): graphify query "<konkrete Frage>" ausführen. Der Graph enthält aktuellen Projektstand und vermeidet Aufrufe alter/nicht-existenter APIs.
+
 ---
 
 ## 1. Projekt-Architektur
@@ -670,6 +673,18 @@ if (defaultTarget.TargetContentId != 0) return null;
 // RICHTIG: Whitelist vertrauen
 if (!GameAddonWhitelist.Contains(addonName)) return null;
 ```
+## Deprecated / non-existent Dalamud APIs (do not use)
+
+- `IUiBuilder.LoadImage(path)` — doesn't exist. Use `_textureProvider.GetFromFile(path).GetWrapOrEmpty()`
+- `PluginInterface.UiBuilder.LoadImageRaw` — same, use `ITextureProvider`
+- (weitere die dir auffallen)
+
+## Current Dalamud patterns used in this project
+
+- Image/texture loading: `ITextureProvider` (injected as `_textureProvider`)
+- Game icons: `_textureProvider.GetFromGameIcon(new GameIconLookup(iconId)).GetWrapOrEmpty()` — only this path is used; no file-path fallback.
+- IPC subscribers: `PluginInterface.GetIpcSubscriber<...>("name")`, cached in constructor
+- Chat/notifications: (was auch immer du nutzt)
 
 ### nuget.config
 Root-Level `nuget.config` mit lokalem Pfad NICHT committen.

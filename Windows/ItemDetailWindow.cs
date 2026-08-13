@@ -25,6 +25,7 @@ public class ItemDetailWindow : Window, IDisposable
     private readonly IUniversalisService _universalisService;
     private readonly ITextureProvider _textureProvider;
     private readonly GatherBuddyRebornIpc _gbIpc;
+    private Plugin _plugin = null!;
     private readonly Stack<uint> _history = new();
     private uint? _showingItemId;
     private bool _isOpen;
@@ -35,6 +36,7 @@ public class ItemDetailWindow : Window, IDisposable
     private bool _marketLoading;
     private uint _marketItemId;
     private Action<string, string, float, float>? _onOpenMap;
+    private CraftingCostResult? _craftingResult;
 
     private static readonly Dictionary<ItemSourceType, (Vector4 Border, Vector4 BadgeBg, string Label)> SourceStyles = new()
     {
@@ -103,8 +105,13 @@ public class ItemDetailWindow : Window, IDisposable
         SizeConstraints = new WindowSizeConstraints
         {
             MinimumSize = new Vector2(380, 250),
-            MaximumSize = new Vector2(700, float.MaxValue)
+            MaximumSize = new Vector2(700f, 800f)
         };
+    }
+
+    public void SetPlugin(Plugin plugin)
+    {
+        _plugin = plugin;
     }
 
     public void SetMapCallback(Action<string, string, float, float> callback)
@@ -116,6 +123,12 @@ public class ItemDetailWindow : Window, IDisposable
     {
         _history.Clear();
         LoadItemDetail(itemId);
+        _craftingResult = null;
+        Task.Run(async () =>
+        {
+            var service = _plugin?.CraftingCostService;
+            _craftingResult = service != null ? await service.GetCostBreakdownAsync(itemId) : null;
+        });
     }
 
     private void NavigateToItem(uint itemId)
@@ -185,11 +198,17 @@ public class ItemDetailWindow : Window, IDisposable
         else if (_marketLoading && _marketItemId == detail.ItemId)
             ImGui.TextDisabled("Loading prices...");
 
-        ImGui.Separator();
-        ImGui.TextDisabled("SOURCES");
+        SectionHeader("SOURCES");
         ImGui.Spacing();
 
         DrawSourceCards(detail);
+
+        if (_plugin?.Configuration?.ShowCraftingSavings == true && _craftingResult != null)
+        {
+            SectionHeader("CRAFTING SAVINGS");
+            ImGui.Spacing();
+            DrawCraftingSavings();
+        }
     }
 
     private void DrawItemHeader(ItemDetail detail)
@@ -438,14 +457,14 @@ public class ItemDetailWindow : Window, IDisposable
         var breakdown = mat.ItemId > 19 ? GetInventoryBreakdown(mat.ItemId) : new Dictionary<string, int>();
         var showGatherBtn = ShouldShowGatherButton(mat.ItemId);
 
+        const float IconSize = 32f;
         if (_textureProvider != null && mat.IconId > 0)
         {
             var iconTexture = _textureProvider.GetFromGameIcon(new GameIconLookup(mat.IconId)).GetWrapOrEmpty();
-            float imageSize = ImGui.GetTextLineHeight() * 0.75f;
-            var iconSize = new Vector2(imageSize, imageSize);
+            var iconSize = new Vector2(IconSize, IconSize);
             // Vertically center icon with text
             float textHeight = ImGui.GetTextLineHeight();
-            float offsetY = (textHeight - imageSize) * 0.5f;
+            float offsetY = (textHeight - IconSize) * 0.5f;
             var cursorPos = ImGui.GetCursorPos();
             ImGui.SetCursorPosY(cursorPos.Y + offsetY);
             ImGui.Image(iconTexture.Handle, iconSize);
@@ -522,6 +541,7 @@ public class ItemDetailWindow : Window, IDisposable
         }
         else
         {
+            const float IconSize = 32f;
             var have = GetItemCount(cost.ItemId);
             var sufficient = have >= cost.Count;
             var breakdown = cost.ItemId > 19 ? GetInventoryBreakdown(cost.ItemId) : new Dictionary<string, int>();
@@ -529,11 +549,10 @@ public class ItemDetailWindow : Window, IDisposable
 if (_textureProvider != null && cost.IconId > 0)
         {
             var iconTexture = _textureProvider.GetFromGameIcon(new GameIconLookup(cost.IconId)).GetWrapOrEmpty();
-            float imageSize = ImGui.GetTextLineHeight() * 0.75f;
-            var iconSize = new Vector2(imageSize, imageSize);
+            var iconSize = new Vector2(IconSize, IconSize);
             // Vertically center icon with text
             float textHeight = ImGui.GetTextLineHeight();
-            float offsetY = (textHeight - imageSize) * 0.5f;
+            float offsetY = (textHeight - IconSize) * 0.5f;
             var cursorPos = ImGui.GetCursorPos();
             ImGui.SetCursorPosY(cursorPos.Y + offsetY);
             ImGui.Image(iconTexture.Handle, iconSize);
@@ -756,6 +775,13 @@ if (_textureProvider != null && cost.IconId > 0)
                 ImGui.Spacing();
             }
         }
+    }
+
+    // ponytail: simple header helper to avoid duplicate TextColored+Separator
+    private static void SectionHeader(string title)
+    {
+        ImGui.TextColored(new Vector4(0.9f, 0.7f, 0.2f, 1f), title);
+        ImGui.Separator();
     }
 
     private static unsafe void TryOpenCraftingLog(uint itemId)
@@ -1156,6 +1182,63 @@ if (_textureProvider != null && cost.IconId > 0)
                 return level;
         }
         return 0;
+    }
+
+    public void ShowCraftingSavings()
+    {
+        if (_showingItemId == null) return;
+        _craftingResult = null;
+        Task.Run(async () =>
+        {
+            var service = _plugin?.CraftingCostService;
+            _craftingResult = service != null ? await service.GetCostBreakdownAsync(_showingItemId.Value) : null;
+        });
+    }
+
+    private void QueryCraftingSavings(uint itemId)
+    {
+        _craftingResult = null;
+        Task.Run(async () =>
+        {
+            var service = _plugin?.CraftingCostService;
+            _craftingResult = service != null ? await service.GetCostBreakdownAsync(itemId) : null;
+        });
+    }
+
+    private void DrawCraftingSavings()
+    {
+        var result = _craftingResult!;
+        var saved = result.MarketNQPrice.HasValue
+            ? result.MarketNQPrice.Value - result.CraftedCost
+            : (long?)null;
+        var savingsColor = saved.HasValue && saved.Value > 0
+            ? new Vector4(0.4f, 1f, 0.4f, 1f)
+            : new Vector4(0.8f, 0.8f, 0.8f, 1f);
+
+        ImGui.TextColored(new Vector4(0.9f, 0.7f, 0.2f, 1f), "Materials:");
+        ImGui.Separator();
+        foreach (var (name, count, marketPrice) in result.Materials.Select(m => (m.Name, m.Count, m.MarketPrice)))
+        {
+            var priceStr = marketPrice.HasValue ? $" @ {FormatNumber(marketPrice.Value)}" : "";
+            ImGui.TextColored(new Vector4(0.8f, 0.8f, 0.8f, 1f), $"  • {name} x{FormatNumber(count)}{priceStr}");
+        }
+
+        ImGui.Spacing();
+        if (result.MarketNQPrice.HasValue)
+        {
+            ImGui.TextColored(new Vector4(0.9f, 0.7f, 0.2f, 1f), "Comparison:");
+            ImGui.Separator();
+            ImGui.TextColored(new Vector4(0.8f, 0.8f, 0.8f, 1f), $"  Market (NQ): {FormatNumber(result.MarketNQPrice.Value)} Gil");
+            ImGui.TextColored(new Vector4(0.8f, 0.8f, 0.8f, 1f), $"  Crafted cost: {FormatNumber(result.CraftedCost ?? 0)} Gil");
+            if (saved.HasValue)
+            {
+                ImGui.TextColored(savingsColor, $"  Savings: {FormatNumber((uint)Math.Max(0, saved.Value))} Gil");
+            }
+        }
+        else
+        {
+            ImGui.TextDisabled("  No market price available for comparison.");
+        }
     }
 
     public void Dispose()

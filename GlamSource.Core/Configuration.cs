@@ -7,4 +7,5 @@ public class Configuration
 
     public bool IsConfigWindowMovable { get; set; } = true;
     public bool SomePropertyToBeSavedAndWithADefault { get; set; } = true;
+    public bool ShowCraftingSavings { get; set; } = false;
 }
