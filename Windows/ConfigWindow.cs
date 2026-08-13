@@ -19,7 +19,7 @@ public class ConfigWindow : Window, IDisposable
 
         SizeConstraints = new WindowSizeConstraints
         {
-            MinimumSize = new Vector2(150, 80),
+            MinimumSize = new Vector2(300, 120),
         };
         // ponytail: allow scaling with user font settings
         SizeCondition = ImGuiCond.Always;
