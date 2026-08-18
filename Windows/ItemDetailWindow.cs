@@ -88,6 +88,10 @@ public class ItemDetailWindow : Window, IDisposable
             new Vector4(0.8f, 0.6f, 0.2f, 1f),
             new Vector4(0.18f, 0.14f, 0.05f, 1f),
             "SHOP"),
+        [ItemSourceType.Gathering] = (
+            new Vector4(0.2f, 0.8f, 0.5f, 1f),
+            new Vector4(0.05f, 0.20f, 0.10f, 1f),
+            "GATHERING"),
         [ItemSourceType.Other] = (
             new Vector4(0.5f, 0.5f, 0.5f, 1f),
             new Vector4(0.15f, 0.15f, 0.15f, 1f),
@@ -285,7 +289,7 @@ public class ItemDetailWindow : Window, IDisposable
         if (detail.Sources.Count == 0)
         {
             var grey = new Vector4(0.6f, 0.6f, 0.6f, 1f);
-            ImGui.TextColored(grey, "No vendor/crafting source found.");
+            ImGui.TextColored(grey, "No known source found.");
             ImGui.TextColored(grey, "This item may drop from duties, raids,");
             ImGui.TextColored(grey, "or other content.");
             return;
@@ -300,6 +304,7 @@ public class ItemDetailWindow : Window, IDisposable
             { ItemSourceType.Trial, 4 },
             { ItemSourceType.Raid, 5 },
             { ItemSourceType.Dungeon, 6 },
+            { ItemSourceType.Gathering, 7 },
             { ItemSourceType.Other, 9 }
         };
 

@@ -66,6 +66,10 @@ public sealed class ItemDetailService : IItemDetailService
         string NpcName, string ZoneName,
         float MapX, float MapY,
         uint TerritoryTypeId, uint MapId);
+    private record GatheringInfo(
+        int GatheringLevel, int GatheringType,
+        string ZoneName, float MapX, float MapY,
+        uint TerritoryTypeId, uint MapId);
     private readonly Dictionary<uint, string> _itemNameCache = new();
 
     // ponytail: ItemId â†’ List<ContentFinderCondition RowId> from LuminaSupplemental DungeonDrop
@@ -95,6 +99,9 @@ public sealed class ItemDetailService : IItemDetailService
     // ponytail: ItemId â†’ List<Achievement RowId> from SpecialShop.ItemStruct.AchievementUnlock
     private readonly Dictionary<uint, List<uint>> _itemToAchievementMap = new();
 
+    // ponytail: ItemId -> all nodes (level, type, zone, map position) from GatheringPointBase
+    private readonly Dictionary<uint, List<GatheringInfo>> _itemToGatheringCache = new();
+
     // ponytail: PvP items from SpecialShop (tome currencies), PvPSeries tier rewards
     private readonly Dictionary<uint, uint> _pvpItemToSeason = new();
     private readonly HashSet<uint> _pvpVendorItems = new();
@@ -109,6 +116,7 @@ public sealed class ItemDetailService : IItemDetailService
 
         BuildCaches();
         BuildDutyDropCache();
+        BuildGatheringCache();
     }
 
     public GameData GameData => _gameData;
@@ -450,12 +458,37 @@ public sealed class ItemDetailService : IItemDetailService
             }
         }
 
+        // 7b. Gathering sources
+        if (results.Count == 0 && _itemToGatheringCache.TryGetValue(itemId, out var gatheringNodes))
+        {
+            foreach (var g in gatheringNodes)
+            {
+                var nodeTypeName = g.GatheringType switch
+                {
+                    0 => "Miner",
+                    1 => "Miner",
+                    2 => "Botanist",
+                    3 => "Botanist",
+                    _ => "Unknown"
+                };
+                var zoneSuffix = string.IsNullOrEmpty(g.ZoneName) ? "" : $" ({g.ZoneName})";
+                var desc = $"{nodeTypeName} Lv.{g.GatheringLevel}{zoneSuffix}";
+                results.Add(new ItemSourceDetail(
+                    ItemSourceType.Gathering,
+                    desc,
+                    null, null,
+                    g.MapX, g.MapY,
+                    g.TerritoryTypeId, g.MapId,
+                    null, null, null, null, null, null, null, null, null));
+            }
+        }
+
         // 8. Generic fallback â€” nothing found
         if (results.Count == 0)
         {
             results.Add(new ItemSourceDetail(
                 ItemSourceType.Other,
-                "No vendor/crafting source found. May drop from duties, raids, or other content.",
+                "No known source found. May be a rare drop or gatherable item.",
                 null, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
         }
 
@@ -885,6 +918,61 @@ public sealed class ItemDetailService : IItemDetailService
             {
                 if (dataRef.RowId > 0 && !_shopNpcNameOnly.ContainsKey(dataRef.RowId))
                     _shopNpcNameOnly[dataRef.RowId] = npcName;
+            }
+        }
+    }
+
+    // ponytail: all nodes per item (level + position vary by zone)
+    private void BuildGatheringCache()
+    {
+        var gatheringPointBaseSheet = _gameData.GetExcelSheet<GatheringPointBase>();
+        if (gatheringPointBaseSheet == null)
+            return;
+
+        var gatheringPointSheet = _gameData.GetExcelSheet<GatheringPoint>();
+        if (gatheringPointSheet == null)
+            return;
+
+        var exportedGatheringPointSheet = _gameData.GetExcelSheet<ExportedGatheringPoint>();
+
+        foreach (var point in gatheringPointBaseSheet)
+        {
+            var coordRow = exportedGatheringPointSheet?.GetRowOrDefault(point.RowId);
+
+            foreach (var gatheringPoint in gatheringPointSheet)
+            {
+                if (gatheringPoint.GatheringPointBase.RowId != point.RowId)
+                    continue;
+
+                var territoryType = gatheringPoint.TerritoryType.ValueNullable;
+                if (territoryType == null)
+                    continue;
+                var map = territoryType.Value.Map.ValueNullable;
+
+                var zoneName = territoryType.Value.PlaceName.ValueNullable?.Name.ToString() ?? "";
+                float mapX = 0f, mapY = 0f;
+                if (map != null && coordRow != null)
+                {
+                    mapX = ToMapCoordinate(coordRow.Value.X, map.Value.SizeFactor, map.Value.OffsetX);
+                    mapY = ToMapCoordinate(coordRow.Value.Y, map.Value.SizeFactor, map.Value.OffsetY);
+                }
+
+                var territoryId = territoryType.Value.RowId;
+                var mapId = map?.RowId ?? 0;
+                var level = point.GatheringLevel;
+                var type = (int)point.GatheringType.RowId;
+
+                foreach (var itemRef in point.Item)
+                {
+                    if (itemRef.RowId == 0)
+                        continue;
+                    if (!_itemToGatheringCache.TryGetValue(itemRef.RowId, out var list))
+                    {
+                        list = new List<GatheringInfo>();
+                        _itemToGatheringCache[itemRef.RowId] = list;
+                    }
+                    list.Add(new GatheringInfo(level, type, zoneName, mapX, mapY, territoryId, mapId));
+                }
             }
         }
     }

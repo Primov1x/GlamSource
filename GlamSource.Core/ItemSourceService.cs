@@ -17,6 +17,7 @@ public enum ItemSourceType
     Fate,
     Mob,
     Coffer,
+    Gathering,
     Other
 }
 

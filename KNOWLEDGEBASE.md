@@ -605,6 +605,55 @@ Get-ChildItem C:\Users\t.fritzen\Projects\Private\PLUGIN\ -Recurse -Include *.cs
     Select-Object -First 30
 ```
 
+### Gathering-Source-Erkennung — ItemDetailService
+
+Gatherable-Items (Botanist/Miner/Fisher) zeigen jetzt im ItemDetailWindow:
+- Type: `ItemSourceType.Gathering` (grün-bräunliches Badge)
+- Description: `"{Job} Lv.{Level}"` z.B. `"Botanist Lv.52"`
+- Zone-Koordinaten: **nicht implementiert** (nur Job + Level)
+
+**Verwendete Lumina-Sheets (GatherBuddyReborn Pattern):**
+- `GatheringItem`: `RowId`, `GatheringItemLevel` (RowRef), `Item` (RowRef<Item>)
+- `GatheringItemLevelConvertTable`: `GatheringItemLevel` (byte)
+- `GatheringPointBase`: `GatheringType` (RowRef, 0=Mining, 1=Quarrying, 2=Logging, 3=Harvesting), `GatheringLevel` (uint), `Item` (Collection<RowRef<Item>>)
+
+**Access Pattern:**
+```csharp
+var gatheringSheet = _gameData.GetExcelSheet<GatheringPointBase>();
+foreach (var point in gatheringSheet)
+{
+    foreach (var itemRef in point.Item)
+    {
+        // itemRef.RowId = das sammelbare Item
+        // point.GatheringType.RowId = 0=Mining, 1=Quarrying, 2=Logging, 3=Harvesting
+        // point.GatheringLevel = das Level
+    }
+}
+```
+
+**Job-Map (GatheringType → Class):**
+```csharp
+0 => "Miner",  // Mining
+1 => "Miner",  // Quarrying
+2 => "Botanist",  // Logging
+3 => "Botanist",  // Harvesting
+```
+
+**Cache-Struktur:**
+```csharp
+// Dictionary<uint, GatheringInfo> — erste Node pro Item (Level-Zonen-Variation wird ignoriert)
+private readonly Dictionary<uint, GatheringInfo> _itemToGatheringCache
+```
+  
+**Mock-Verhalten:**
+- Cache wird erfolgreich gebaut (keine crashes)
+- Im Mock ist TerritoryType Sheet leer → Zone bleibt leer (null)
+- Test-in-Game: Items wie Thavnairian Perilla Leaf (ID 36085) zeigen "Botanist Lv.X"
+
+**Bezug zu anderen Quellen:**
+- `InventoryTools`, `Questionable`, `GatherBuddyReborn` nutzen ähnliche Pattern
+- Zone-Koordinaten-Erkennung wäre eine spätere Erweiterung (GatheringPoint → TerritoryType → Map)
+
 ---
 
 ## 13. Diagnose-Disziplin
