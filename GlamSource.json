@@ -2,14 +2,20 @@
   "Author": "TF",
   "Name": "GlamSource",
   "InternalName": "GlamSource",
-  "Punchline": "Zeigt woher Glams und Mounts kommen.",
+  "AssemblyVersion": "0.0.0.18",
   "Description": "Hover über ein Item oder Mount und sieh sofort die Quelle — Dungeon, Shop, Craft, Event. Kein Wiki mehr nötig. Befehle: /glamsource",
-  "AssemblyVersion": "0.0.0.17",
   "ApplicableVersion": "any",
   "Tags": [
     "glamour",
     "mounts",
     "source",
     "qol"
-  ]
+  ],
+  "DalamudApiLevel": 15,
+  "LoadRequiredState": 0,
+  "LoadSync": false,
+  "CanUnloadAsync": false,
+  "LoadPriority": 0,
+  "Punchline": "Zeigt woher Glams und Mounts kommen.",
+  "AcceptsFeedback": true
 }
