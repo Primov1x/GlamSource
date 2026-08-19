@@ -923,6 +923,38 @@ public sealed class ItemDetailService : IItemDetailService
     }
 
     // ponytail: all nodes per item (level + position vary by zone)
+    // Performance: O(n+m) statt O(n×m) durch Index-Erstellung
+    // Dedupliziere GatheringInfos: gleiche Zone+Level = eine Card, aber mit Node-Count
+    private static List<GatheringInfo> DeduplicateGatheringInfos(List<GatheringInfo> infos)
+    {
+        if (infos.Count <= 1)
+            return infos;
+
+        var grouped = infos
+            .GroupBy(g => new { g.ZoneName, g.GatheringLevel })
+            .Select(g =>
+            {
+                var first = g.First();
+                // Wenn nur ein Node, keine Anpassung nötig
+                if (g.Count() == 1)
+                    return first;
+
+                // Mehrere Nodes → Zone anpassen um Count anzuzeigen
+                var nodeCount = g.Count();
+                var modifiedZone = nodeCount > 1 ? $"{first.ZoneName} ({nodeCount} nodes)" : first.ZoneName;
+                return new GatheringInfo(
+                    first.GatheringLevel,
+                    first.GatheringType,
+                    modifiedZone,
+                    first.MapX, first.MapY,
+                    first.TerritoryTypeId,
+                    first.MapId);
+            })
+            .ToList();
+
+        return grouped;
+    }
+
     private void BuildGatheringCache()
     {
         var gatheringPointBaseSheet = _gameData.GetExcelSheet<GatheringPointBase>();
@@ -934,45 +966,87 @@ public sealed class ItemDetailService : IItemDetailService
             return;
 
         var exportedGatheringPointSheet = _gameData.GetExcelSheet<ExportedGatheringPoint>();
+        var gatheringItemSheet = _gameData.GetExcelSheet<GatheringItem>();
 
+        // Index: GatheringPointBase.RowId -> Liste von GatheringPoints (O(m) einmal)
+        var pointsByBase = gatheringPointSheet
+            .Where(gp => gp.TerritoryType.RowId > 0)  // Filterung: nur gültige TerritoryType
+            .GroupBy(gp => gp.GatheringPointBase.RowId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        // Iteriere nur über GatheringPointBase, Lookup ist O(1) (O(n) mal O(1))
         foreach (var point in gatheringPointBaseSheet)
         {
+            if (!pointsByBase.TryGetValue(point.RowId, out var matchingPoints))
+                continue;
+
             var coordRow = exportedGatheringPointSheet?.GetRowOrDefault(point.RowId);
 
-            foreach (var gatheringPoint in gatheringPointSheet)
+            foreach (var gatheringPoint in matchingPoints)
             {
-                if (gatheringPoint.GatheringPointBase.RowId != point.RowId)
-                    continue;
-
                 var territoryType = gatheringPoint.TerritoryType.ValueNullable;
                 if (territoryType == null)
                     continue;
-                var map = territoryType.Value.Map.ValueNullable;
 
-                var zoneName = territoryType.Value.PlaceName.ValueNullable?.Name.ToString() ?? "";
+                var tt = territoryType.Value;
+                var mapNode = tt.Map.ValueNullable;
+                if (mapNode == null)
+                    continue;
+
+                var map = mapNode.Value;
+                var zoneName = tt.PlaceName.ValueNullable?.Name.ToString() ?? "";
+                var territoryTypeId = tt.RowId;
+                var mapId = map.RowId;
+                var sizeFactor = map.SizeFactor;
+                var offsetX = map.OffsetX;
+                var offsetY = map.OffsetY;
+
+                // Koordinaten von ExportedGatheringPoint
                 float mapX = 0f, mapY = 0f;
-                if (map != null && coordRow != null)
+                if (coordRow != null)
                 {
-                    mapX = ToMapCoordinate(coordRow.Value.X, map.Value.SizeFactor, map.Value.OffsetX);
-                    mapY = ToMapCoordinate(coordRow.Value.Y, map.Value.SizeFactor, map.Value.OffsetY);
+                    mapX = ToMapCoordinate(coordRow.Value.X, sizeFactor, offsetX);
+                    mapY = ToMapCoordinate(coordRow.Value.Y, sizeFactor, offsetY);
                 }
 
-                var territoryId = territoryType.Value.RowId;
-                var mapId = map?.RowId ?? 0;
-                var level = point.GatheringLevel;
+                var level = (int)point.GatheringLevel;
                 var type = (int)point.GatheringType.RowId;
 
+                // point.Item enthält GatheringItem-RowIds, muss über GatheringItem->Item.RowId aufgelöst werden
                 foreach (var itemRef in point.Item)
                 {
                     if (itemRef.RowId == 0)
                         continue;
-                    if (!_itemToGatheringCache.TryGetValue(itemRef.RowId, out var list))
+
+                    // GatheringItem-Row auflösen
+                    var gatheringItemRow = gatheringItemSheet?.GetRowOrDefault(itemRef.RowId);
+                    if (gatheringItemRow == null)
+                        continue;
+
+                    // Echte Item-ID aus gatheringItem.Item.RowId
+                    var itemId = gatheringItemRow.Value.Item.RowId;
+                    if (itemId == 0)
+                        continue;
+
+                    if (!_itemToGatheringCache.TryGetValue(itemId, out var list))
                     {
                         list = new List<GatheringInfo>();
-                        _itemToGatheringCache[itemRef.RowId] = list;
+                        _itemToGatheringCache[itemId] = list;
                     }
-                    list.Add(new GatheringInfo(level, type, zoneName, mapX, mapY, territoryId, mapId));
+
+                    list.Add(new GatheringInfo(level, type, zoneName, mapX, mapY, territoryTypeId, mapId));
                 }
+            }
+        }
+
+        // Cleanup: keine Debug-Logs mehr
+
+        // Dedupliziere alle Einträge
+        foreach (var key in _itemToGatheringCache.Keys.ToList())
+        {
+            if (_itemToGatheringCache[key].Count > 1)
+            {
+                _itemToGatheringCache[key] = DeduplicateGatheringInfos(_itemToGatheringCache[key]);
             }
         }
     }

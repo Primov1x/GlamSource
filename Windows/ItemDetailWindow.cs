@@ -206,6 +206,7 @@ public class ItemDetailWindow : Window, IDisposable
         ImGui.Spacing();
 
         DrawSourceCards(detail);
+        DrawGatheringActionButton(detail);
 
         if (_plugin?.Configuration?.ShowCraftingSavings == true && _craftingResult != null)
         {
@@ -282,6 +283,34 @@ public class ItemDetailWindow : Window, IDisposable
         ImGui.Dummy(new Vector2(boxWidth, boxHeight));
         ImGui.Spacing();
         ImGui.Separator();
+    }
+
+    private void DrawGatheringActionButton(ItemDetail detail)
+    {
+        // Prüfe ob eine der Sources ein Gathering-Source ist
+        if (!detail.Sources.Any(s => s.Type == ItemSourceType.Gathering))
+            return;
+
+        // Nur zeigen wenn GBR geladen ist
+        if (!GatherBuddyRebornIpc.IsGbrAssemblyLoaded)
+            return;
+
+        ImGui.SameLine();
+        if (ImGui.SmallButton("⛏ Gather"))
+        {
+            try
+            {
+                if (_gbIpc.IdentifyItem(detail.Name) > 0)
+                {
+                    _gbIpc.SetAutoGatherEnabled(true);
+                    Plugin.Log?.Information("[GATHERING] AutoGather enabled for {Name}", detail.Name);
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log?.Error(ex, "[GATHERING] Failed to enable AutoGather");
+            }
+        }
     }
 
     private void DrawSourceCards(ItemDetail detail)
