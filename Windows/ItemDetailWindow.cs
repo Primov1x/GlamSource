@@ -39,7 +39,14 @@ public class ItemDetailWindow : Window, IDisposable
     private CraftingCostResult? _craftingResult;
 
     // GatherBuddy button debouncing and feedback state
-    private bool _lastGatherSuccess = false;
+    private enum GatherOutcome
+    {
+        Failed,
+        AutoGatherStarted,
+        AutoGatherNotStarted
+    }
+    private GatherOutcome _gatherOutcome = GatherOutcome.Failed;
+    private string _gatherOutcomeDetail = string.Empty;
     private long _lastGatherTimestamp = 0;  // TickCount
     private const int GatherFeedbackDurationMs = 3000;  // Show feedback for 3s
     private const int GatherButtonCooldownMs = 2000;    // Button disabled for 2s after click
@@ -158,7 +165,8 @@ public class ItemDetailWindow : Window, IDisposable
         _showingItemId = itemId;
         // Reset GatherBuddy button state when showing a new item
         _lastGatherTimestamp = 0;
-        _lastGatherSuccess = false;
+        _gatherOutcome = GatherOutcome.Failed;
+        _gatherOutcomeDetail = string.Empty;
         _lastMaterialGatherTimestamp.Clear();
         _lastCostGatherTimestamp.Clear();
         _isOpen = true;
@@ -334,7 +342,8 @@ public class ItemDetailWindow : Window, IDisposable
             {
                 // Mark click timestamp
                 _lastGatherTimestamp = now;
-                _lastGatherSuccess = false; // Reset until we know the result
+                _gatherOutcome = GatherOutcome.Failed; // Reset until we know the result
+                _gatherOutcomeDetail = string.Empty;
 
                 // Identify for logging/debugging only — list creation does not depend on it
                 var identifyResult = _gbIpc.IdentifyItem(detail.Name);
@@ -345,19 +354,36 @@ public class ItemDetailWindow : Window, IDisposable
                     // CreatePersistentGatherList prefixes "GlamSource: " itself — pass the raw name
                     var materials = new Dictionary<uint, int> { { detail.ItemId, 1 } };
                     var listName = $"GlamSource: {detail.Name}";
-                    var success = _gbIpc.CreatePersistentGatherList(detail.Name, materials);
+                    var listSuccess = _gbIpc.CreatePersistentGatherList(detail.Name, materials);
 
-                    _lastGatherSuccess = success;
-
-                    if (success)
+                    if (listSuccess)
+                    {
                         Plugin.Log?.Information("[GATHER] Created 1-item list '{ListName}' for {Name}", listName, detail.Name);
+
+                        // Immediately enable AutoGather and verify it actually took effect
+                        _gbIpc.SetAutoGatherEnabled(true);
+                        if (_gbIpc.IsAutoGatherEnabled())
+                        {
+                            Plugin.Log?.Information("[GATHER] AutoGather started for '{Name}'", detail.Name);
+                            _gatherOutcome = GatherOutcome.AutoGatherStarted;
+                        }
+                        else
+                        {
+                            _gatherOutcomeDetail = _gbIpc.GetAutoGatherStatusText() ?? "Unknown reason";
+                            Plugin.Log?.Warning("[GATHER] List created, but AutoGather not enabled: {Status}", _gatherOutcomeDetail);
+                            _gatherOutcome = GatherOutcome.AutoGatherNotStarted;
+                        }
+                    }
                     else
+                    {
                         Plugin.Log?.Warning("[GATHER] Failed to create gather list for '{Name}' (ID={Id})", detail.Name, detail.ItemId);
+                        _gatherOutcome = GatherOutcome.Failed;
+                    }
                 }
                 catch (Exception ex)
                 {
                     Plugin.Log?.Error(ex, "[GATHER] Exception while creating gather list for '{Name}'", detail.Name);
-                    _lastGatherSuccess = false;
+                    _gatherOutcome = GatherOutcome.Failed;
                 }
             }
         }
@@ -366,17 +392,23 @@ public class ItemDetailWindow : Window, IDisposable
         if ((now - _lastGatherTimestamp) < GatherFeedbackDurationMs && (_lastGatherTimestamp > 0))
         {
             ImGui.SameLine();
-            if (_lastGatherSuccess)
+            switch (_gatherOutcome)
             {
-                ImGui.TextColored(new Vector4(0.3f, 0.8f, 0.3f, 1f), "✓ List created in GatherBuddy");
-                ImGui.Separator();
-                ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1f), "Start via '/gatherbuddy' or GBR AutoGather tab");
-            }
-            else
-            {
-                ImGui.TextColored(new Vector4(1f, 0.3f, 0.3f, 1f), "Failed to create list");
-                ImGui.Separator();
-                ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1f), "Check GBR for conflicts or errors");
+                case GatherOutcome.AutoGatherStarted:
+                    ImGui.TextColored(new Vector4(0.3f, 0.8f, 0.3f, 1f), "✓ AutoGather started for " + detail.Name);
+                    ImGui.Separator();
+                    ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1f), "GBR will handle teleportation and gathering");
+                    break;
+                case GatherOutcome.AutoGatherNotStarted:
+                    ImGui.TextColored(new Vector4(1f, 0.3f, 0.3f, 1f), "AutoGather not enabled: " + _gatherOutcomeDetail);
+                    ImGui.Separator();
+                    ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1f), "Check GBR log for details");
+                    break;
+                default:
+                    ImGui.TextColored(new Vector4(1f, 0.3f, 0.3f, 1f), "Failed to create list");
+                    ImGui.Separator();
+                    ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1f), "Check GBR for conflicts or errors");
+                    break;
             }
         }
     }
