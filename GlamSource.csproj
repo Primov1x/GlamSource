@@ -14,8 +14,8 @@
     <IsPackable>false</IsPackable>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <NoWarn>$(NoWarn);CA1416</NoWarn>
-    <Version>0.0.0.20</Version>
-    <AssemblyVersion>0.0.0.20</AssemblyVersion>
+    <Version>0.0.0.21</Version>
+    <AssemblyVersion>0.0.0.21</AssemblyVersion>
     <InternalsVisibleTo>GlamSource.Mock</InternalsVisibleTo>
   </PropertyGroup>
 
