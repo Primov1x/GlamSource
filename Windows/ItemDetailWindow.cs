@@ -43,11 +43,21 @@ public class ItemDetailWindow : Window, IDisposable
     {
         Failed,
         AutoGatherStarted,
-        AutoGatherNotStarted
+        AutoGatherNotStarted,
+        Pending
     }
     private GatherOutcome _gatherOutcome = GatherOutcome.Failed;
     private string _gatherOutcomeDetail = string.Empty;
     private long _lastGatherTimestamp = 0;  // TickCount
+
+    private struct AutoGatherRetryState
+    {
+        public int Attempts;
+        public string ItemName;
+        public DateTime StartTime;
+        public DateTime LastAttemptTime;
+    }
+    private AutoGatherRetryState? _retryState = null;
     private const int GatherFeedbackDurationMs = 3000;  // Show feedback for 3s
     private const int GatherButtonCooldownMs = 2000;    // Button disabled for 2s after click
 
@@ -167,6 +177,7 @@ public class ItemDetailWindow : Window, IDisposable
         _lastGatherTimestamp = 0;
         _gatherOutcome = GatherOutcome.Failed;
         _gatherOutcomeDetail = string.Empty;
+        _retryState = null;
         _lastMaterialGatherTimestamp.Clear();
         _lastCostGatherTimestamp.Clear();
         _isOpen = true;
@@ -198,6 +209,9 @@ public class ItemDetailWindow : Window, IDisposable
 
     public override void Draw()
     {
+        // Process retry state on every frame (Framework thread = thread-safe for IPC)
+        UpdateAutoGatherRetry();
+
         if (!_isOpen || _showingItemId == null)
         {
             IsOpen = false;
@@ -360,24 +374,23 @@ public class ItemDetailWindow : Window, IDisposable
                     {
                         Plugin.Log?.Information("[GATHER] Created 1-item list '{ListName}' for {Name}", listName, detail.Name);
 
-                        // Immediately enable AutoGather and verify it actually took effect
-                        _gbIpc.SetAutoGatherEnabled(true);
-                        if (_gbIpc.IsAutoGatherEnabled())
+                        // Initialize retry state — processed every frame in Draw() on the Framework thread
+                        _retryState = new AutoGatherRetryState
                         {
-                            Plugin.Log?.Information("[GATHER] AutoGather started for '{Name}'", detail.Name);
-                            _gatherOutcome = GatherOutcome.AutoGatherStarted;
-                        }
-                        else
-                        {
-                            _gatherOutcomeDetail = _gbIpc.GetAutoGatherStatusText() ?? "Unknown reason";
-                            Plugin.Log?.Warning("[GATHER] List created, but AutoGather not enabled: {Status}", _gatherOutcomeDetail);
-                            _gatherOutcome = GatherOutcome.AutoGatherNotStarted;
-                        }
+                            Attempts = 0,
+                            ItemName = detail.Name,
+                            StartTime = DateTime.UtcNow,
+                            LastAttemptTime = DateTime.MinValue  // First attempt allowed immediately
+                        };
+
+                        _gatherOutcome = GatherOutcome.Pending;
+                        _gatherOutcomeDetail = "Waiting for GBR to process list...";
                     }
                     else
                     {
                         Plugin.Log?.Warning("[GATHER] Failed to create gather list for '{Name}' (ID={Id})", detail.Name, detail.ItemId);
                         _gatherOutcome = GatherOutcome.Failed;
+                        _gatherOutcomeDetail = "Could not create gather list";
                     }
                 }
                 catch (Exception ex)
@@ -397,19 +410,57 @@ public class ItemDetailWindow : Window, IDisposable
                 case GatherOutcome.AutoGatherStarted:
                     ImGui.TextColored(new Vector4(0.3f, 0.8f, 0.3f, 1f), "✓ AutoGather started for " + detail.Name);
                     ImGui.Separator();
-                    ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1f), "GBR will handle teleportation and gathering");
+                    ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1f), "Status: " + _gatherOutcomeDetail);
                     break;
                 case GatherOutcome.AutoGatherNotStarted:
+                case GatherOutcome.Failed:
                     ImGui.TextColored(new Vector4(1f, 0.3f, 0.3f, 1f), "AutoGather not enabled: " + _gatherOutcomeDetail);
                     ImGui.Separator();
                     ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1f), "Check GBR log for details");
                     break;
-                default:
-                    ImGui.TextColored(new Vector4(1f, 0.3f, 0.3f, 1f), "Failed to create list");
-                    ImGui.Separator();
-                    ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1f), "Check GBR for conflicts or errors");
+                default: // Pending
+                    ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.1f, 1f), "Waiting for GBR to process list...");
                     break;
             }
+        }
+    }
+
+    private void UpdateAutoGatherRetry()
+    {
+        if (_retryState == null) return;
+        var state = _retryState.Value;
+
+        // Timeout check: max 8 attempts OR 2 seconds elapsed
+        if (state.Attempts >= 8 || (DateTime.UtcNow - state.StartTime).TotalMilliseconds > 2000)
+        {
+            Plugin.Log?.Warning(
+                "[GATHER] AutoGather did not start after {Attempts} attempts for {Item}",
+                state.Attempts, state.ItemName);
+
+            _gatherOutcome = GatherOutcome.AutoGatherNotStarted;
+            _gatherOutcomeDetail = "Timed out waiting for GBR to pick up the list";
+            _retryState = null;
+            return;
+        }
+
+        // Rate limit: only attempt if 250ms elapsed since last attempt
+        if ((DateTime.UtcNow - state.LastAttemptTime).TotalMilliseconds < 250)
+            return;
+
+        // Make the attempt
+        state.Attempts++;
+        state.LastAttemptTime = DateTime.UtcNow;
+        _retryState = state;
+
+        _gbIpc.SetAutoGatherEnabled(true);
+        var status = _gbIpc.GetAutoGatherStatusText();
+
+        // Check if AutoGather started successfully
+        if (!string.IsNullOrEmpty(status) && status != "Idle..." && status != "No available items to gather")
+        {
+            _gatherOutcome = GatherOutcome.AutoGatherStarted;
+            _gatherOutcomeDetail = status;
+            _retryState = null;
         }
     }
 
