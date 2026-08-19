@@ -298,17 +298,33 @@ public class ItemDetailWindow : Window, IDisposable
         ImGui.SameLine();
         if (ImGui.SmallButton("⛏ Gather"))
         {
+            // Always log click
+            Plugin.Log?.Information("[GATHER] Button clicked for item: '{Name}' (ID={Id})", detail.Name, detail.ItemId);
+
+            // Check GBR availability
+            Plugin.Log?.Information("[GATHER] GBR Assembly loaded: {Loaded}, IPC available: {Available}",
+                GatherBuddyRebornIpc.IsGbrAssemblyLoaded, _gbIpc.IsAvailable);
+
             try
             {
-                if (_gbIpc.IdentifyItem(detail.Name) > 0)
+                var identifyResult = _gbIpc.IdentifyItem(detail.Name);
+                Plugin.Log?.Information("[GATHER] IdentifyItem('{Name}') returned: {Result}", detail.Name, identifyResult);
+
+                if (identifyResult > 0)
                 {
                     _gbIpc.SetAutoGatherEnabled(true);
-                    Plugin.Log?.Information("[GATHERING] AutoGather enabled for {Name}", detail.Name);
+                    var before = _gbIpc.IsAutoGatherEnabled();
+                    Plugin.Log?.Information("[GATHER] SetAutoGatherEnabled(true) called. IsAutoGatherEnabled after call: {IsEnabled}", before);
+                    Plugin.Log?.Information("[GATHER] AutoGather enabled for: '{Name}'", detail.Name);
+                }
+                else
+                {
+                    Plugin.Log?.Warning("[GATHER] IdentifyItem returned 0 - item not found in GBR or GBR IPC not available");
                 }
             }
             catch (Exception ex)
             {
-                Plugin.Log?.Error(ex, "[GATHERING] Failed to enable AutoGather");
+                Plugin.Log?.Error(ex, "[GATHER] Exception during IdentifyItem/SetAutoGatherEnabled");
             }
         }
     }
