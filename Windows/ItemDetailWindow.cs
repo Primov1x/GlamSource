@@ -38,6 +38,17 @@ public class ItemDetailWindow : Window, IDisposable
     private Action<string, string, float, float>? _onOpenMap;
     private CraftingCostResult? _craftingResult;
 
+    // GatherBuddy button debouncing and feedback state
+    private bool _lastGatherSuccess = false;
+    private long _lastGatherTimestamp = 0;  // TickCount
+    private const int GatherFeedbackDurationMs = 3000;  // Show feedback for 3s
+    private const int GatherButtonCooldownMs = 2000;    // Button disabled for 2s after click
+
+    // Per-material gather cooldown tracking (ItemId -> last click timestamp)
+    private readonly Dictionary<uint, long> _lastMaterialGatherTimestamp = new();
+    // Per-cost gather cooldown tracking (ItemId -> last click timestamp)
+    private readonly Dictionary<uint, long> _lastCostGatherTimestamp = new();
+
     private static readonly Dictionary<ItemSourceType, (Vector4 Border, Vector4 BadgeBg, string Label)> SourceStyles = new()
     {
         [ItemSourceType.Crafted] = (
@@ -145,6 +156,11 @@ public class ItemDetailWindow : Window, IDisposable
     private void LoadItemDetail(uint itemId)
     {
         _showingItemId = itemId;
+        // Reset GatherBuddy button state when showing a new item
+        _lastGatherTimestamp = 0;
+        _lastGatherSuccess = false;
+        _lastMaterialGatherTimestamp.Clear();
+        _lastCostGatherTimestamp.Clear();
         _isOpen = true;
         IsOpen = true;
 
@@ -295,42 +311,72 @@ public class ItemDetailWindow : Window, IDisposable
         if (!GatherBuddyRebornIpc.IsGbrAssemblyLoaded)
             return;
 
+        // Check cooldown — disable button for 2s after click
+        var now = Environment.TickCount64;
+        bool isCooldown = (now - _lastGatherTimestamp) < GatherButtonCooldownMs;
+
         ImGui.SameLine();
-        if (ImGui.SmallButton("⛏ Gather"))
+
+        if (isCooldown)
         {
-            // Always log click
-            Plugin.Log?.Information("[GATHER] Button clicked for item: '{Name}' (ID={Id})", detail.Name, detail.ItemId);
+            // Draw disabled button — clicks during cooldown are ignored
+            ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.4f, 0.4f, 0.4f, 0.5f));
+            ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.6f, 0.6f, 0.6f, 1f));
+            bool clicked = ImGui.SmallButton("⛏ Gather (Cooling down...)");
+            ImGui.PopStyleColor(2);
 
-            // Identify for logging/debugging only — list creation does not depend on it
-            var identifyResult = _gbIpc.IdentifyItem(detail.Name);
-            Plugin.Log?.Information("[GATHER] IdentifyItem('{Name}') returned: {Result}", detail.Name, identifyResult);
-
-            try
+            if (clicked)
+                return;
+        }
+        else
+        {
+            if (ImGui.SmallButton("⛏ Gather"))
             {
-                // CreatePersistentGatherList prefixes "GlamSource: " itself — pass the raw name
-                var materials = new Dictionary<uint, int> { { detail.ItemId, 1 } };
-                var listName = $"GlamSource: {detail.Name}";
-                var success = _gbIpc.CreatePersistentGatherList(detail.Name, materials);
+                // Mark click timestamp
+                _lastGatherTimestamp = now;
+                _lastGatherSuccess = false; // Reset until we know the result
 
-                if (success)
+                // Identify for logging/debugging only — list creation does not depend on it
+                var identifyResult = _gbIpc.IdentifyItem(detail.Name);
+                Plugin.Log?.Information("[GATHER] IdentifyItem('{Name}') returned: {Result}", detail.Name, identifyResult);
+
+                try
                 {
-                    Plugin.Log?.Information("[GATHER] Created 1-item list '{ListName}' for {Name}", listName, detail.Name);
-                    ImGui.TextColored(new Vector4(0.3f, 0.8f, 0.3f, 1f), "✓ List created in GatherBuddy");
-                    ImGui.Separator();
-                    ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1f), "Start via '/gatherbuddy' or GBR AutoGather tab");
+                    // CreatePersistentGatherList prefixes "GlamSource: " itself — pass the raw name
+                    var materials = new Dictionary<uint, int> { { detail.ItemId, 1 } };
+                    var listName = $"GlamSource: {detail.Name}";
+                    var success = _gbIpc.CreatePersistentGatherList(detail.Name, materials);
+
+                    _lastGatherSuccess = success;
+
+                    if (success)
+                        Plugin.Log?.Information("[GATHER] Created 1-item list '{ListName}' for {Name}", listName, detail.Name);
+                    else
+                        Plugin.Log?.Warning("[GATHER] Failed to create gather list for '{Name}' (ID={Id})", detail.Name, detail.ItemId);
                 }
-                else
+                catch (Exception ex)
                 {
-                    Plugin.Log?.Warning("[GATHER] Failed to create gather list for '{Name}' (ID={Id})", detail.Name, detail.ItemId);
-                    ImGui.TextColored(new Vector4(1f, 0.3f, 0.3f, 1f), "Failed to create list");
-                    ImGui.Separator();
-                    ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1f), "Check GBR for conflicts or errors");
+                    Plugin.Log?.Error(ex, "[GATHER] Exception while creating gather list for '{Name}'", detail.Name);
+                    _lastGatherSuccess = false;
                 }
             }
-            catch (Exception ex)
+        }
+
+        // Render persistent feedback (3s), not just the click frame
+        if ((now - _lastGatherTimestamp) < GatherFeedbackDurationMs && (_lastGatherTimestamp > 0))
+        {
+            ImGui.SameLine();
+            if (_lastGatherSuccess)
             {
-                Plugin.Log?.Error(ex, "[GATHER] Exception while creating gather list for '{Name}'", detail.Name);
+                ImGui.TextColored(new Vector4(0.3f, 0.8f, 0.3f, 1f), "✓ List created in GatherBuddy");
+                ImGui.Separator();
+                ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1f), "Start via '/gatherbuddy' or GBR AutoGather tab");
+            }
+            else
+            {
                 ImGui.TextColored(new Vector4(1f, 0.3f, 0.3f, 1f), "Failed to create list");
+                ImGui.Separator();
+                ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1f), "Check GBR for conflicts or errors");
             }
         }
     }
@@ -565,18 +611,52 @@ public class ItemDetailWindow : Window, IDisposable
 
         if (showGatherBtn)
         {
+            // Check per-material cooldown (keyed by ItemId, same 2s window as main Gather button)
+            var now = Environment.TickCount64;
+            var hasCooldown = _lastMaterialGatherTimestamp.TryGetValue(mat.ItemId, out var ts)
+                && (now - ts) < GatherButtonCooldownMs;
+
             ImGui.SameLine();
-            if (ImGui.SmallButton($"Gather##gather_{sourceIdx}_{matIdx}"))
+
+            if (hasCooldown)
             {
-                try
+                // Disabled button during cooldown — clicks are ignored
+                ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.4f, 0.4f, 0.4f, 0.5f));
+                ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.6f, 0.6f, 0.6f, 1f));
+                ImGui.SmallButton($"Gathering...##gathering_{sourceIdx}_{matIdx}");
+                ImGui.PopStyleColor(2);
+            }
+            else
+            {
+                if (ImGui.SmallButton($"Gather##gather_{sourceIdx}_{matIdx}"))
                 {
-                    var itemId = _gbIpc.IdentifyItem(mat.Name);
-                    if (itemId > 0)
-                        _gbIpc.SetAutoGatherEnabled(true);
-                }
-                catch (Exception ex)
-                {
-                    Plugin.Log?.Information($"[GATHER] GatherBuddy not available: {ex.Message}");
+                    // Record click timestamp
+                    _lastMaterialGatherTimestamp[mat.ItemId] = now;
+
+                    try
+                    {
+                        var itemId = _gbIpc.IdentifyItem(mat.Name);
+                        if (itemId > 0)
+                        {
+                            // Same list-creation pattern as the main button (no direct SetAutoGatherEnabled)
+                            var materials = new Dictionary<uint, int> { { mat.ItemId, 1 } };
+                            var listName = $"GlamSource: {mat.Name}";
+                            var success = _gbIpc.CreatePersistentGatherList(mat.Name, materials);
+
+                            if (success)
+                                Plugin.Log?.Information("[GATHER-MAT] Created list '{ListName}' for material {Name}", listName, mat.Name);
+                            else
+                                Plugin.Log?.Warning("[GATHER-MAT] Failed to create list for material {Name}", mat.Name);
+                        }
+                        else
+                        {
+                            Plugin.Log?.Warning("[GATHER-MAT] Could not identify material {Name}", mat.Name);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Plugin.Log?.Error(ex, "[GATHER-MAT] Exception while creating gather list for material {Name}", mat.Name);
+                    }
                 }
             }
         }
@@ -650,18 +730,52 @@ if (_textureProvider != null && cost.IconId > 0)
 
             if (ShouldShowGatherButton(cost.ItemId))
             {
+                // Check per-cost cooldown (keyed by ItemId, same 2s window as main/material Gather buttons)
+                var now = Environment.TickCount64;
+                var hasCooldown = _lastCostGatherTimestamp.TryGetValue(cost.ItemId, out var ts)
+                    && (now - ts) < GatherButtonCooldownMs;
+
                 ImGui.SameLine();
-                if (ImGui.SmallButton($"Gather##gather_{sourceIdx}_{costIdx}"))
+
+                if (hasCooldown)
                 {
-                    try
+                    // Disabled button during cooldown — clicks are ignored
+                    ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.4f, 0.4f, 0.4f, 0.5f));
+                    ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.6f, 0.6f, 0.6f, 1f));
+                    ImGui.SmallButton($"Gathering...##gathering_{sourceIdx}_{costIdx}");
+                    ImGui.PopStyleColor(2);
+                }
+                else
+                {
+                    if (ImGui.SmallButton($"Gather##gather_{sourceIdx}_{costIdx}"))
                     {
-                        var itemId = _gbIpc.IdentifyItem(cost.Name);
-                        if (itemId > 0)
-                            _gbIpc.SetAutoGatherEnabled(true);
-                    }
-                    catch (Exception ex)
-                    {
-                        Plugin.Log?.Information($"[GATHER] GatherBuddy not available: {ex.Message}");
+                        // Record click timestamp
+                        _lastCostGatherTimestamp[cost.ItemId] = now;
+
+                        try
+                        {
+                            var itemId = _gbIpc.IdentifyItem(cost.Name);
+                            if (itemId > 0)
+                            {
+                                // Same list-creation pattern as the main button (no direct SetAutoGatherEnabled)
+                                var materials = new Dictionary<uint, int> { { cost.ItemId, 1 } };
+                                var listName = $"GlamSource: {cost.Name}";
+                                var success = _gbIpc.CreatePersistentGatherList(cost.Name, materials);
+
+                                if (success)
+                                    Plugin.Log?.Information("[GATHER-COST] Created list '{ListName}' for cost item {Name}", listName, cost.Name);
+                                else
+                                    Plugin.Log?.Warning("[GATHER-COST] Failed to create list for cost item {Name}", cost.Name);
+                            }
+                            else
+                            {
+                                Plugin.Log?.Warning("[GATHER-COST] Could not identify cost item {Name}", cost.Name);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Plugin.Log?.Error(ex, "[GATHER-COST] Exception while creating gather list for cost item {Name}", cost.Name);
+                        }
                     }
                 }
             }

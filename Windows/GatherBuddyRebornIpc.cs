@@ -97,6 +97,20 @@ public class GatherBuddyRebornIpc
     }
 
     /// <summary>
+    /// Human-readable status of GatherBuddy Reborn's auto-gather feature.
+    /// </summary>
+    public string GetAutoGatherStatusText()
+    {
+        if (!IsAvailable) return string.Empty;
+        try
+        {
+            var ipc = _pi!.GetIpcSubscriber<string>("GatherBuddyReborn.GetAutoGatherStatusText");
+            return ipc?.HasFunction == true ? ipc.InvokeFunc() : string.Empty;
+        }
+        catch { return string.Empty; }
+    }
+
+    /// <summary>
     /// Create or update a persistent GatherBuddy Reborn gather list via assembly reflection.
     /// List name format: "GlamSource: {itemName}" (truncated to ~50 chars).
     /// </summary>
