@@ -19,7 +19,7 @@ public class GatherBuddyRebornIpc
         _pi = pi;
         try
         {
-            _identify = pi.GetIpcSubscriber<string, uint>("GatherBuddy.IPC.Identify");
+            _identify = pi.GetIpcSubscriber<string, uint>("GatherBuddyReborn.Identify");
         }
         catch
         {
@@ -75,7 +75,7 @@ public class GatherBuddyRebornIpc
         if (!IsAvailable) return false;
         try
         {
-            var ipc = _pi!.GetIpcSubscriber<bool>("GatherBuddy.IPC.IsAutoGatherEnabled");
+            var ipc = _pi!.GetIpcSubscriber<bool>("GatherBuddyReborn.IsAutoGatherEnabled");
             return ipc?.HasFunction == true ? ipc.InvokeFunc() : false;
         }
         catch { return false; }
@@ -89,7 +89,7 @@ public class GatherBuddyRebornIpc
         if (!IsAvailable) return;
         try
         {
-            var ipc = _pi!.GetIpcSubscriber<bool, object>("GatherBuddy.IPC.SetAutoGatherEnabled");
+            var ipc = _pi!.GetIpcSubscriber<bool, object>("GatherBuddyReborn.SetAutoGatherEnabled");
             if (ipc?.HasFunction == true)
                 ipc.InvokeAction(enabled);
         }
