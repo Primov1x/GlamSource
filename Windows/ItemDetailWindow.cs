@@ -301,30 +301,36 @@ public class ItemDetailWindow : Window, IDisposable
             // Always log click
             Plugin.Log?.Information("[GATHER] Button clicked for item: '{Name}' (ID={Id})", detail.Name, detail.ItemId);
 
-            // Check GBR availability
-            Plugin.Log?.Information("[GATHER] GBR Assembly loaded: {Loaded}, IPC available: {Available}",
-                GatherBuddyRebornIpc.IsGbrAssemblyLoaded, _gbIpc.IsAvailable);
+            // Identify for logging/debugging only — list creation does not depend on it
+            var identifyResult = _gbIpc.IdentifyItem(detail.Name);
+            Plugin.Log?.Information("[GATHER] IdentifyItem('{Name}') returned: {Result}", detail.Name, identifyResult);
 
             try
             {
-                var identifyResult = _gbIpc.IdentifyItem(detail.Name);
-                Plugin.Log?.Information("[GATHER] IdentifyItem('{Name}') returned: {Result}", detail.Name, identifyResult);
+                // CreatePersistentGatherList prefixes "GlamSource: " itself — pass the raw name
+                var materials = new Dictionary<uint, int> { { detail.ItemId, 1 } };
+                var listName = $"GlamSource: {detail.Name}";
+                var success = _gbIpc.CreatePersistentGatherList(detail.Name, materials);
 
-                if (identifyResult > 0)
+                if (success)
                 {
-                    _gbIpc.SetAutoGatherEnabled(true);
-                    var before = _gbIpc.IsAutoGatherEnabled();
-                    Plugin.Log?.Information("[GATHER] SetAutoGatherEnabled(true) called. IsAutoGatherEnabled after call: {IsEnabled}", before);
-                    Plugin.Log?.Information("[GATHER] AutoGather enabled for: '{Name}'", detail.Name);
+                    Plugin.Log?.Information("[GATHER] Created 1-item list '{ListName}' for {Name}", listName, detail.Name);
+                    ImGui.TextColored(new Vector4(0.3f, 0.8f, 0.3f, 1f), "✓ List created in GatherBuddy");
+                    ImGui.Separator();
+                    ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1f), "Start via '/gatherbuddy' or GBR AutoGather tab");
                 }
                 else
                 {
-                    Plugin.Log?.Warning("[GATHER] IdentifyItem returned 0 - item not found in GBR or GBR IPC not available");
+                    Plugin.Log?.Warning("[GATHER] Failed to create gather list for '{Name}' (ID={Id})", detail.Name, detail.ItemId);
+                    ImGui.TextColored(new Vector4(1f, 0.3f, 0.3f, 1f), "Failed to create list");
+                    ImGui.Separator();
+                    ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1f), "Check GBR for conflicts or errors");
                 }
             }
             catch (Exception ex)
             {
-                Plugin.Log?.Error(ex, "[GATHER] Exception during IdentifyItem/SetAutoGatherEnabled");
+                Plugin.Log?.Error(ex, "[GATHER] Exception while creating gather list for '{Name}'", detail.Name);
+                ImGui.TextColored(new Vector4(1f, 0.3f, 0.3f, 1f), "Failed to create list");
             }
         }
     }
