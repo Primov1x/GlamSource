@@ -13,6 +13,7 @@ namespace GlamSource.Windows;
 public enum GatherState
 {
     Idle,
+    Teleporting,
     MovingToNode,
     Interacting,
     WaitingForGatherWindow,
@@ -34,6 +35,7 @@ public sealed unsafe class SimpleGatherService : IDisposable
 
     private readonly IGatheringLocationService _locations;
     private readonly VNavmeshIpc _nav;
+    private readonly TeleporterIpc _teleporter;
     private readonly IObjectTable _objectTable;
     private readonly IClientState _clientState;
     private readonly ICondition _condition;
@@ -46,10 +48,13 @@ public sealed unsafe class SimpleGatherService : IDisposable
 
     private uint _targetItemId;
     private IGameObject? _targetNode;
+    private uint _targetTerritoryId;
+    private DateTime _teleportDeadline;
 
     public SimpleGatherService(
         IGatheringLocationService locations,
         VNavmeshIpc nav,
+        TeleporterIpc teleporter,
         IObjectTable objectTable,
         IClientState clientState,
         ICondition condition,
@@ -59,6 +64,7 @@ public sealed unsafe class SimpleGatherService : IDisposable
     {
         _locations = locations;
         _nav = nav;
+        _teleporter = teleporter;
         _objectTable = objectTable;
         _clientState = clientState;
         _condition = condition;
@@ -84,7 +90,7 @@ public sealed unsafe class SimpleGatherService : IDisposable
 
     public StartResult TryStartGathering(uint itemId)
     {
-        if (State is GatherState.MovingToNode or GatherState.Interacting or GatherState.WaitingForGatherWindow or GatherState.Gathering)
+        if (State is GatherState.Teleporting or GatherState.MovingToNode or GatherState.Interacting or GatherState.WaitingForGatherWindow or GatherState.Gathering)
             return StartResult.Fail("Already gathering — stop current run first");
 
         var locations = _locations.GetLocations(itemId);
@@ -96,12 +102,36 @@ public sealed unsafe class SimpleGatherService : IDisposable
         }
 
         var currentTerritory = _clientState.TerritoryType;
-        var wanted = string.Join(", ", locations.Select(l => l.TerritoryName ?? l.TerritoryId.ToString()).Distinct());
+        _targetItemId = itemId;
+
         if (!locations.Any(l => l.TerritoryId == currentTerritory))
         {
-            _log.Warning($"[SimpleGatherService] Player in territory {currentTerritory}, item {itemId} needs one of: {wanted}");
+            // Wrong zone — pick first location with a known aetheryte and teleport.
+            var wanted = string.Join(", ", locations.Select(l => l.TerritoryName ?? l.TerritoryId.ToString()).Distinct());
+            if (!_teleporter.IsAvailable)
+            {
+                _log.Warning($"[SimpleGatherService] Wrong zone (in {currentTerritory}), Teleporter IPC unavailable. Need: {wanted}");
+                State = GatherState.Failed;
+                return StartResult.Fail($"Wrong zone — install/enable Teleporter plugin, or travel manually to: {wanted}");
+            }
+
+            foreach (var loc in locations)
+            {
+                var aetheryteId = _locations.GetAetheryteFor(loc.TerritoryId);
+                if (aetheryteId is null)
+                    continue;
+                if (!_teleporter.Teleport(aetheryteId.Value))
+                    continue;
+                _targetTerritoryId = loc.TerritoryId;
+                _teleportDeadline = DateTime.UtcNow.AddSeconds(30);
+                State = GatherState.Teleporting;
+                _log.Information($"[SimpleGatherService] Teleporting to aetheryte {aetheryteId} in territory {loc.TerritoryId} ({loc.TerritoryName})");
+                return StartResult.Ok();
+            }
+
+            _log.Warning($"[SimpleGatherService] Wrong zone but no aetheryte known for any candidate: {wanted}");
             State = GatherState.Failed;
-            return StartResult.Fail($"Wrong zone — teleport to: {wanted}");
+            return StartResult.Fail($"Wrong zone and no known aetheryte — travel manually to: {wanted}");
         }
 
         var node = FindNearestNodeObject();
@@ -112,7 +142,6 @@ public sealed unsafe class SimpleGatherService : IDisposable
             return StartResult.Fail("In correct zone but no node visible — move closer to a node area");
         }
 
-        _targetItemId = itemId;
         _targetNode = node;
         State = GatherState.MovingToNode;
         _nav.PathfindAndMoveTo(node.Position);
@@ -159,6 +188,9 @@ public sealed unsafe class SimpleGatherService : IDisposable
     {
         switch (State)
         {
+            case GatherState.Teleporting:
+                TickTeleporting();
+                break;
             case GatherState.MovingToNode:
                 TickMoving();
                 break;
@@ -171,6 +203,33 @@ public sealed unsafe class SimpleGatherService : IDisposable
             case GatherState.Gathering:
                 TickGathering();
                 break;
+        }
+    }
+
+    private void TickTeleporting()
+    {
+        if (_clientState.TerritoryType == _targetTerritoryId
+            && !_condition[ConditionFlag.BetweenAreas]
+            && !_condition[ConditionFlag.BetweenAreas51])
+        {
+            // Landed. Find node in the new zone.
+            var node = FindNearestNodeObject();
+            if (node == null)
+            {
+                _log.Warning($"[SimpleGatherService] Teleport done, but no GatheringPoint object visible in territory {_targetTerritoryId} for item {_targetItemId}");
+                State = GatherState.Failed;
+                return;
+            }
+            _targetNode = node;
+            State = GatherState.MovingToNode;
+            _nav.PathfindAndMoveTo(node.Position);
+            return;
+        }
+
+        if (DateTime.UtcNow > _teleportDeadline)
+        {
+            _log.Warning($"[SimpleGatherService] Teleport timed out waiting for territory {_targetTerritoryId} (still in {_clientState.TerritoryType})");
+            State = GatherState.Failed;
         }
     }
 

@@ -60,6 +60,7 @@ public class Plugin : IAsyncDalamudPlugin
 
     public readonly IGatheringLocationService GatheringLocationService;
     public readonly VNavmeshIpc VNavmeshIpc;
+    public readonly TeleporterIpc TeleporterIpc;
     public readonly SimpleGatherService GatherService;
 
     public Plugin(
@@ -109,8 +110,9 @@ public class Plugin : IAsyncDalamudPlugin
 
         GatheringLocationService = new GatheringLocationService(DataManager.GameData);
         VNavmeshIpc = new VNavmeshIpc(PluginInterface);
+        TeleporterIpc = new TeleporterIpc(PluginInterface);
         GatherService = new SimpleGatherService(
-            GatheringLocationService, VNavmeshIpc, ObjectTable, ClientState, Condition, GameGui, Log, Framework);
+            GatheringLocationService, VNavmeshIpc, TeleporterIpc, ObjectTable, ClientState, Condition, GameGui, Log, Framework);
 
         var goatImagePath = Path.Join(PluginInterface.AssemblyLocation.Directory?.FullName, "goat.png");
 

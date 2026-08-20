@@ -22,6 +22,12 @@ public interface IGatheringLocationService
     /// Works for arbitrary ItemIds, not just a pre-filtered gatherable subset.
     /// </summary>
     IReadOnlyList<GatheringLocation> GetLocations(uint itemId);
+
+    /// <summary>
+    /// Returns the aetheryte RowId that lands the player in <paramref name="territoryId"/>,
+    /// or null if no aetheryte is registered for that zone.
+    /// </summary>
+    uint? GetAetheryteFor(uint territoryId);
 }
 
 /// <summary>
@@ -32,10 +38,23 @@ public interface IGatheringLocationService
 public sealed class GatheringLocationService : IGatheringLocationService
 {
     private readonly Dictionary<uint, List<GatheringLocation>> _byItemId = new();
+    private readonly Dictionary<uint, uint> _aetheryteByTerritoryId = new();
 
     public GatheringLocationService(GameData gameData)
     {
         ArgumentNullException.ThrowIfNull(gameData);
+
+        // ponytail: one aetheryte per territory (pick the first IsAetheryte hit).
+        // Enough for "get me into that zone", not for optimal walk distance.
+        foreach (var aetheryte in gameData.GetExcelSheet<Aetheryte>() ?? Enumerable.Empty<Aetheryte>())
+        {
+            if (!aetheryte.IsAetheryte)
+                continue;
+            var territoryId = aetheryte.Territory.RowId;
+            if (territoryId == 0)
+                continue;
+            _aetheryteByTerritoryId.TryAdd(territoryId, aetheryte.RowId);
+        }
 
         var gatheringItems = gameData.GetExcelSheet<GatheringItem>();
         var gatheringTypes = gameData.GetExcelSheet<GatheringType>();
@@ -98,4 +117,7 @@ public sealed class GatheringLocationService : IGatheringLocationService
 
     public IReadOnlyList<GatheringLocation> GetLocations(uint itemId)
         => _byItemId.TryGetValue(itemId, out var list) ? list : Array.Empty<GatheringLocation>();
+
+    public uint? GetAetheryteFor(uint territoryId)
+        => _aetheryteByTerritoryId.TryGetValue(territoryId, out var id) ? id : null;
 }
