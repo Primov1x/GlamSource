@@ -25,7 +25,10 @@ jobs:
           echo "DALAMUD_HOME=$env:GITHUB_WORKSPACE\dalamud" >> $env:GITHUB_ENV
 
       - name: Restore
-        run: dotnet restore GlamSource.csproj
+        # ponytail: --force-evaluate ignores stale lockfile hashes — local NuGet.Config
+        # points at a dev feed for Glamourer.Api that CI doesn't have, so the lockfile
+        # hash never matches nuget.org's copy of the same version.
+        run: dotnet restore GlamSource.csproj --force-evaluate
 
       - name: Build
         run: dotnet build GlamSource.csproj -c Release --no-restore
