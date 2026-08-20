@@ -40,9 +40,11 @@ jobs:
           $buildDir = Get-ChildItem -Path "bin" -Directory | Select-Object -First 1
           $dll = Get-ChildItem -Path $buildDir.FullName -Filter "GlamSource.dll" | Select-Object -First 1
           $json = Get-ChildItem -Path $buildDir.FullName -Filter "GlamSource.json" | Select-Object -First 1
+          $core = Get-ChildItem -Path $buildDir.FullName -Filter "GlamSource.Core.dll" | Select-Object -First 1
           if ($dll) { Copy-Item $dll.FullName -Destination "./artifacts/GlamSource.dll" }
           if ($json) { Copy-Item $json.FullName -Destination "./artifacts/GlamSource.json" }
-          Compress-Archive -Path "./artifacts/GlamSource.dll", "./artifacts/GlamSource.json" -DestinationPath "./artifacts/GlamSource.zip" -Force
+          if ($core) { Copy-Item $core.FullName -Destination "./artifacts/GlamSource.Core.dll" }
+          Compress-Archive -Path "./artifacts/GlamSource.dll", "./artifacts/GlamSource.json", "./artifacts/GlamSource.Core.dll" -DestinationPath "./artifacts/GlamSource.zip" -Force
           Get-ChildItem -Path ./artifacts | Select-Object FullName
 
       - name: Upload artifact
