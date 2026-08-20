@@ -40,11 +40,16 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path ./artifacts
-          # ponytail: DalamudPackager writes the real output (with regenerated manifest)
-          # under bin\x64\Release\GlamSource\ — the plain bin\Release dir is a stale
-          # intermediate. Hardcode the packager path; picking "first bin subdir"
-          # alphabetically was the source of the 0.0.0.29 mismatch.
-          $buildDir = Get-Item "bin\x64\Release\GlamSource"
+          # ponytail: find the DalamudPackager output by locating the regenerated
+          # manifest — its directory is the packaged plugin. "First bin subdir
+          # alphabetically" picked a stale intermediate (Debug / non-packager
+          # Release) and shipped 0.0.0.29 even after the csproj bump.
+          $manifest = Get-ChildItem -Path bin -Recurse -Filter "GlamSource.json" `
+                        | Where-Object { $_.FullName -match 'Release' -and $_.Directory.Name -eq 'GlamSource' } `
+                        | Select-Object -First 1
+          if (-not $manifest) { throw "DalamudPackager output not found under bin\**\Release\**\GlamSource\GlamSource.json" }
+          $buildDir = $manifest.Directory
+          Write-Host "Packaging from: $($buildDir.FullName)"
           # pack every runtime DLL + json, not a hand-picked allow-list —
           # transitive deps (LuminaSupplemental.Excel etc.) keep changing, chasing
           # them one crash report at a time is the wrong approach.
