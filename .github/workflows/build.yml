@@ -38,13 +38,13 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path ./artifacts
           $buildDir = Get-ChildItem -Path "bin" -Directory | Select-Object -First 1
-          $dll = Get-ChildItem -Path $buildDir.FullName -Filter "GlamSource.dll" | Select-Object -First 1
-          $json = Get-ChildItem -Path $buildDir.FullName -Filter "GlamSource.json" | Select-Object -First 1
-          $core = Get-ChildItem -Path $buildDir.FullName -Filter "GlamSource.Core.dll" | Select-Object -First 1
-          if ($dll) { Copy-Item $dll.FullName -Destination "./artifacts/GlamSource.dll" }
-          if ($json) { Copy-Item $json.FullName -Destination "./artifacts/GlamSource.json" }
-          if ($core) { Copy-Item $core.FullName -Destination "./artifacts/GlamSource.Core.dll" }
-          Compress-Archive -Path "./artifacts/GlamSource.dll", "./artifacts/GlamSource.json", "./artifacts/GlamSource.Core.dll" -DestinationPath "./artifacts/GlamSource.zip" -Force
+          # ponytail: pack every runtime DLL + json, not a hand-picked allow-list —
+          # transitive deps (LuminaSupplemental.Excel etc.) keep changing, chasing
+          # them one crash report at a time is the wrong approach.
+          $files = Get-ChildItem -Path $buildDir.FullName -Filter "*.dll"
+          $files += Get-ChildItem -Path $buildDir.FullName -Filter "GlamSource.json"
+          Copy-Item $files.FullName -Destination ./artifacts
+          Compress-Archive -Path "./artifacts/*" -DestinationPath "./artifacts/GlamSource.zip" -Force
           Get-ChildItem -Path ./artifacts | Select-Object FullName
 
       - name: Upload artifact
