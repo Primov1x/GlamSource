@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Numerics;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Objects.Types;
@@ -72,33 +73,54 @@ public sealed unsafe class SimpleGatherService : IDisposable
     /// Starts gathering the given ItemId. Returns false immediately if no gathering node/game object
     /// could be found nearby (player must already be in the right territory — no zone travel here).
     /// </summary>
-    public bool StartGathering(uint itemId)
+    /// <summary>
+    /// Structured start result — tells caller *which* precondition failed instead of one lumpy bool.
+    /// </summary>
+    public readonly record struct StartResult(bool Started, string Reason)
+    {
+        public static StartResult Ok() => new(true, string.Empty);
+        public static StartResult Fail(string reason) => new(false, reason);
+    }
+
+    public StartResult TryStartGathering(uint itemId)
     {
         if (State is GatherState.MovingToNode or GatherState.Interacting or GatherState.WaitingForGatherWindow or GatherState.Gathering)
-            return false;
+            return StartResult.Fail("Already gathering — stop current run first");
 
         var locations = _locations.GetLocations(itemId);
         if (locations.Count == 0)
         {
             _log.Warning($"[SimpleGatherService] No gathering location known for item {itemId}");
             State = GatherState.Failed;
-            return false;
+            return StartResult.Fail("Item has no known gathering location (not gatherable, or missing from data)");
+        }
+
+        var currentTerritory = _clientState.TerritoryType;
+        var wanted = string.Join(", ", locations.Select(l => l.TerritoryName ?? l.TerritoryId.ToString()).Distinct());
+        if (!locations.Any(l => l.TerritoryId == currentTerritory))
+        {
+            _log.Warning($"[SimpleGatherService] Player in territory {currentTerritory}, item {itemId} needs one of: {wanted}");
+            State = GatherState.Failed;
+            return StartResult.Fail($"Wrong zone — teleport to: {wanted}");
         }
 
         var node = FindNearestNodeObject();
         if (node == null)
         {
-            _log.Warning($"[SimpleGatherService] No gathering node game object found nearby for item {itemId}");
+            _log.Warning($"[SimpleGatherService] In correct territory {currentTerritory} but no GatheringPoint object in ObjectTable for item {itemId}");
             State = GatherState.Failed;
-            return false;
+            return StartResult.Fail("In correct zone but no node visible — move closer to a node area");
         }
 
         _targetItemId = itemId;
         _targetNode = node;
         State = GatherState.MovingToNode;
         _nav.PathfindAndMoveTo(node.Position);
-        return true;
+        return StartResult.Ok();
     }
+
+    // ponytail: keep bool overload so existing callers compile; new callers should prefer TryStartGathering for the reason.
+    public bool StartGathering(uint itemId) => TryStartGathering(itemId).Started;
 
     public void Stop()
     {

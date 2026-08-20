@@ -342,8 +342,8 @@ public class ItemDetailWindow : Window, IDisposable
     {
         try
         {
-            var started = _plugin.GatherService.StartGathering(itemId);
-            if (started)
+            var result = _plugin.GatherService.TryStartGathering(itemId);
+            if (result.Started)
             {
                 _gatherOutcome = GatherOutcome.Started;
                 _gatherOutcomeDetail = itemName;
@@ -352,8 +352,8 @@ public class ItemDetailWindow : Window, IDisposable
             else
             {
                 _gatherOutcome = GatherOutcome.Failed;
-                _gatherOutcomeDetail = "No known location or no reachable node";
-                Plugin.Log?.Warning("[GATHER] StartGathering returned false for {Name} (ID={Id})", itemName, itemId);
+                _gatherOutcomeDetail = result.Reason;
+                Plugin.Log?.Warning("[GATHER] Cannot start for {Name} (ID={Id}): {Reason}", itemName, itemId, result.Reason);
             }
         }
         catch (Exception ex)
