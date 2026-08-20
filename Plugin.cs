@@ -26,6 +26,8 @@ public class Plugin : IAsyncDalamudPlugin
     [PluginService] internal static IContextMenu ContextMenu { get; private set; } = null!;
     [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
     [PluginService] internal static IObjectTable ObjectTable { get; private set; } = null!;
+    [PluginService] internal static IFramework Framework { get; private set; } = null!;
+    [PluginService] internal static ICondition Condition { get; private set; } = null!;
 
 
     private readonly IDalamudPluginInterface _pluginInterface;
@@ -38,6 +40,8 @@ public class Plugin : IAsyncDalamudPlugin
     private readonly ITargetManager _targetManager;
     private readonly IGameGui _gameGui;
     private readonly IObjectTable _objectTable;
+    private readonly IFramework _framework;
+    private readonly ICondition _condition;
 
     private const string CommandName = "/glamsource";
 
@@ -54,6 +58,10 @@ public class Plugin : IAsyncDalamudPlugin
     public readonly CraftingCostService CraftingCostService;
     public static IGlamourService? GlamourServiceOverride;
 
+    public readonly IGatheringLocationService GatheringLocationService;
+    public readonly VNavmeshIpc VNavmeshIpc;
+    public readonly SimpleGatherService GatherService;
+
     public Plugin(
         IDalamudPluginInterface pluginInterface,
         ITextureProvider textureProvider,
@@ -64,7 +72,9 @@ public class Plugin : IAsyncDalamudPlugin
         IPluginLog pluginLog,
         ITargetManager targetManager,
         IGameGui gameGui,
-        IObjectTable objectTable)
+        IObjectTable objectTable,
+        IFramework framework,
+        ICondition condition)
     {
         _pluginInterface = pluginInterface;
         _textureProvider = textureProvider;
@@ -75,6 +85,9 @@ public class Plugin : IAsyncDalamudPlugin
         _log = pluginLog;
         _targetManager = targetManager;
         _gameGui = gameGui;
+        _objectTable = objectTable;
+        _framework = framework;
+        _condition = condition;
 
         PluginInterface = _pluginInterface;
         TextureProvider = _textureProvider;
@@ -85,11 +98,19 @@ public class Plugin : IAsyncDalamudPlugin
         Log = _log;
         TargetManager = _targetManager;
         GameGui = _gameGui;
+        ObjectTable = _objectTable;
+        Framework = _framework;
+        Condition = _condition;
 
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         var sourceService = new LuminaItemSourceService(DataManager.GameData);
         var gameDataService = new GameDataService(DataManager, TargetManager, ObjectTable, GameGui, sourceService);
         GameDataService = gameDataService;
+
+        GatheringLocationService = new GatheringLocationService(DataManager.GameData);
+        VNavmeshIpc = new VNavmeshIpc(PluginInterface);
+        GatherService = new SimpleGatherService(
+            GatheringLocationService, VNavmeshIpc, ObjectTable, ClientState, Condition, GameGui, Log, Framework);
 
         var goatImagePath = Path.Join(PluginInterface.AssemblyLocation.Directory?.FullName, "goat.png");
 
@@ -144,6 +165,7 @@ public class Plugin : IAsyncDalamudPlugin
         contextMenuService.Dispose();
         _universalisService?.Dispose();
         CraftingCostService?.Dispose();
+        GatherService.Dispose();
 
         CommandManager.RemoveHandler(CommandName);
 
