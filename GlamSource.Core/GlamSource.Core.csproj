@@ -7,7 +7,9 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <DalamudLibPath>C:\Users\t.fritzen\Projects\Private\GlamSource\reference\Dalamud\bin\Debug\</DalamudLibPath>
+    <!-- ponytail: prefer DALAMUD_HOME env var (set by CI); fall back to local dev checkout -->
+    <DalamudLibPath Condition="'$(DALAMUD_HOME)' != ''">$(DALAMUD_HOME)\</DalamudLibPath>
+    <DalamudLibPath Condition="'$(DalamudLibPath)' == ''">C:\Users\t.fritzen\Projects\Private\GlamSource\reference\Dalamud\bin\Debug\</DalamudLibPath>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="LuminaSupplemental.Excel" Version="5.1.0" />
