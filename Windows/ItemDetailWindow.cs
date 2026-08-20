@@ -44,7 +44,8 @@ public class ItemDetailWindow : Window, IDisposable
         Failed,
         AutoGatherStarted,
         AutoGatherNotStarted,
-        Pending
+        Pending,
+        AutoGatherStarting
     }
     private GatherOutcome _gatherOutcome = GatherOutcome.Failed;
     private string _gatherOutcomeDetail = string.Empty;
@@ -56,6 +57,8 @@ public class ItemDetailWindow : Window, IDisposable
         public string ItemName;
         public DateTime StartTime;
         public DateTime LastAttemptTime;
+        public string LastStableStatus;
+        public int StableCount;
     }
     private AutoGatherRetryState? _retryState = null;
     private const int GatherFeedbackDurationMs = 3000;  // Show feedback for 3s
@@ -418,6 +421,9 @@ public class ItemDetailWindow : Window, IDisposable
                     ImGui.Separator();
                     ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1f), "Check GBR log for details");
                     break;
+                case GatherOutcome.AutoGatherStarting:
+                    ImGui.TextColored(new Vector4(1f, 0.82f, 0f, 1f), "Waiting for navmesh (vnavmesh may still be loading this zone)...");
+                    break;
                 default: // Pending
                     ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.1f, 1f), "Waiting for GBR to process list...");
                     break;
@@ -430,8 +436,8 @@ public class ItemDetailWindow : Window, IDisposable
         if (_retryState == null) return;
         var state = _retryState.Value;
 
-        // Timeout check: max 8 attempts OR 2 seconds elapsed
-        if (state.Attempts >= 8 || (DateTime.UtcNow - state.StartTime).TotalMilliseconds > 2000)
+        // Timeout check: max 15 attempts OR 4 seconds elapsed
+        if (state.Attempts >= 15 || (DateTime.UtcNow - state.StartTime).TotalMilliseconds > 4000)
         {
             Plugin.Log?.Warning(
                 "[GATHER] AutoGather did not start after {Attempts} attempts for {Item}",
@@ -450,18 +456,52 @@ public class ItemDetailWindow : Window, IDisposable
         // Make the attempt
         state.Attempts++;
         state.LastAttemptTime = DateTime.UtcNow;
-        _retryState = state;
 
         _gbIpc.SetAutoGatherEnabled(true);
         var status = _gbIpc.GetAutoGatherStatusText();
 
-        // Check if AutoGather started successfully
-        if (!string.IsNullOrEmpty(status) && status != "Idle..." && status != "No available items to gather")
+        // Transient states: GBR received the request but gathering has not
+        // actually started yet. They do not count toward a stable result.
+        if (string.IsNullOrWhiteSpace(status)
+            || status == "Idle..."
+            || status == "No available items to gather")
+        {
+            _retryState = state;
+            return;
+        }
+
+        // Navmesh wait is its own interim state — still transient, but shown
+        // distinctly in the UI instead of the generic "processing" line.
+        if (status == "Waiting for Navmesh...")
+        {
+            _gatherOutcome = GatherOutcome.AutoGatherStarting;
+            _gatherOutcomeDetail = "Waiting for navmesh (vnavmesh may still be loading this zone)...";
+            _retryState = state;
+            return;
+        }
+
+        // A concrete gather status. It must be identical on two consecutive
+        // polls before we call it started — a one-off blip should not flip
+        // the button into "started".
+        if (status == state.LastStableStatus)
+        {
+            state.StableCount++;
+        }
+        else
+        {
+            state.LastStableStatus = status;
+            state.StableCount = 1;
+        }
+
+        if (state.StableCount >= 2)
         {
             _gatherOutcome = GatherOutcome.AutoGatherStarted;
             _gatherOutcomeDetail = status;
             _retryState = null;
+            return;
         }
+
+        _retryState = state;
     }
 
     private void DrawSourceCards(ItemDetail detail)
