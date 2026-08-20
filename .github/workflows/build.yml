@@ -40,8 +40,12 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path ./artifacts
-          $buildDir = Get-ChildItem -Path "bin" -Directory | Select-Object -First 1
-          # ponytail: pack every runtime DLL + json, not a hand-picked allow-list —
+          # ponytail: DalamudPackager writes the real output (with regenerated manifest)
+          # under bin\x64\Release\GlamSource\ — the plain bin\Release dir is a stale
+          # intermediate. Hardcode the packager path; picking "first bin subdir"
+          # alphabetically was the source of the 0.0.0.29 mismatch.
+          $buildDir = Get-Item "bin\x64\Release\GlamSource"
+          # pack every runtime DLL + json, not a hand-picked allow-list —
           # transitive deps (LuminaSupplemental.Excel etc.) keep changing, chasing
           # them one crash report at a time is the wrong approach.
           $files = Get-ChildItem -Path $buildDir.FullName -Filter "*.dll"
