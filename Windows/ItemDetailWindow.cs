@@ -24,7 +24,6 @@ public class ItemDetailWindow : Window, IDisposable
     private readonly IItemSourceService _sourceService;
     private readonly IUniversalisService _universalisService;
     private readonly ITextureProvider _textureProvider;
-    private readonly GatherBuddyRebornIpc _gbIpc;
     private Plugin _plugin = null!;
     private readonly Stack<uint> _history = new();
     private uint? _showingItemId;
@@ -38,30 +37,17 @@ public class ItemDetailWindow : Window, IDisposable
     private Action<string, string, float, float>? _onOpenMap;
     private CraftingCostResult? _craftingResult;
 
-    // GatherBuddy button debouncing and feedback state
+    // Gather button debouncing and feedback state
     private enum GatherOutcome
     {
         Failed,
-        AutoGatherStarted,
-        AutoGatherNotStarted,
+        Started,
         Pending,
-        AutoGatherStarting
     }
     private GatherOutcome _gatherOutcome = GatherOutcome.Failed;
     private string _gatherOutcomeDetail = string.Empty;
     private long _lastGatherTimestamp = 0;  // TickCount
 
-    private struct AutoGatherRetryState
-    {
-        public int Attempts;
-        public string ItemName;
-        public DateTime StartTime;
-        public DateTime LastAttemptTime;
-        public string? LastStableStatus;
-        public int StableCount;
-        public string LastStatus;  // Last raw status observed (for timeout diagnostics)
-    }
-    private AutoGatherRetryState? _retryState = null;
     private const int GatherFeedbackDurationMs = 3000;  // Show feedback for 3s
     private const int GatherButtonCooldownMs = 2000;    // Button disabled for 2s after click
 
@@ -130,14 +116,13 @@ public class ItemDetailWindow : Window, IDisposable
             "OTHER"),
     };
 
-    public ItemDetailWindow(IItemDetailService detailService, IItemSourceService sourceService, IUniversalisService universalisService, ITextureProvider? textureProvider = null, GatherBuddyRebornIpc? gbIpc = null)
+    public ItemDetailWindow(IItemDetailService detailService, IItemSourceService sourceService, IUniversalisService universalisService, ITextureProvider? textureProvider = null)
         : base($"Item Detail###ItemDetailWindow", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
     {
         _detailService = detailService;
         _sourceService = sourceService;
         _universalisService = universalisService;
         _textureProvider = textureProvider;
-        _gbIpc = gbIpc ?? new GatherBuddyRebornIpc(Plugin.PluginInterface);
         SizeConstraints = new WindowSizeConstraints
         {
             MinimumSize = new Vector2(380, 250),
@@ -181,7 +166,6 @@ public class ItemDetailWindow : Window, IDisposable
         _lastGatherTimestamp = 0;
         _gatherOutcome = GatherOutcome.Failed;
         _gatherOutcomeDetail = string.Empty;
-        _retryState = null;
         _lastMaterialGatherTimestamp.Clear();
         _lastCostGatherTimestamp.Clear();
         _isOpen = true;
@@ -213,8 +197,7 @@ public class ItemDetailWindow : Window, IDisposable
 
     public override void Draw()
     {
-        // Process retry state on every frame (Framework thread = thread-safe for IPC)
-        UpdateAutoGatherRetry();
+        UpdateGatherFeedback();
 
         if (!_isOpen || _showingItemId == null)
         {
@@ -333,11 +316,6 @@ public class ItemDetailWindow : Window, IDisposable
         if (!detail.Sources.Any(s => s.Type == ItemSourceType.Gathering))
             return;
 
-        // Nur zeigen wenn GBR geladen ist
-        if (!GatherBuddyRebornIpc.IsGbrAssemblyLoaded)
-            return;
-
-        // Check cooldown — disable button for 2s after click
         var now = Environment.TickCount64;
         bool isCooldown = (now - _lastGatherTimestamp) < GatherButtonCooldownMs;
 
@@ -345,181 +323,75 @@ public class ItemDetailWindow : Window, IDisposable
 
         if (isCooldown)
         {
-            // Draw disabled button — clicks during cooldown are ignored
             ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.4f, 0.4f, 0.4f, 0.5f));
             ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.6f, 0.6f, 0.6f, 1f));
-            bool clicked = ImGui.SmallButton("⛏ Gather (Cooling down...)");
+            ImGui.SmallButton("⛏ Gather (Cooling down...)");
             ImGui.PopStyleColor(2);
-
-            if (clicked)
-                return;
         }
-        else
+        else if (ImGui.SmallButton("⛏ Gather"))
         {
-            if (ImGui.SmallButton("⛏ Gather"))
-            {
-                // Mark click timestamp
-                _lastGatherTimestamp = now;
-                _gatherOutcome = GatherOutcome.Failed; // Reset until we know the result
-                _gatherOutcomeDetail = string.Empty;
-
-                // Identify for logging/debugging only — list creation does not depend on it
-                var identifyResult = _gbIpc.IdentifyItem(detail.Name);
-                Plugin.Log?.Information("[GATHER] IdentifyItem('{Name}') returned: {Result}", detail.Name, identifyResult);
-
-                try
-                {
-                    // CreatePersistentGatherList prefixes "GlamSource: " itself — pass the raw name
-                    var materials = new Dictionary<uint, int> { { detail.ItemId, 1 } };
-                    var listName = $"GlamSource: {detail.Name}";
-                    var listSuccess = _gbIpc.CreatePersistentGatherList(detail.Name, materials);
-
-                    if (listSuccess)
-                    {
-                        Plugin.Log?.Information("[GATHER] Created 1-item list '{ListName}' for {Name}", listName, detail.Name);
-
-                        // Initialize retry state — processed every frame in Draw() on the Framework thread
-                        _retryState = new AutoGatherRetryState
-                        {
-                            Attempts = 0,
-                            ItemName = detail.Name,
-                            StartTime = DateTime.UtcNow,
-                            LastAttemptTime = DateTime.MinValue  // First attempt allowed immediately
-                        };
-
-                        _gatherOutcome = GatherOutcome.Pending;
-                        _gatherOutcomeDetail = "Waiting for GBR to process list...";
-                    }
-                    else
-                    {
-                        Plugin.Log?.Warning("[GATHER] Failed to create gather list for '{Name}' (ID={Id})", detail.Name, detail.ItemId);
-                        _gatherOutcome = GatherOutcome.Failed;
-                        _gatherOutcomeDetail = "Could not create gather list";
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Plugin.Log?.Error(ex, "[GATHER] Exception while creating gather list for '{Name}'", detail.Name);
-                    _gatherOutcome = GatherOutcome.Failed;
-                }
-            }
+            _lastGatherTimestamp = now;
+            TriggerGather(detail.ItemId, detail.Name);
         }
 
-        // Render persistent feedback (3s), not just the click frame
-        if ((now - _lastGatherTimestamp) < GatherFeedbackDurationMs && (_lastGatherTimestamp > 0))
+        DrawGatherFeedback(now, detail.Name);
+    }
+
+    // ponytail: single entry point for all gather buttons. SimpleGatherService drives everything.
+    private void TriggerGather(uint itemId, string itemName)
+    {
+        try
         {
-            ImGui.SameLine();
-            switch (_gatherOutcome)
+            var started = _plugin.GatherService.StartGathering(itemId);
+            if (started)
             {
-                case GatherOutcome.AutoGatherStarted:
-                    ImGui.TextColored(new Vector4(0.3f, 0.8f, 0.3f, 1f), "✓ AutoGather started for " + detail.Name);
-                    ImGui.Separator();
-                    ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1f), "Status: " + _gatherOutcomeDetail);
-                    break;
-                case GatherOutcome.AutoGatherNotStarted:
-                case GatherOutcome.Failed:
-                    ImGui.TextColored(new Vector4(1f, 0.3f, 0.3f, 1f), "AutoGather not enabled: " + _gatherOutcomeDetail);
-                    ImGui.Separator();
-                    ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1f), "Check GBR log for details");
-                    break;
-                case GatherOutcome.AutoGatherStarting:
-                    ImGui.TextColored(new Vector4(1f, 0.82f, 0f, 1f), "Waiting for navmesh (vnavmesh may still be loading this zone)...");
-                    break;
-                default: // Pending
-                    ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.1f, 1f), "Waiting for GBR to process list...");
-                    break;
+                _gatherOutcome = GatherOutcome.Started;
+                _gatherOutcomeDetail = itemName;
+                Plugin.Log?.Information("[GATHER] Started for {Name} (ID={Id})", itemName, itemId);
             }
+            else
+            {
+                _gatherOutcome = GatherOutcome.Failed;
+                _gatherOutcomeDetail = "No known location or no reachable node";
+                Plugin.Log?.Warning("[GATHER] StartGathering returned false for {Name} (ID={Id})", itemName, itemId);
+            }
+        }
+        catch (Exception ex)
+        {
+            _gatherOutcome = GatherOutcome.Failed;
+            _gatherOutcomeDetail = ex.Message;
+            Plugin.Log?.Error(ex, "[GATHER] Exception starting gather for {Name}", itemName);
         }
     }
 
-    private void UpdateAutoGatherRetry()
+    private void UpdateGatherFeedback()
     {
-        if (_retryState == null) return;
-        var state = _retryState.Value;
+        // ponytail: SimpleGatherService drives itself. Refresh outcome detail from live state
+        // so the feedback line tracks progress instead of freezing on the click frame.
+        if (_gatherOutcome != GatherOutcome.Started) return;
+        var s = _plugin.GatherService.State;
+        _gatherOutcomeDetail = s.ToString();
+    }
 
-        // Timeout check: max 30 attempts OR 8 seconds elapsed
-        // (GBR's first pickup in a session/zone can take longer than a cold 4s window)
-        if (state.Attempts >= 30 || (DateTime.UtcNow - state.StartTime).TotalMilliseconds > 8000)
-        {
-            var lastStatus = state.LastStatus;
-            var timeoutReason = lastStatus == "Waiting for Navmesh..."
-                ? "vnavmesh still loading nav data"
-                : "no stable non-transient status detected";
-
-            Plugin.Log?.Warning(
-                "[GATHER] AutoGather timeout after {Attempts} attempts for {Item} ({Reason}), last status: {Status}",
-                state.Attempts, state.ItemName, timeoutReason, lastStatus ?? "(null)");
-
-            _gatherOutcome = GatherOutcome.AutoGatherNotStarted;
-            _gatherOutcomeDetail = lastStatus == "Waiting for Navmesh..."
-                ? "vnavmesh is still loading this zone's navigation data — try again in a moment"
-                : "Timed out waiting for GBR to pick up the list";
-            _retryState = null;
+    private void DrawGatherFeedback(long now, string itemName)
+    {
+        if (_lastGatherTimestamp <= 0 || (now - _lastGatherTimestamp) >= GatherFeedbackDurationMs)
             return;
-        }
-
-        // Rate limit: only attempt if 250ms elapsed since last attempt
-        if ((DateTime.UtcNow - state.LastAttemptTime).TotalMilliseconds < 250)
-            return;
-
-        // Make the attempt
-        state.Attempts++;
-        state.LastAttemptTime = DateTime.UtcNow;
-
-        _gbIpc.SetAutoGatherEnabled(true);
-        var status = _gbIpc.GetAutoGatherStatusText();
-        state.LastStatus = status;
-
-        // Transient states: GBR received the request but gathering has not
-        // actually started yet. They do not count toward a stable result.
-        if (string.IsNullOrWhiteSpace(status)
-            || status == "Idle..."
-            || status == "No available items to gather")
+        ImGui.SameLine();
+        switch (_gatherOutcome)
         {
-            Plugin.Log?.Information("[GATHER] Status={Status} (attempt {Attempts}) - transient, resetting stable count", status ?? "(null)", state.Attempts);
-            state.LastStableStatus = null;
-            state.StableCount = 0;
-            _retryState = state;
-            return;
+            case GatherOutcome.Started:
+                ImGui.TextColored(new Vector4(0.3f, 0.8f, 0.3f, 1f), $"✓ Gathering {itemName}");
+                ImGui.Separator();
+                ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1f), "Status: " + _gatherOutcomeDetail);
+                break;
+            case GatherOutcome.Failed:
+                ImGui.TextColored(new Vector4(1f, 0.3f, 0.3f, 1f), "Gather failed: " + _gatherOutcomeDetail);
+                break;
+            default:
+                ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.1f, 1f), "Pending...");
+                break;
         }
-
-        // Navmesh wait is its own interim state — still transient, but shown
-        // distinctly in the UI instead of the generic "processing" line.
-        if (status == "Waiting for Navmesh...")
-        {
-            Plugin.Log?.Information("[GATHER] Status=Waiting for Navmesh... (attempt {Attempts}) - vnavmesh loading this zone", state.Attempts);
-            _gatherOutcome = GatherOutcome.AutoGatherStarting;
-            _gatherOutcomeDetail = "Waiting for navmesh (vnavmesh may still be loading this zone)...";
-            _retryState = state;
-            return;
-        }
-
-        // A concrete gather status. It must be identical on two consecutive
-        // polls before we call it started — a one-off blip should not flip
-        // the button into "started".
-        if (status == state.LastStableStatus)
-        {
-            state.StableCount++;
-            Plugin.Log?.Information("[GATHER] Stable count: {StableCount}/2 (status: {Status}) - waiting", state.StableCount, status);
-        }
-        else
-        {
-            Plugin.Log?.Information("[GATHER] New stable status: {OldStatus} → {NewStatus} (count: 1/2)", state.LastStableStatus ?? "null", status);
-            state.LastStableStatus = status;
-            state.StableCount = 1;
-        }
-
-        if (state.StableCount >= 2)
-        {
-            Plugin.Log?.Information("[GATHER] AutoGather confirmed started after {Attempts} attempts, status: {Status}", state.Attempts, status);
-            _gatherOutcome = GatherOutcome.AutoGatherStarted;
-            _gatherOutcomeDetail = status;
-            _retryState = null;
-            return;
-        }
-
-        Plugin.Log?.Information("[GATHER] Status not stable yet (count: {StableCount}/2), continuing retries", state.StableCount);
-        _retryState = state;
     }
 
     private void DrawSourceCards(ItemDetail detail)
@@ -771,33 +643,8 @@ public class ItemDetailWindow : Window, IDisposable
             {
                 if (ImGui.SmallButton($"Gather##gather_{sourceIdx}_{matIdx}"))
                 {
-                    // Record click timestamp
                     _lastMaterialGatherTimestamp[mat.ItemId] = now;
-
-                    try
-                    {
-                        var itemId = _gbIpc.IdentifyItem(mat.Name);
-                        if (itemId > 0)
-                        {
-                            // Same list-creation pattern as the main button (no direct SetAutoGatherEnabled)
-                            var materials = new Dictionary<uint, int> { { mat.ItemId, 1 } };
-                            var listName = $"GlamSource: {mat.Name}";
-                            var success = _gbIpc.CreatePersistentGatherList(mat.Name, materials);
-
-                            if (success)
-                                Plugin.Log?.Information("[GATHER-MAT] Created list '{ListName}' for material {Name}", listName, mat.Name);
-                            else
-                                Plugin.Log?.Warning("[GATHER-MAT] Failed to create list for material {Name}", mat.Name);
-                        }
-                        else
-                        {
-                            Plugin.Log?.Warning("[GATHER-MAT] Could not identify material {Name}", mat.Name);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Plugin.Log?.Error(ex, "[GATHER-MAT] Exception while creating gather list for material {Name}", mat.Name);
-                    }
+                    TriggerGather(mat.ItemId, mat.Name);
                 }
             }
         }
@@ -890,33 +737,8 @@ if (_textureProvider != null && cost.IconId > 0)
                 {
                     if (ImGui.SmallButton($"Gather##gather_{sourceIdx}_{costIdx}"))
                     {
-                        // Record click timestamp
                         _lastCostGatherTimestamp[cost.ItemId] = now;
-
-                        try
-                        {
-                            var itemId = _gbIpc.IdentifyItem(cost.Name);
-                            if (itemId > 0)
-                            {
-                                // Same list-creation pattern as the main button (no direct SetAutoGatherEnabled)
-                                var materials = new Dictionary<uint, int> { { cost.ItemId, 1 } };
-                                var listName = $"GlamSource: {cost.Name}";
-                                var success = _gbIpc.CreatePersistentGatherList(cost.Name, materials);
-
-                                if (success)
-                                    Plugin.Log?.Information("[GATHER-COST] Created list '{ListName}' for cost item {Name}", listName, cost.Name);
-                                else
-                                    Plugin.Log?.Warning("[GATHER-COST] Failed to create list for cost item {Name}", cost.Name);
-                            }
-                            else
-                            {
-                                Plugin.Log?.Warning("[GATHER-COST] Could not identify cost item {Name}", cost.Name);
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Plugin.Log?.Error(ex, "[GATHER-COST] Exception while creating gather list for cost item {Name}", cost.Name);
-                        }
+                        TriggerGather(cost.ItemId, cost.Name);
                     }
                 }
             }
@@ -1063,8 +885,7 @@ if (_textureProvider != null && cost.IconId > 0)
 
     private bool ShouldShowGatherButton(uint itemId)
     {
-        if (!_gbIpc.IsAvailable) return false;
-        // ponytail: broad filter — let GatherBuddy IPC decide if item is gatherable
+        // ponytail: SimpleGatherService checks its own preconditions in StartGathering.
         return itemId > 0 && itemId < 500000;
     }
 
@@ -1410,19 +1231,8 @@ if (_textureProvider != null && cost.IconId > 0)
             : (levelStr ?? jobStr ?? "Crafted");
         ImGui.Text(title);
 
-        // Actions row: GBR batch gather (if GBR loaded and materials missing)
-        if (first.Materials != null && first.Materials.Count > 0 && GatherBuddyRebornIpc.IsGbrAssemblyLoaded)
-        {
-            var missingCount = first.Materials.Count(m => m.ItemId > 19 && GetItemCount(m.ItemId) < m.Count);
-            if (missingCount > 0)
-            {
-                ImGui.SameLine();
-                if (ImGui.SmallButton($"Add missing to GBR list ({missingCount})##gbr_batch_{groupIdx}"))
-                {
-                    TryCreateGbrBatchList(_detailService.GetDetail(_showingItemId ?? 0)?.Name ?? "Unknown", first.Materials);
-                }
-            }
-        }
+        // ponytail: batch button dropped — SimpleGatherService is single-item; per-material
+        // Gather buttons cover it. Add batch queue when actually needed.
 
         ImGui.Spacing();
 
@@ -1437,29 +1247,6 @@ if (_textureProvider != null && cost.IconId > 0)
         }
 
         ImGui.Spacing();
-    }
-
-    private void TryCreateGbrBatchList(string itemName, IReadOnlyList<CostEntry> materials)
-    {
-        try
-        {
-            var missing = materials
-                .Where(m => m.ItemId > 19 && GetItemCount(m.ItemId) < m.Count)
-                .GroupBy(m => m.ItemId)
-                .ToDictionary(
-                    g => g.Key,
-                    g => (int)g.Sum(m => m.Count - GetItemCount(m.ItemId)));
-
-            if (missing.Count == 0) return;
-
-            var success = _gbIpc.CreatePersistentGatherList(itemName, new Dictionary<uint, int>(missing));
-            Plugin.Log?.Information("[GBR] Created batch list '{Name}' with {Count} missing materials, success={Success}",
-                itemName, missing.Count, success);
-        }
-        catch (Exception ex)
-        {
-            Plugin.Log?.Error(ex, "[GBR] Failed to create batch list for '{Name}'", itemName);
-        }
     }
 
     private string GetMaterialKey(ItemSourceDetail src)
