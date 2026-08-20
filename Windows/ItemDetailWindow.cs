@@ -57,8 +57,9 @@ public class ItemDetailWindow : Window, IDisposable
         public string ItemName;
         public DateTime StartTime;
         public DateTime LastAttemptTime;
-        public string LastStableStatus;
+        public string? LastStableStatus;
         public int StableCount;
+        public string LastStatus;  // Last raw status observed (for timeout diagnostics)
     }
     private AutoGatherRetryState? _retryState = null;
     private const int GatherFeedbackDurationMs = 3000;  // Show feedback for 3s
@@ -439,12 +440,19 @@ public class ItemDetailWindow : Window, IDisposable
         // Timeout check: max 15 attempts OR 4 seconds elapsed
         if (state.Attempts >= 15 || (DateTime.UtcNow - state.StartTime).TotalMilliseconds > 4000)
         {
+            var lastStatus = state.LastStatus;
+            var timeoutReason = lastStatus == "Waiting for Navmesh..."
+                ? "vnavmesh still loading nav data"
+                : "no stable non-transient status detected";
+
             Plugin.Log?.Warning(
-                "[GATHER] AutoGather did not start after {Attempts} attempts for {Item}",
-                state.Attempts, state.ItemName);
+                "[GATHER] AutoGather timeout after {Attempts} attempts for {Item} ({Reason}), last status: {Status}",
+                state.Attempts, state.ItemName, timeoutReason, lastStatus ?? "(null)");
 
             _gatherOutcome = GatherOutcome.AutoGatherNotStarted;
-            _gatherOutcomeDetail = "Timed out waiting for GBR to pick up the list";
+            _gatherOutcomeDetail = lastStatus == "Waiting for Navmesh..."
+                ? "vnavmesh is still loading this zone's navigation data — try again in a moment"
+                : "Timed out waiting for GBR to pick up the list";
             _retryState = null;
             return;
         }
@@ -459,6 +467,7 @@ public class ItemDetailWindow : Window, IDisposable
 
         _gbIpc.SetAutoGatherEnabled(true);
         var status = _gbIpc.GetAutoGatherStatusText();
+        state.LastStatus = status;
 
         // Transient states: GBR received the request but gathering has not
         // actually started yet. They do not count toward a stable result.
@@ -466,6 +475,9 @@ public class ItemDetailWindow : Window, IDisposable
             || status == "Idle..."
             || status == "No available items to gather")
         {
+            Plugin.Log?.Information("[GATHER] Status={Status} (attempt {Attempts}) - transient, resetting stable count", status ?? "(null)", state.Attempts);
+            state.LastStableStatus = null;
+            state.StableCount = 0;
             _retryState = state;
             return;
         }
@@ -474,6 +486,7 @@ public class ItemDetailWindow : Window, IDisposable
         // distinctly in the UI instead of the generic "processing" line.
         if (status == "Waiting for Navmesh...")
         {
+            Plugin.Log?.Information("[GATHER] Status=Waiting for Navmesh... (attempt {Attempts}) - vnavmesh loading this zone", state.Attempts);
             _gatherOutcome = GatherOutcome.AutoGatherStarting;
             _gatherOutcomeDetail = "Waiting for navmesh (vnavmesh may still be loading this zone)...";
             _retryState = state;
@@ -486,21 +499,25 @@ public class ItemDetailWindow : Window, IDisposable
         if (status == state.LastStableStatus)
         {
             state.StableCount++;
+            Plugin.Log?.Information("[GATHER] Stable count: {StableCount}/2 (status: {Status}) - waiting", state.StableCount, status);
         }
         else
         {
+            Plugin.Log?.Information("[GATHER] New stable status: {OldStatus} → {NewStatus} (count: 1/2)", state.LastStableStatus ?? "null", status);
             state.LastStableStatus = status;
             state.StableCount = 1;
         }
 
         if (state.StableCount >= 2)
         {
+            Plugin.Log?.Information("[GATHER] AutoGather confirmed started after {Attempts} attempts, status: {Status}", state.Attempts, status);
             _gatherOutcome = GatherOutcome.AutoGatherStarted;
             _gatherOutcomeDetail = status;
             _retryState = null;
             return;
         }
 
+        Plugin.Log?.Information("[GATHER] Status not stable yet (count: {StableCount}/2), continuing retries", state.StableCount);
         _retryState = state;
     }
 
