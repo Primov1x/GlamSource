@@ -437,8 +437,9 @@ public class ItemDetailWindow : Window, IDisposable
         if (_retryState == null) return;
         var state = _retryState.Value;
 
-        // Timeout check: max 15 attempts OR 4 seconds elapsed
-        if (state.Attempts >= 15 || (DateTime.UtcNow - state.StartTime).TotalMilliseconds > 4000)
+        // Timeout check: max 30 attempts OR 8 seconds elapsed
+        // (GBR's first pickup in a session/zone can take longer than a cold 4s window)
+        if (state.Attempts >= 30 || (DateTime.UtcNow - state.StartTime).TotalMilliseconds > 8000)
         {
             var lastStatus = state.LastStatus;
             var timeoutReason = lastStatus == "Waiting for Navmesh..."
