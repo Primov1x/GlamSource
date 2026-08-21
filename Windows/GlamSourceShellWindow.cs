@@ -46,6 +46,9 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
     // Tab-select handling
     private int _pendingTab = -1;
 
+    // Optional 3D preview window handle (wired by Plugin after ctor).
+    public GlamourPreviewWindow? PreviewWindow { get; set; }
+
     // ---------- Lookup tab state (from MainWindow) ----------
     private string _lookupText = "";
     private IReadOnlyList<(uint id, string name)>? _lookupResults;
@@ -383,6 +386,12 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
             ImGui.SameLine();
             ImGui.TextDisabled(_lastApplyStatus);
         }
+
+        ImGui.SameLine();
+        if (ImGui.SmallButton("Preview 3D") && PreviewWindow != null)
+            PreviewWindow.OpenForCurrentTarget();
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Open a live 3D preview of the current target (or self if no target).");
 
         ImGui.SameLine();
         var canPreview = _snapshot.Count > 0;

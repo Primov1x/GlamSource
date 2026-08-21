@@ -52,6 +52,8 @@ public class Plugin : IAsyncDalamudPlugin
     public readonly GameDataService GameDataService;
 
     private readonly GlamSourceShellWindow shellWindow;
+    private readonly GlamourPreviewWindow previewWindow;
+    private readonly PreviewRenderer previewRenderer;
     private readonly ContextMenuService contextMenuService;
     private readonly ItemDetailWindow itemDetailWindow;
     private readonly UniversalisService? _universalisService;
@@ -143,6 +145,11 @@ public class Plugin : IAsyncDalamudPlugin
             Log);
         WindowSystem.AddWindow(shellWindow);
 
+        previewRenderer = new PreviewRenderer(Framework, Log);
+        previewWindow = new GlamourPreviewWindow(previewRenderer, Framework, ClientState, TargetManager, ObjectTable, Log);
+        WindowSystem.AddWindow(previewWindow);
+        shellWindow.PreviewWindow = previewWindow;
+
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
             HelpMessage = "Offnet das GlamSource Fenster"
@@ -171,6 +178,8 @@ public class Plugin : IAsyncDalamudPlugin
         WindowSystem.RemoveAllWindows();
 
         shellWindow.Dispose();
+        previewWindow.Dispose();
+        previewRenderer.Dispose();
         itemDetailWindow.Dispose();
         contextMenuService.Dispose();
         _universalisService?.Dispose();
@@ -192,6 +201,13 @@ public class Plugin : IAsyncDalamudPlugin
         else if (string.Equals(arg, "settings", StringComparison.OrdinalIgnoreCase) || string.Equals(arg, "config", StringComparison.OrdinalIgnoreCase))
         {
             shellWindow.SwitchToTab(GlamSourceShellWindow.TabId.Settings);
+        }
+        else if (string.Equals(arg, "preview", StringComparison.OrdinalIgnoreCase))
+        {
+            if (previewWindow.IsOpen)
+                previewWindow.IsOpen = false;
+            else
+                previewWindow.OpenForCurrentTarget();
         }
         else
         {
