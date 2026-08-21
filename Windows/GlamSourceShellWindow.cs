@@ -430,7 +430,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
                 if (itemId == 0) continue;
 
                 byte stain0 = 0, stain1 = 0;
-                var ret = setItem.Invoke(0, apiSlot, itemId, new byte[] { stain0, stain1 }, 0, ApplyFlag.Once);
+                var ret = setItem.Invoke(0, apiSlot, itemId, new List<byte> { stain0, stain1 }, 0, ApplyFlag.Once);
                 if (ret == GlamourerApiEc.Success) applied++;
                 else { failed++; _log.Warning($"[GlamSource] SetItem {apiSlot} id={itemId} -> {ret}"); }
             }
