@@ -7,6 +7,7 @@ using Dalamud.Interface.Textures;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using System.Runtime.InteropServices;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using GlamSource.Core;
 using Glamourer.Api.Enums;
@@ -143,7 +144,7 @@ public class CharacterGlamourWindow : Window, IDisposable
         ImGui.SameLine();
         var canPreview = _snapshot.Count > 0;
         if (!canPreview) ImGui.BeginDisabled();
-        if (ImGui.SmallButton("Preview via Try-On"))
+        if (ImGui.SmallButton("Preview Target (Save Mode)"))
             QueueTryOnPreview();
         if (!canPreview) ImGui.EndDisabled();
         if (ImGui.IsItemHovered())
@@ -203,7 +204,16 @@ public class CharacterGlamourWindow : Window, IDisposable
         }
     }
 
-    private void QueueTryOnPreview()
+    // ponytail: reinterpret AgentTryon at 0x366 = SaveDeleteOutfit flag.
+    // ClientStructs vX exposes it as SaveDeleteOutfit@870, but the shipped Dalamud struct may lag —
+    // matches CriticalCommonLib/Services/AgentTryOn2.cs pattern for version-safety.
+    [StructLayout(LayoutKind.Explicit, Size = 0x368)]
+    private struct AgentTryonSaveFlag
+    {
+        [FieldOffset(0x366)] public bool SaveDeleteOutfit;
+    }
+
+    private unsafe void QueueTryOnPreview()
     {
         _tryOnQueue.Clear();
         var queued = 0;
@@ -248,6 +258,15 @@ public class CharacterGlamourWindow : Window, IDisposable
 
         try
         {
+            // ponytail: force save-outfit mode ON each tick so items accumulate (default: replace).
+            // Reinterpret because ClientStructs field name/offset differ across versions; 0x366 is the stable IDA offset.
+            var agent = AgentTryon.Instance();
+            if (agent != null)
+            {
+                var flag = (AgentTryonSaveFlag*)agent;
+                flag->SaveDeleteOutfit = true;
+            }
+
             var (itemId, _) = _tryOnQueue.Dequeue();
             // AgentTryon.TryOn(openerAddonId, itemId, stain0, stain1, glamourItemId, applyCompanyCrest)
             AgentTryon.TryOn(0, itemId, 0, 0, 0, false);
