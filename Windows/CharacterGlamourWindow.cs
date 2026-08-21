@@ -97,13 +97,28 @@ public class CharacterGlamourWindow : Window, IDisposable
 
     private void DrawSlot(EquipmentSlotType slotType, EquipmentSlot? slot, Vector2 iconVec)
     {
-        var itemId = slot?.GlamourItemId ?? slot?.ActualItemId ?? 0u;
-        var itemName = slot?.GlamourItemName ?? slot?.ActualItemName ?? "-";
-        var iconId = itemId > 0 ? GetIconId(itemId) : 0u;
+        var actualId = slot?.ActualItemId ?? 0u;
+        var actualName = slot?.ActualItemName ?? "-";
+        var glamId = slot?.GlamourItemId ?? 0u;
+        var glamName = slot?.GlamourItemName;
 
         ImGui.BeginGroup();
-
         ImGui.PushID($"slot{slotType}");
+
+        // Left: actual armour
+        DrawIcon("actual", actualId, actualName, slotType, iconVec);
+        ImGui.SameLine(0, 2);
+        // Right: glamour (or placeholder to keep grid aligned)
+        DrawIcon("glam", glamId, glamName ?? "(no glamour)", slotType, iconVec);
+
+        ImGui.PopID();
+        ImGui.EndGroup();
+    }
+
+    private void DrawIcon(string tag, uint itemId, string tooltipName, EquipmentSlotType slotType, Vector2 iconVec)
+    {
+        ImGui.PushID(tag);
+        var iconId = itemId > 0 ? GetIconId(itemId) : 0u;
         if (iconId > 0)
         {
             var tex = _textures.GetFromGameIcon(new GameIconLookup(iconId)).GetWrapOrEmpty();
@@ -113,15 +128,12 @@ public class CharacterGlamourWindow : Window, IDisposable
         }
         else
         {
-            // ponytail: dummy button so layout stays aligned even with empty slots.
-            ImGui.Button("empty", iconVec);
+            // ponytail: dummy keeps layout aligned when slot empty.
+            ImGui.Button("-", iconVec);
         }
-        ImGui.PopID();
-
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip($"{slotType}\n{itemName}{(slot?.IsGlamoured == true ? "\n(glamoured)" : "")}");
-
-        ImGui.EndGroup();
+            ImGui.SetTooltip($"{slotType} ({tag})\n{tooltipName}");
+        ImGui.PopID();
     }
 
     private uint GetIconId(uint itemId)
