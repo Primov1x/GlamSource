@@ -18,6 +18,10 @@ public sealed unsafe class PreviewRenderer : IDisposable
     private uint _counter = 1;
     private bool _initialized;
     private float _zoom = 1.0f;
+    // ponytail: source resolver stored across frames — Character* would go stale, a func won't.
+    private Func<nint>? _sourceProvider;
+    // ponytail: force re-copy for N Ticks after ApplyState / Examine hijacks CharaView.ModelData.
+    private int _pendingRecopyFrames;
 
     public PreviewRenderer(IFramework framework, IPluginLog log)
     {
@@ -31,7 +35,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
     public float Zoom => _zoom;
 
     /// <summary>Initialize CharaView from a source character. Must be called on Framework thread.</summary>
-    public void Initialize(Character* source)
+    public void Initialize(Character* source, Func<nint>? sourceProvider = null)
     {
         if (_initialized) return;
         if (source == null) return;
@@ -39,10 +43,19 @@ public sealed unsafe class PreviewRenderer : IDisposable
         var agent = AgentInspect.Instance();
         if (agent == null) return;
 
+        _sourceProvider = sourceProvider;
         agent->CharaView.Initialize(&agent->AgentInterface, 1, 0);
         agent->CharaView.ModelData.CopyFromCharacter(source);
         agent->CharaView.Update(_counter, agent->CharaView.GetCharacter());
         _initialized = true;
+        // ponytail: seed a few refresh frames so Examine can't hijack the first render.
+        _pendingRecopyFrames = 3;
+    }
+
+    /// <summary>Request N future Ticks to re-copy from the source provider (fixes ApplyState frame-lag and Examine hijack).</summary>
+    public void RequestRecopy(int frames)
+    {
+        if (frames > _pendingRecopyFrames) _pendingRecopyFrames = frames;
     }
 
     /// <summary>Per-frame update/render. Must be called on Framework thread.</summary>
@@ -51,6 +64,17 @@ public sealed unsafe class PreviewRenderer : IDisposable
         if (!_initialized) return;
         var agent = AgentInspect.Instance();
         if (agent == null) return;
+
+        // ponytail: AgentInspect.CharaView is shared with the game's Examine window. When Examine
+        // is active or right after ApplyState, ModelData drifts — re-copy from LocalPlayer.
+        var examineActive = agent->AgentInterface.IsAgentActive();
+        if ((examineActive || _pendingRecopyFrames > 0) && _sourceProvider != null)
+        {
+            var addr = _sourceProvider();
+            if (addr != nint.Zero)
+                agent->CharaView.ModelData.CopyFromCharacter((Character*)addr);
+            if (_pendingRecopyFrames > 0) _pendingRecopyFrames--;
+        }
 
         var ch = agent->CharaView.GetCharacter();
         if (ch == null) return;
@@ -126,6 +150,8 @@ public sealed unsafe class PreviewRenderer : IDisposable
             _initialized = false;
             _counter = 1;
             _zoom = 1.0f;
+            _sourceProvider = null;
+            _pendingRecopyFrames = 0;
         }
     }
 

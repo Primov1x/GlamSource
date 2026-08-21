@@ -92,7 +92,9 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
         _framework.RunOnFrameworkThread(() =>
         {
             _renderer.Release();
-            _renderer.Initialize((Character*)selfAddr);
+            // ponytail: pass a live LocalPlayer-address resolver so Tick can re-copy each frame
+            // (Examine shares AgentInspect.CharaView; without this the viewer flips to the target).
+            _renderer.Initialize((Character*)selfAddr, () => _objectTable.LocalPlayer?.Address ?? nint.Zero);
             ApplyModeState();
         });
 
@@ -255,6 +257,9 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
         }
 
         RefreshCharaViewFromLocalPlayer();
+        // ponytail: Glamourer mutates the actor async; keep re-copying from LocalPlayer for
+        // several frames so we catch the post-apply model, not the pre-apply one.
+        _renderer.RequestRecopy(10);
     }
 
     private void RefreshCharaViewFromLocalPlayer()
