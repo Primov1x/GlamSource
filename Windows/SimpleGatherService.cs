@@ -9,9 +9,7 @@ using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
-using FFXIVClientStructs.FFXIV.Client.System.Memory;
-using FFXIVClientStructs.FFXIV.Client.System.String;
-using FFXIVClientStructs.FFXIV.Client.UI;
+using FFXIVClientStructs.FFXIV.Client.UI.Misc;
 using GlamSource.Core;
 
 namespace GlamSource.Windows;
@@ -115,18 +113,38 @@ public sealed unsafe class SimpleGatherService : IDisposable
         _ => null,
     };
 
-    /// <summary>Sends /gearset change "name" via UIModule.ProcessChatBoxEntry.</summary>
-    private void ExecuteChatCommand(string command)
+    /// <summary>
+    /// Equips a gearset for the requested ClassJob directly via RaptureGearsetModule.
+    /// Prefers the user-configured set name (lets user pin a specific loadout); falls back
+    /// to the first existing gearset matching the ClassJob. Returns false if none found.
+    /// Pattern lifted from Questionable/Data/ClassJobUtils.cs:229 (SwitchClassJob).
+    /// </summary>
+    private bool TryEquipGearsetForJob(uint classJobId, string? preferredName)
     {
-        var uiModule = UIModule.Instance();
-        if (uiModule == null) return;
-        var utf8 = Utf8String.FromString(command);
-        try { uiModule->ProcessChatBoxEntry(utf8); }
-        finally
+        var mod = RaptureGearsetModule.Instance();
+        if (mod == null) return false;
+
+        int? fallbackId = null;
+        for (var i = 0; i < 100; i++)
         {
-            utf8->Dtor();
-            IMemorySpace.Free(utf8);
+            var e = mod->GetGearset(i);
+            if (e == null || !e->Flags.HasFlag(RaptureGearsetModule.GearsetFlag.Exists)) continue;
+            if (e->ClassJob != (byte)classJobId) continue;
+
+            if (!string.IsNullOrWhiteSpace(preferredName) && e->NameString == preferredName)
+            {
+                mod->EquipGearset(e->Id);
+                return true;
+            }
+            fallbackId ??= e->Id;
         }
+
+        if (fallbackId is int id)
+        {
+            mod->EquipGearset(id);
+            return true;
+        }
+        return false;
     }
 
     /// <summary>
@@ -210,15 +228,14 @@ public sealed unsafe class SimpleGatherService : IDisposable
         }
 
         var setName = GearsetNameFor(_wantedClassJobId);
-        if (string.IsNullOrWhiteSpace(setName))
+        if (!TryEquipGearsetForJob(_wantedClassJobId, setName))
         {
-            _log.Warning($"[SimpleGatherService] No gearset name configured for ClassJob {_wantedClassJobId} — set it in the config window");
+            _log.Warning($"[SimpleGatherService] No gearset found for ClassJob {_wantedClassJobId} — create one in-game (name in config is optional)");
             State = GatherState.Failed;
             return;
         }
 
-        _log.Information($"[SimpleGatherService] Swapping to gearset \"{setName}\" (ClassJob {_wantedClassJobId})");
-        ExecuteChatCommand($"/gearset change \"{setName}\"");
+        _log.Information($"[SimpleGatherService] Equipping gearset for ClassJob {_wantedClassJobId} (preferred name: \"{setName}\")");
         State = GatherState.SwappingJob;
         _stateDeadline = DateTime.UtcNow.AddSeconds(10);
     }
