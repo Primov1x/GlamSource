@@ -14,6 +14,7 @@ public class MainWindow : Window, IDisposable
 {
     private readonly IGlamourService _glamourService;
     private readonly ItemDetailWindow? _itemDetailWindow;
+    public Action? OnOpenCharacterGlamour;
     private string _lookupText = "";
     private IReadOnlyList<(uint id, string name)>? _lookupResults;
 
@@ -64,6 +65,10 @@ public class MainWindow : Window, IDisposable
 
     public override void Draw()
     {
+        if (ImGui.Button("Open Character Glamour"))
+            OnOpenCharacterGlamour?.Invoke();
+        ImGui.Spacing();
+
         ImGui.TextColored(new Vector4(0.9f, 0.7f, 0.2f, 1f), "Item Lookup");
         ImGui.SetNextItemWidth(300f);
         if (ImGui.InputTextWithHint("##item_lookup", "Search any item...",

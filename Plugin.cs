@@ -7,6 +7,7 @@ using GlamSource.Core;
 using GlamSource.Services;
 using GlamSource.Windows;
 
+using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -54,6 +55,7 @@ public class Plugin : IAsyncDalamudPlugin
     private readonly MainWindow mainWindow;
     private readonly ContextMenuService contextMenuService;
     private readonly ItemDetailWindow itemDetailWindow;
+    private readonly CharacterGlamourWindow characterGlamourWindow;
     private readonly UniversalisService? _universalisService;
     public readonly CraftingCostService CraftingCostService;
     public static IGlamourService? GlamourServiceOverride;
@@ -134,6 +136,10 @@ public class Plugin : IAsyncDalamudPlugin
             itemDetailWindow.ShowItem(itemId);
         });
 
+        characterGlamourWindow = new CharacterGlamourWindow(gameDataService, itemDetailWindow, TextureProvider, DataManager);
+        WindowSystem.AddWindow(characterGlamourWindow);
+        mainWindow.OnOpenCharacterGlamour = () => characterGlamourWindow.Toggle();
+
         WindowSystem.AddWindow(configWindow);
         WindowSystem.AddWindow(mainWindow);
 
@@ -165,6 +171,7 @@ public class Plugin : IAsyncDalamudPlugin
         configWindow.Dispose();
         mainWindow.Dispose();
         itemDetailWindow.Dispose();
+        characterGlamourWindow.Dispose();
         contextMenuService.Dispose();
         _universalisService?.Dispose();
         CraftingCostService?.Dispose();
@@ -175,7 +182,13 @@ public class Plugin : IAsyncDalamudPlugin
         await Task.CompletedTask;
     }
 
-    private void OnCommand(string command, string args) => mainWindow.Toggle();
+    private void OnCommand(string command, string args)
+    {
+        if (string.Equals(args?.Trim(), "char", StringComparison.OrdinalIgnoreCase))
+            characterGlamourWindow.Toggle();
+        else
+            mainWindow.Toggle();
+    }
 
     public void ToggleConfigUi() => configWindow.Toggle();
     public void ToggleMainUi() => mainWindow.Toggle();
