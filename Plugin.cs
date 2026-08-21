@@ -51,11 +51,9 @@ public class Plugin : IAsyncDalamudPlugin
     public readonly WindowSystem WindowSystem = new("GlamSource");
     public readonly GameDataService GameDataService;
 
-    private readonly ConfigWindow configWindow;
-    private readonly MainWindow mainWindow;
+    private readonly GlamSourceShellWindow shellWindow;
     private readonly ContextMenuService contextMenuService;
     private readonly ItemDetailWindow itemDetailWindow;
-    private readonly CharacterGlamourWindow characterGlamourWindow;
     private readonly UniversalisService? _universalisService;
     public readonly CraftingCostService CraftingCostService;
     public static IGlamourService? GlamourServiceOverride;
@@ -119,9 +117,6 @@ public class Plugin : IAsyncDalamudPlugin
 
         var goatImagePath = Path.Join(PluginInterface.AssemblyLocation.Directory?.FullName, "goat.png");
 
-        configWindow = new ConfigWindow(this);
-        mainWindow = new MainWindow(gameDataService, itemDetailWindow);
-
         var itemDetailService = new ItemDetailService(DataManager.GameData);
         var universalisHttpClient = new System.Net.Http.HttpClient();
         _universalisService = new UniversalisService(universalisHttpClient, "Shiva", "Light");
@@ -136,12 +131,17 @@ public class Plugin : IAsyncDalamudPlugin
             itemDetailWindow.ShowItem(itemId);
         });
 
-        characterGlamourWindow = new CharacterGlamourWindow(gameDataService, itemDetailWindow, TextureProvider, DataManager, ObjectTable, PluginInterface, Framework, Log);
-        WindowSystem.AddWindow(characterGlamourWindow);
-        mainWindow.OnOpenCharacterGlamour = () => characterGlamourWindow.Toggle();
-
-        WindowSystem.AddWindow(configWindow);
-        WindowSystem.AddWindow(mainWindow);
+        shellWindow = new GlamSourceShellWindow(
+            this,
+            GlamourServiceOverride ?? gameDataService,
+            itemDetailWindow,
+            TextureProvider,
+            DataManager,
+            ObjectTable,
+            PluginInterface,
+            Framework,
+            Log);
+        WindowSystem.AddWindow(shellWindow);
 
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
@@ -149,13 +149,15 @@ public class Plugin : IAsyncDalamudPlugin
         });
 
         PluginInterface.UiBuilder.Draw += WindowSystem.Draw;
-        PluginInterface.UiBuilder.OpenConfigUi += ToggleConfigUi;
+        PluginInterface.UiBuilder.OpenConfigUi += OpenConfigUi;
         PluginInterface.UiBuilder.OpenMainUi += ToggleMainUi;
 
         Log.Information($"===A cool log message from {PluginInterface.Manifest.Name}===");
 
         if (GlamourServiceOverride != null)
-            mainWindow.IsOpen = true;
+            shellWindow.IsOpen = true;
+        else
+            shellWindow.SwitchToTab((GlamSourceShellWindow.TabId)Configuration.SelectedTab);
     }
 
     public Task LoadAsync(CancellationToken cancellationToken) => Task.CompletedTask;
@@ -163,15 +165,13 @@ public class Plugin : IAsyncDalamudPlugin
     public async ValueTask DisposeAsync()
     {
         PluginInterface.UiBuilder.Draw -= WindowSystem.Draw;
-        PluginInterface.UiBuilder.OpenConfigUi -= ToggleConfigUi;
+        PluginInterface.UiBuilder.OpenConfigUi -= OpenConfigUi;
         PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUi;
 
         WindowSystem.RemoveAllWindows();
 
-        configWindow.Dispose();
-        mainWindow.Dispose();
+        shellWindow.Dispose();
         itemDetailWindow.Dispose();
-        characterGlamourWindow.Dispose();
         contextMenuService.Dispose();
         _universalisService?.Dispose();
         CraftingCostService?.Dispose();
@@ -184,12 +184,26 @@ public class Plugin : IAsyncDalamudPlugin
 
     private void OnCommand(string command, string args)
     {
-        if (string.Equals(args?.Trim(), "char", StringComparison.OrdinalIgnoreCase))
-            characterGlamourWindow.Toggle();
+        var arg = args?.Trim();
+        if (string.Equals(arg, "char", StringComparison.OrdinalIgnoreCase))
+        {
+            shellWindow.SwitchToTab(GlamSourceShellWindow.TabId.Character);
+        }
+        else if (string.Equals(arg, "settings", StringComparison.OrdinalIgnoreCase) || string.Equals(arg, "config", StringComparison.OrdinalIgnoreCase))
+        {
+            shellWindow.SwitchToTab(GlamSourceShellWindow.TabId.Settings);
+        }
         else
-            mainWindow.Toggle();
+        {
+            shellWindow.Toggle();
+        }
     }
 
-    public void ToggleConfigUi() => configWindow.Toggle();
-    public void ToggleMainUi() => mainWindow.Toggle();
+    public void OpenConfigUi()
+    {
+        shellWindow.IsOpen = true;
+        shellWindow.SwitchToTab(GlamSourceShellWindow.TabId.Settings);
+    }
+
+    public void ToggleMainUi() => shellWindow.Toggle();
 }
