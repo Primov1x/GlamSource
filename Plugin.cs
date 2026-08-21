@@ -124,7 +124,7 @@ public class Plugin : IAsyncDalamudPlugin
         _universalisService = new UniversalisService(universalisHttpClient, "Shiva", "Light");
         var craftingCostService = new CraftingCostService(itemDetailService, _universalisService!);
         CraftingCostService = craftingCostService;
-        itemDetailWindow = new ItemDetailWindow(itemDetailService, sourceService, _universalisService, textureProvider);
+        itemDetailWindow = new ItemDetailWindow(itemDetailService, sourceService, _universalisService, textureProvider, DataManager);
         itemDetailWindow.SetPlugin(this);
         WindowSystem.AddWindow(itemDetailWindow);
 

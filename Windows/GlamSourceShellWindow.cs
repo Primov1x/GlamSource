@@ -242,7 +242,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
                     ImGui.PushStyleColor(ImGuiCol.ButtonHovered, Vector4.Zero);
                     ImGui.PushStyleColor(ImGuiCol.ButtonActive, Vector4.Zero);
                     if (ImGui.Selectable($"{slot.ActualItemName} ({slot.ActualItemId})##worn_{idx}", false))
-                        _detailWindow?.ShowItem(slot.ActualItemId);
+                        _detailWindow?.Open(slot.ActualItemId, slot);
                     ImGui.PopStyleColor(3);
                 }
                 else
@@ -258,7 +258,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
                     ImGui.PushStyleColor(ImGuiCol.ButtonHovered, Vector4.Zero);
                     ImGui.PushStyleColor(ImGuiCol.ButtonActive, Vector4.Zero);
                     if (ImGui.Selectable($"{slot.GlamourItemName} ({slot.GlamourItemId})##glam_{idx}", false))
-                        _detailWindow?.ShowItem(slot.GlamourItemId.Value);
+                        _detailWindow?.Open(slot.GlamourItemId.Value, slot);
                     ImGui.PopStyleColor(4);
                 }
                 else
@@ -562,53 +562,77 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         _ => ApiEquipSlot.Unknown,
     };
 
+    // ponytail: BeginTable Gear/Glamour/Stain per slot, analogous to Lookup-Tab layout.
     private void DrawVanillaLayout()
     {
-        var iconSize = ImGui.GetFontSize() * 2.4f;
-        var iconVec = new Vector2(iconSize, iconSize);
-        var slotWidth = iconSize * 2 + 6;
-        var colWidth = slotWidth + ImGui.GetStyle().ItemSpacing.X;
+        DrawCenterCard();
+        ImGui.Separator();
 
-        foreach (var s in TopRow)
+        var iconEdge = ImGui.GetFontSize() * 1.8f;
+        var iconVec = new Vector2(iconEdge, iconEdge);
+
+        var order = new List<EquipmentSlotType>();
+        order.AddRange(TopRow);
+        for (var i = 0; i < Math.Max(LeftCol.Length, RightCol.Length); i++)
         {
-            var slot = _snapshot.FirstOrDefault(x => x.Slot == s);
-            DrawSlot(s, slot, iconVec);
+            if (i < LeftCol.Length) order.Add(LeftCol[i]);
+            if (i < RightCol.Length) order.Add(RightCol[i]);
+        }
+
+        if (!ImGui.BeginTable("##charVanillaTable", 4, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp))
+            return;
+
+        ImGui.TableSetupColumn("Slot", ImGuiTableColumnFlags.WidthFixed, ImGui.GetFontSize() * 7f);
+        ImGui.TableSetupColumn("Gear", ImGuiTableColumnFlags.WidthStretch);
+        ImGui.TableSetupColumn("Glamour", ImGuiTableColumnFlags.WidthStretch);
+        ImGui.TableSetupColumn("Stain", ImGuiTableColumnFlags.WidthFixed, ImGui.GetFontSize() * 8f);
+        ImGui.TableHeadersRow();
+
+        foreach (var st in order)
+        {
+            var slot = _snapshot.FirstOrDefault(x => x.Slot == st);
+            ImGui.TableNextRow();
+
+            ImGui.TableSetColumnIndex(0);
+            ImGui.TextUnformatted(st.ToString());
+
+            ImGui.TableSetColumnIndex(1);
+            DrawSlotItemCell($"gear_{st}", slot?.ActualItemId ?? 0u, slot?.ActualItemName, slot, iconVec, muted: false);
+
+            ImGui.TableSetColumnIndex(2);
+            var glamId = slot?.GlamourItemId ?? 0u;
+            var glamName = slot?.GlamourItemName;
+            var muted = slot == null || !slot.IsGlamoured || glamId == slot.ActualItemId;
+            DrawSlotItemCell($"glam_{st}", glamId, glamName, slot, iconVec, muted: muted);
+
+            ImGui.TableSetColumnIndex(3);
+            DrawStainCell(slot?.Stain0 ?? 0);
+        }
+
+        ImGui.EndTable();
+    }
+
+    private void DrawSlotItemCell(string id, uint itemId, string? name, EquipmentSlot? slot, Vector2 iconVec, bool muted)
+    {
+        if (itemId == 0)
+        {
+            ImGui.TextDisabled("(none)");
+            return;
+        }
+        ImGui.PushID(id);
+        var iconId = GetIconId(itemId);
+        if (iconId > 0)
+        {
+            var tex = _textures.GetFromGameIcon(new GameIconLookup(iconId)).GetWrapOrEmpty();
+            ImGui.Image(tex.Handle, iconVec);
+            if (ImGui.IsItemClicked() && slot != null)
+                _detailWindow?.Open(itemId, slot);
             ImGui.SameLine();
         }
-        ImGui.NewLine();
-        ImGui.Spacing();
-
-        var centerWidth = ImGui.GetFontSize() * 12f;
-        if (ImGui.BeginTable("##charLayout", 3, ImGuiTableFlags.BordersInnerV | ImGuiTableFlags.SizingFixedFit))
-        {
-            ImGui.TableSetupColumn("left", ImGuiTableColumnFlags.WidthFixed, colWidth);
-            ImGui.TableSetupColumn("center", ImGuiTableColumnFlags.WidthFixed, centerWidth);
-            ImGui.TableSetupColumn("right", ImGuiTableColumnFlags.WidthFixed, colWidth);
-
-            var rows = Math.Max(LeftCol.Length, RightCol.Length);
-            for (var r = 0; r < rows; r++)
-            {
-                ImGui.TableNextRow();
-
-                ImGui.TableSetColumnIndex(0);
-                if (r < LeftCol.Length)
-                {
-                    var s = LeftCol[r];
-                    DrawSlot(s, _snapshot.FirstOrDefault(x => x.Slot == s), iconVec);
-                }
-
-                ImGui.TableSetColumnIndex(1);
-                if (r == 0) DrawCenterCard();
-
-                ImGui.TableSetColumnIndex(2);
-                if (r < RightCol.Length)
-                {
-                    var s = RightCol[r];
-                    DrawSlot(s, _snapshot.FirstOrDefault(x => x.Slot == s), iconVec);
-                }
-            }
-            ImGui.EndTable();
-        }
+        var label = name ?? $"#{itemId}";
+        if (muted) ImGui.TextDisabled(label);
+        else ImGui.TextUnformatted(label);
+        ImGui.PopID();
     }
 
     private void DrawCenterCard()
@@ -637,42 +661,6 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         ImGui.Separator();
         ImGui.TextUnformatted(job);
         ImGui.TextUnformatted(level);
-    }
-
-    private void DrawSlot(EquipmentSlotType slotType, EquipmentSlot? slot, Vector2 iconVec)
-    {
-        var actualId = slot?.ActualItemId ?? 0u;
-        var actualName = slot?.ActualItemName ?? "-";
-        var glamId = slot?.GlamourItemId ?? 0u;
-        var glamName = slot?.GlamourItemName;
-
-        ImGui.BeginGroup();
-        ImGui.PushID($"slot{slotType}");
-        DrawIcon("actual", actualId, actualName, slotType, iconVec);
-        ImGui.SameLine(0, 2);
-        DrawIcon("glam", glamId, glamName ?? "(no glamour)", slotType, iconVec);
-        ImGui.PopID();
-        ImGui.EndGroup();
-    }
-
-    private void DrawIcon(string tag, uint itemId, string tooltipName, EquipmentSlotType slotType, Vector2 iconVec)
-    {
-        ImGui.PushID(tag);
-        var iconId = itemId > 0 ? GetIconId(itemId) : 0u;
-        if (iconId > 0)
-        {
-            var tex = _textures.GetFromGameIcon(new GameIconLookup(iconId)).GetWrapOrEmpty();
-            ImGui.Image(tex.Handle, iconVec);
-            if (ImGui.IsItemClicked() && itemId > 0)
-                _detailWindow.ShowItem(itemId);
-        }
-        else
-        {
-            ImGui.Button("-", iconVec);
-        }
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip($"{slotType} ({tag})\n{tooltipName}");
-        ImGui.PopID();
     }
 
     private uint GetIconId(uint itemId)

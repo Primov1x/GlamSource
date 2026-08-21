@@ -16,6 +16,7 @@ using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using GlamSource.Core;
+using Lumina.Excel.Sheets;
 
 namespace GlamSource.Windows;
 
@@ -25,7 +26,10 @@ public class ItemDetailWindow : Window, IDisposable
     private readonly IItemSourceService _sourceService;
     private readonly IUniversalisService _universalisService;
     private readonly ITextureProvider _textureProvider;
+    private readonly IDataManager? _data;
     private Plugin _plugin = null!;
+    // ponytail: optional per-slot context (Gear/Glamour/Stain snapshot). null = old single-item mode.
+    private EquipmentSlot? _slotContext;
     private readonly Stack<uint> _history = new();
     private uint? _showingItemId;
     private bool _isOpen;
@@ -117,13 +121,14 @@ public class ItemDetailWindow : Window, IDisposable
             "OTHER"),
     };
 
-    public ItemDetailWindow(IItemDetailService detailService, IItemSourceService sourceService, IUniversalisService universalisService, ITextureProvider? textureProvider = null)
+    public ItemDetailWindow(IItemDetailService detailService, IItemSourceService sourceService, IUniversalisService universalisService, ITextureProvider? textureProvider = null, IDataManager? data = null)
         : base($"Item Detail###ItemDetailWindow", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
     {
         _detailService = detailService;
         _sourceService = sourceService;
         _universalisService = universalisService;
         _textureProvider = textureProvider;
+        _data = data;
         SizeConstraints = new WindowSizeConstraints
         {
             MinimumSize = new Vector2(380, 250),
@@ -143,7 +148,23 @@ public class ItemDetailWindow : Window, IDisposable
 
     public void ShowItem(uint itemId)
     {
+        // ponytail: no slot context in single-item mode.
+        _slotContext = null;
         _history.Clear();
+        LoadItemDetail(itemId);
+        _craftingResult = null;
+        Task.Run(async () =>
+        {
+            var service = _plugin?.CraftingCostService;
+            _craftingResult = service != null ? await service.GetCostBreakdownAsync(itemId) : null;
+        });
+    }
+
+    // ponytail: slot-aware entry; renders 3-row Gear/Glamour/Stain diff above item info.
+    public void Open(uint itemId, EquipmentSlot slot)
+    {
+        _history.Clear();
+        _slotContext = slot;
         LoadItemDetail(itemId);
         _craftingResult = null;
         Task.Run(async () =>
@@ -222,6 +243,9 @@ public class ItemDetailWindow : Window, IDisposable
         }
 
         DrawItemHeader(detail);
+
+        if (_slotContext != null)
+            DrawSlotContext(_slotContext);
 
         if (_marketInfo != null && _marketItemId == detail.ItemId)
             DrawMarketPricesCompact(_marketInfo);
@@ -304,6 +328,80 @@ public class ItemDetailWindow : Window, IDisposable
             OpenMarketPrices(detail.ItemId);
         }
         ImGui.Spacing();
+    }
+
+    // ponytail: three-row per-slot diff shown when opened with slot context.
+    // Gear row = ActualItem, Glamour row muted when not glamoured (or equals gear), Stain row = Stain0 swatch.
+    private void DrawSlotContext(EquipmentSlot slot)
+    {
+        var iconEdge = ImGui.GetFontSize() * 1.6f;
+        var iconVec = new Vector2(iconEdge, iconEdge);
+
+        ImGui.Separator();
+        ImGui.TextColored(new Vector4(0.9f, 0.7f, 0.2f, 1f), $"Slot: {slot.Slot}");
+
+        // Gear row
+        DrawSlotIconRow("Gear", slot.ActualItemId, slot.ActualItemName, iconVec, muted: false);
+
+        // Glamour row
+        var glamId = slot.GlamourItemId ?? 0u;
+        var glamName = slot.GlamourItemName ?? "(none)";
+        var glamMuted = !slot.IsGlamoured || glamId == slot.ActualItemId;
+        DrawSlotIconRow("Glam", glamId, glamName, iconVec, muted: glamMuted);
+
+        // Stain row
+        ImGui.TextDisabled("Stain:");
+        ImGui.SameLine();
+        DrawSlotStain(slot.Stain0);
+
+        ImGui.Spacing();
+    }
+
+    private void DrawSlotIconRow(string tag, uint itemId, string name, Vector2 iconVec, bool muted)
+    {
+        ImGui.TextDisabled(tag + ":");
+        ImGui.SameLine();
+        if (_textureProvider != null && itemId > 0 && _data != null)
+        {
+            var sheet = _data.GetExcelSheet<Item>();
+            uint iconId = 0;
+            if (sheet != null && sheet.TryGetRow(itemId, out var row)) iconId = row.Icon;
+            if (iconId > 0)
+            {
+                var tex = _textureProvider.GetFromGameIcon(new GameIconLookup(iconId)).GetWrapOrEmpty();
+                ImGui.Image(tex.Handle, iconVec);
+                ImGui.SameLine();
+            }
+        }
+        if (muted) ImGui.TextDisabled(name);
+        else ImGui.TextUnformatted(name);
+    }
+
+    private void DrawSlotStain(byte stainId)
+    {
+        if (stainId == 0 || _data == null)
+        {
+            ImGui.TextDisabled("Unbemalt");
+            return;
+        }
+        var sheet = _data.GetExcelSheet<Stain>();
+        var row = sheet?.GetRowOrDefault(stainId);
+        if (row is null)
+        {
+            ImGui.Text($"#{stainId}");
+            return;
+        }
+        var packed = row.Value.Color;
+        var b = (packed >> 16) & 0xFF;
+        var g = (packed >> 8) & 0xFF;
+        var r = packed & 0xFF;
+        var color = new Vector4(r / 255f, g / 255f, b / 255f, 1f);
+        var sz = ImGui.GetFontSize();
+        var p = ImGui.GetCursorScreenPos();
+        ImGui.GetWindowDrawList().AddRectFilled(p, new Vector2(p.X + sz, p.Y + sz), ImGui.ColorConvertFloat4ToU32(color));
+        ImGui.Dummy(new Vector2(sz, sz));
+        ImGui.SameLine();
+        ImGui.TextUnformatted(row.Value.Name.ExtractText());
     }
 
     private void DrawMarketPricesCompact(MarketInfo market)
