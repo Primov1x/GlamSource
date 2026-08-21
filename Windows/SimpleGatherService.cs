@@ -3,9 +3,15 @@ using System.Linq;
 using System.Numerics;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Objects.Types;
+using Dalamud.Memory;
 using Dalamud.Plugin.Services;
+using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
+using FFXIVClientStructs.FFXIV.Client.Game.UI;
+using FFXIVClientStructs.FFXIV.Client.System.Memory;
+using FFXIVClientStructs.FFXIV.Client.System.String;
+using FFXIVClientStructs.FFXIV.Client.UI;
 using GlamSource.Core;
 
 namespace GlamSource.Windows;
@@ -14,6 +20,9 @@ public enum GatherState
 {
     Idle,
     Teleporting,
+    SwappingJob,
+    Mounting,
+    FlyingToArea,
     MovingToNode,
     Interacting,
     WaitingForGatherWindow,
@@ -42,6 +51,7 @@ public sealed unsafe class SimpleGatherService : IDisposable
     private readonly IGameGui _gameGui;
     private readonly IPluginLog _log;
     private readonly IFramework _framework;
+    private readonly Func<Configuration> _configAccessor;
 
     public GatherState State { get; private set; } = GatherState.Idle;
     public bool IsDone => State is GatherState.Done or GatherState.Failed;
@@ -49,7 +59,14 @@ public sealed unsafe class SimpleGatherService : IDisposable
     private uint _targetItemId;
     private IGameObject? _targetNode;
     private uint _targetTerritoryId;
+    private GatheringLocation? _targetLocation;
+    private Vector3 _targetWorld;
     private DateTime _teleportDeadline;
+    private DateTime _stateDeadline;
+    private uint _wantedClassJobId; // 0 = no swap wanted
+    // Mount Roulette (id 24 GeneralAction). Used when config MountId = 0.
+    private const uint MountRouletteGeneralAction = 24;
+    private const float FlyArriveRange = 20f;
 
     public SimpleGatherService(
         IGatheringLocationService locations,
@@ -60,7 +77,8 @@ public sealed unsafe class SimpleGatherService : IDisposable
         ICondition condition,
         IGameGui gameGui,
         IPluginLog log,
-        IFramework framework)
+        IFramework framework,
+        Func<Configuration> configAccessor)
     {
         _locations = locations;
         _nav = nav;
@@ -71,8 +89,44 @@ public sealed unsafe class SimpleGatherService : IDisposable
         _gameGui = gameGui;
         _log = log;
         _framework = framework;
+        _configAccessor = configAccessor;
 
         _framework.Update += OnUpdate;
+    }
+
+    // ClassJob ids: Miner=16, Botanist=17, Fisher=18
+    private const uint JobMiner = 16;
+    private const uint JobBotanist = 17;
+    private const uint JobFisher = 18;
+
+    private static uint WantedJobFor(string gatheringTypeName) => gatheringTypeName switch
+    {
+        "Mining" or "Quarrying" => JobMiner,
+        "Logging" or "Harvesting" => JobBotanist,
+        "Spearfishing" => JobFisher,
+        _ => 0,
+    };
+
+    private string? GearsetNameFor(uint jobId) => jobId switch
+    {
+        JobMiner => _configAccessor().MinerSetName,
+        JobBotanist => _configAccessor().BotanistSetName,
+        JobFisher => _configAccessor().FisherSetName,
+        _ => null,
+    };
+
+    /// <summary>Sends /gearset change "name" via UIModule.ProcessChatBoxEntry.</summary>
+    private void ExecuteChatCommand(string command)
+    {
+        var uiModule = UIModule.Instance();
+        if (uiModule == null) return;
+        var utf8 = Utf8String.FromString(command);
+        try { uiModule->ProcessChatBoxEntry(utf8); }
+        finally
+        {
+            utf8->Dtor();
+            IMemorySpace.Free(utf8);
+        }
     }
 
     /// <summary>
@@ -90,7 +144,7 @@ public sealed unsafe class SimpleGatherService : IDisposable
 
     public StartResult TryStartGathering(uint itemId)
     {
-        if (State is GatherState.Teleporting or GatherState.MovingToNode or GatherState.Interacting or GatherState.WaitingForGatherWindow or GatherState.Gathering)
+        if (State is GatherState.Teleporting or GatherState.Mounting or GatherState.FlyingToArea or GatherState.MovingToNode or GatherState.Interacting or GatherState.WaitingForGatherWindow or GatherState.Gathering)
             return StartResult.Fail("Already gathering — stop current run first");
 
         var locations = _locations.GetLocations(itemId);
@@ -123,9 +177,10 @@ public sealed unsafe class SimpleGatherService : IDisposable
                 if (!_teleporter.Teleport(aetheryteId.Value))
                     continue;
                 _targetTerritoryId = loc.TerritoryId;
+                _targetLocation = loc;
                 _teleportDeadline = DateTime.UtcNow.AddSeconds(30);
                 State = GatherState.Teleporting;
-                _log.Information($"[SimpleGatherService] Teleporting to aetheryte {aetheryteId} in territory {loc.TerritoryId} ({loc.TerritoryName})");
+                _log.Information($"[SimpleGatherService] Teleporting to aetheryte {aetheryteId} in territory {loc.TerritoryId} ({loc.TerritoryName}) — target XZ ({loc.WorldX:F1}, {loc.WorldZ:F1})");
                 return StartResult.Ok();
             }
 
@@ -134,18 +189,120 @@ public sealed unsafe class SimpleGatherService : IDisposable
             return StartResult.Fail($"Wrong zone and no known aetheryte — travel manually to: {wanted}");
         }
 
-        var node = FindNearestNodeObject();
-        if (node == null)
+        // Same-zone: fly to the known coord first (ObjectTable's ~50m radius won't see
+        // a node from a random spawn point). ScanForNodeThenMove kicks in on arrival.
+        _targetLocation = locations.First(l => l.TerritoryId == currentTerritory);
+        _targetTerritoryId = currentTerritory;
+        BeginJobSwapOrMount();
+        return StartResult.Ok();
+    }
+
+    /// <summary>
+    /// Gate before mounting: swap gearset if wrong job, else go straight to mount decision.
+    /// </summary>
+    private void BeginJobSwapOrMount()
+    {
+        _wantedClassJobId = _targetLocation != null ? WantedJobFor(_targetLocation.GatheringTypeName) : 0;
+        if (_wantedClassJobId == 0 || _objectTable.LocalPlayer?.ClassJob.RowId == _wantedClassJobId)
         {
-            _log.Warning($"[SimpleGatherService] In correct territory {currentTerritory} but no GatheringPoint object in ObjectTable for item {itemId}");
-            State = GatherState.Failed;
-            return StartResult.Fail("In correct zone but no node visible — move closer to a node area");
+            DecideMountOrWalk();
+            return;
         }
 
-        _targetNode = node;
-        State = GatherState.MovingToNode;
-        _nav.PathfindAndMoveTo(node.Position);
-        return StartResult.Ok();
+        var setName = GearsetNameFor(_wantedClassJobId);
+        if (string.IsNullOrWhiteSpace(setName))
+        {
+            _log.Warning($"[SimpleGatherService] No gearset name configured for ClassJob {_wantedClassJobId} — set it in the config window");
+            State = GatherState.Failed;
+            return;
+        }
+
+        _log.Information($"[SimpleGatherService] Swapping to gearset \"{setName}\" (ClassJob {_wantedClassJobId})");
+        ExecuteChatCommand($"/gearset change \"{setName}\"");
+        State = GatherState.SwappingJob;
+        _stateDeadline = DateTime.UtcNow.AddSeconds(10);
+    }
+
+    /// <summary>
+    /// Skips mounting entirely when the target coord is within MountUpDistance; otherwise mounts up.
+    /// </summary>
+    private void DecideMountOrWalk()
+    {
+        if (_targetLocation == null)
+        {
+            State = GatherState.Failed;
+            return;
+        }
+        var player = _objectTable.LocalPlayer;
+        if (player != null)
+        {
+            var flatDx = _targetLocation.WorldX - player.Position.X;
+            var flatDz = _targetLocation.WorldZ - player.Position.Z;
+            var flat = MathF.Sqrt(flatDx * flatDx + flatDz * flatDz);
+            if (flat <= _configAccessor().MountUpDistance)
+            {
+                _log.Information($"[SimpleGatherService] Node within {flat:F1}m — walking, no mount");
+                BeginFlyingToArea();
+                return;
+            }
+        }
+        BeginMounting();
+    }
+
+    private static unsafe bool IsMountUnlocked(uint mountId)
+    {
+        var ps = PlayerState.Instance();
+        return ps != null && ps->IsMountUnlocked(mountId);
+    }
+
+    private void BeginMounting()
+    {
+        if (_condition[ConditionFlag.Mounted] || _condition[ConditionFlag.InFlight])
+        {
+            BeginFlyingToArea();
+            return;
+        }
+
+        var am = ActionManager.Instance();
+        var mountId = _configAccessor().AutoGatherMountId;
+
+        // GBR pattern: specific mount if unlocked & ready → else Roulette → else give up.
+        if (mountId != 0 && IsMountUnlocked(mountId) && am->GetActionStatus(ActionType.Mount, mountId) == 0)
+        {
+            am->UseAction(ActionType.Mount, mountId);
+        }
+        else if (am->GetActionStatus(ActionType.GeneralAction, MountRouletteGeneralAction) == 0)
+        {
+            am->UseAction(ActionType.GeneralAction, MountRouletteGeneralAction);
+        }
+        else
+        {
+            _log.Information("[SimpleGatherService] No usable mount available — walking");
+            BeginFlyingToArea();
+            return;
+        }
+
+        State = GatherState.Mounting;
+        _stateDeadline = DateTime.UtcNow.AddSeconds(5);
+    }
+
+    private void BeginFlyingToArea()
+    {
+        if (_targetLocation == null)
+        {
+            State = GatherState.Failed;
+            return;
+        }
+
+        // Try to snap Y to the actual floor near the target — vnavmesh needs a real 3D coord for flying.
+        var approx = _targetLocation.ApproxWorld with { Y = 1024f };
+        _targetWorld = _nav.PointOnFloor(approx, allowUnlandable: true, halfExtentXZ: 20f)
+                       ?? _targetLocation.ApproxWorld;
+
+        State = GatherState.FlyingToArea;
+        _stateDeadline = DateTime.UtcNow.AddSeconds(120);
+        _nav.PathfindAndMoveTo(_targetWorld, fly: true);
+        _log.Information($"[SimpleGatherService] Flying to node area at ({_targetWorld.X:F1}, {_targetWorld.Y:F1}, {_targetWorld.Z:F1})");
     }
 
     // ponytail: keep bool overload so existing callers compile; new callers should prefer TryStartGathering for the reason.
@@ -191,6 +348,15 @@ public sealed unsafe class SimpleGatherService : IDisposable
             case GatherState.Teleporting:
                 TickTeleporting();
                 break;
+            case GatherState.SwappingJob:
+                TickSwappingJob();
+                break;
+            case GatherState.Mounting:
+                TickMounting();
+                break;
+            case GatherState.FlyingToArea:
+                TickFlyingToArea();
+                break;
             case GatherState.MovingToNode:
                 TickMoving();
                 break;
@@ -220,9 +386,9 @@ public sealed unsafe class SimpleGatherService : IDisposable
                 State = GatherState.Failed;
                 return;
             }
-            _targetNode = node;
-            State = GatherState.MovingToNode;
-            _nav.PathfindAndMoveTo(node.Position);
+            // Teleport landed — but the node likely spawns outside ObjectTable's ~50m radius
+            // from the aetheryte. Job swap → mount + fly to the known Lumina coord first, then scan.
+            BeginJobSwapOrMount();
             return;
         }
 
@@ -231,6 +397,70 @@ public sealed unsafe class SimpleGatherService : IDisposable
             _log.Warning($"[SimpleGatherService] Teleport timed out waiting for territory {_targetTerritoryId} (still in {_clientState.TerritoryType})");
             State = GatherState.Failed;
         }
+    }
+
+    private void TickSwappingJob()
+    {
+        if (_objectTable.LocalPlayer?.ClassJob.RowId == _wantedClassJobId)
+        {
+            DecideMountOrWalk();
+            return;
+        }
+        if (DateTime.UtcNow > _stateDeadline)
+        {
+            _log.Warning($"[SimpleGatherService] Gearset swap to ClassJob {_wantedClassJobId} timed out — check the configured gearset name");
+            State = GatherState.Failed;
+        }
+    }
+
+    private void TickMounting()
+    {
+        if (_condition[ConditionFlag.Mounted] || _condition[ConditionFlag.InFlight])
+        {
+            BeginFlyingToArea();
+            return;
+        }
+
+        if (DateTime.UtcNow > _stateDeadline)
+        {
+            // Mount didn't take (no flying mount unlocked, on-cooldown, in combat zone).
+            // ponytail: fall through to ground nav — vnavmesh still tries, worst case: fails cleanly.
+            _log.Information("[SimpleGatherService] Mount did not engage — proceeding on foot");
+            BeginFlyingToArea();
+        }
+    }
+
+    private void TickFlyingToArea()
+    {
+        var player = _objectTable.LocalPlayer;
+        if (player == null)
+            return;
+
+        var dist = Vector3.Distance(player.Position, _targetWorld);
+        var arrived = dist <= FlyArriveRange || !_nav.IsRunning;
+        if (!arrived)
+        {
+            if (DateTime.UtcNow > _stateDeadline)
+            {
+                _log.Warning($"[SimpleGatherService] Fly-to-area timed out (dist {dist:F1})");
+                _nav.Stop();
+                State = GatherState.Failed;
+            }
+            return;
+        }
+
+        _nav.Stop();
+        var node = FindNearestNodeObject();
+        if (node == null)
+        {
+            _log.Warning($"[SimpleGatherService] Reached target coord ({_targetWorld.X:F1},{_targetWorld.Z:F1}) but no GatheringPoint visible in ObjectTable");
+            State = GatherState.Failed;
+            return;
+        }
+
+        _targetNode = node;
+        State = GatherState.MovingToNode;
+        _nav.PathfindAndMoveTo(node.Position);
     }
 
     private void TickMoving()
@@ -246,6 +476,12 @@ public sealed unsafe class SimpleGatherService : IDisposable
         if (dist <= InteractRange)
         {
             _nav.Stop();
+            // Dismount before interact — gathering fails while mounted.
+            if (_condition[ConditionFlag.Mounted] || _condition[ConditionFlag.InFlight])
+            {
+                ActionManager.Instance()->UseAction(ActionType.Mount, 0); // 0 = dismount (per GBR)
+                return; // wait a frame for dismount to complete
+            }
             var target = (GameObject*)_targetNode.Address;
             TargetSystem.Instance()->OpenObjectInteraction(target);
             State = GatherState.Interacting;

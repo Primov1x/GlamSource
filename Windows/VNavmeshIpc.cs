@@ -18,6 +18,7 @@ public class VNavmeshIpc
     private readonly ICallGateSubscriber<Vector3, bool, bool>? _pathfindAndMoveTo;
     private readonly ICallGateSubscriber<object>? _stop;
     private readonly ICallGateSubscriber<bool>? _isRunning;
+    private readonly ICallGateSubscriber<Vector3, bool, float, Vector3?>? _pointOnFloor;
 
     public VNavmeshIpc(IDalamudPluginInterface pi)
     {
@@ -27,6 +28,7 @@ public class VNavmeshIpc
             _pathfindAndMoveTo = pi.GetIpcSubscriber<Vector3, bool, bool>("vnavmesh.SimpleMove.PathfindAndMoveTo");
             _stop = pi.GetIpcSubscriber<object>("vnavmesh.Path.Stop");
             _isRunning = pi.GetIpcSubscriber<bool>("vnavmesh.Path.IsRunning");
+            _pointOnFloor = pi.GetIpcSubscriber<Vector3, bool, float, Vector3?>("vnavmesh.Query.Mesh.PointOnFloor");
         }
         catch
         {
@@ -35,7 +37,19 @@ public class VNavmeshIpc
             _pathfindAndMoveTo = null;
             _stop = null;
             _isRunning = null;
+            _pointOnFloor = null;
         }
+    }
+
+    /// <summary>
+    /// Snap a rough coordinate to the actual mesh floor. Used to resolve a valid Y
+    /// after we compute XZ from Lumina map data (which has no altitude).
+    /// </summary>
+    public Vector3? PointOnFloor(Vector3 near, bool allowUnlandable = true, float halfExtentXZ = 5f)
+    {
+        if (_pointOnFloor == null) return null;
+        try { return _pointOnFloor.HasFunction ? _pointOnFloor.InvokeFunc(near, allowUnlandable, halfExtentXZ) : null; }
+        catch { return null; }
     }
 
     /// <summary>Whether vnavmesh IPC is available and its navmesh is loaded/ready.</summary>

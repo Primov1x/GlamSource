@@ -1,3 +1,4 @@
+using System.Numerics;
 using Lumina;
 using Lumina.Excel.Sheets;
 
@@ -5,14 +6,21 @@ namespace GlamSource.Core;
 
 /// <summary>
 /// One gather point (Mining/Botany node) where an item can be collected.
+/// WorldXZ is derived directly from Lumina's ExportedGatheringPoint.X/Y —
+/// these are already ~game-world XZ (identity through NodeToMap + IntegerToInternal
+/// up to ~0.45 unit), so no map SizeFactor/OffsetX correction is needed for pathing.
+/// Y is unknown from Lumina; resolve at nav time via vnavmesh PointOnFloor.
 /// </summary>
 public record GatheringLocation(
     uint TerritoryId,
     string? TerritoryName,
     string GatheringTypeName,
     int GatheringLevel,
-    float MapX,
-    float MapY);
+    float WorldX,
+    float WorldZ)
+{
+    public Vector3 ApproxWorld => new(WorldX, 0f, WorldZ);
+}
 
 public interface IGatheringLocationService
 {
@@ -104,8 +112,8 @@ public sealed class GatheringLocationService : IGatheringLocationService
                         TerritoryName: territoryName,
                         GatheringTypeName: typeName,
                         GatheringLevel: baseNode.GatheringLevel,
-                        MapX: coordRow?.X ?? 0f,
-                        MapY: coordRow?.Y ?? 0f);
+                        WorldX: coordRow?.X ?? 0f,
+                        WorldZ: coordRow?.Y ?? 0f);
 
                     if (!_byItemId.TryGetValue(itemId, out var list))
                         _byItemId[itemId] = list = new List<GatheringLocation>();
