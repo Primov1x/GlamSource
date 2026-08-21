@@ -7,6 +7,7 @@ using Dalamud.Interface.Textures;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using GlamSource.Core;
 using Glamourer.Api.Enums;
 using Glamourer.Api.IpcSubscribers;
@@ -23,8 +24,16 @@ public class CharacterGlamourWindow : Window, IDisposable
     private readonly IDataManager _data;
     private readonly IObjectTable _objectTable;
     private readonly IDalamudPluginInterface _pi;
+    private readonly IFramework _framework;
     private readonly IPluginLog _log;
     private string? _lastApplyStatus;
+    private string? _lastPreviewStatus;
+
+    // ponytail: single-tick queue drained via Framework.Update; mirrors CriticalCommonLib TryOn.cs pattern.
+    // AgentTryon replaces the fitting-room's item for the target slot per call, so we spread the calls across ticks.
+    private readonly Queue<(uint itemId, uint glamId)> _tryOnQueue = new();
+    private int _tryOnDelay;
+    private bool _frameworkHooked;
 
     private IReadOnlyList<EquipmentSlot> _snapshot = Array.Empty<EquipmentSlot>();
     private bool _pinned;
@@ -38,7 +47,7 @@ public class CharacterGlamourWindow : Window, IDisposable
     private static readonly EquipmentSlotType[] RightCol =
         { EquipmentSlotType.Earrings, EquipmentSlotType.Necklace, EquipmentSlotType.Bracelets, EquipmentSlotType.RingRight, EquipmentSlotType.RingLeft };
 
-    public CharacterGlamourWindow(IGlamourService glamour, ItemDetailWindow detailWindow, ITextureProvider textures, IDataManager data, IObjectTable objectTable, IDalamudPluginInterface pi, IPluginLog log)
+    public CharacterGlamourWindow(IGlamourService glamour, ItemDetailWindow detailWindow, ITextureProvider textures, IDataManager data, IObjectTable objectTable, IDalamudPluginInterface pi, IFramework framework, IPluginLog log)
         : base("Character Glamour")
     {
         _glamour = glamour;
@@ -47,13 +56,21 @@ public class CharacterGlamourWindow : Window, IDisposable
         _data = data;
         _objectTable = objectTable;
         _pi = pi;
+        _framework = framework;
         _log = log;
 
         SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(480, 320) };
         SizeCondition = ImGuiCond.FirstUseEver;
     }
 
-    public void Dispose() { }
+    public void Dispose()
+    {
+        if (_frameworkHooked)
+        {
+            _framework.Update -= OnFrameworkDrainTryOn;
+            _frameworkHooked = false;
+        }
+    }
 
     public override void Draw()
     {
@@ -121,6 +138,22 @@ public class CharacterGlamourWindow : Window, IDisposable
             ImGui.SameLine();
             ImGui.TextDisabled(_lastApplyStatus);
         }
+
+        // ponytail: Try-On preview — opens the game's Fitting Room with target's glamour queued slot-by-slot.
+        ImGui.SameLine();
+        var canPreview = _snapshot.Count > 0;
+        if (!canPreview) ImGui.BeginDisabled();
+        if (ImGui.SmallButton("Preview via Try-On"))
+            QueueTryOnPreview();
+        if (!canPreview) ImGui.EndDisabled();
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Opens the vanilla Fitting Room and queues each slot (glamour if set, else actual).\nWeapons are skipped. This is the game's own 3D preview — separate window.");
+
+        if (!string.IsNullOrEmpty(_lastPreviewStatus))
+        {
+            ImGui.SameLine();
+            ImGui.TextDisabled(_lastPreviewStatus);
+        }
     }
 
     private bool IsGlamourerInstalled()
@@ -167,6 +200,63 @@ public class CharacterGlamourWindow : Window, IDisposable
         {
             _log.Error(ex, "[GlamSource] Apply target glamour failed");
             _lastApplyStatus = "Failed — Glamourer IPC error.";
+        }
+    }
+
+    private void QueueTryOnPreview()
+    {
+        _tryOnQueue.Clear();
+        var queued = 0;
+        foreach (var slot in _snapshot)
+        {
+            // Weapons: same reason as apply — model-family mismatches can fail loudly.
+            if (slot.Slot == EquipmentSlotType.MainHand || slot.Slot == EquipmentSlotType.OffHand)
+                continue;
+
+            // Prefer the visible (glamoured) appearance; fall back to actual gear.
+            var itemId = slot.GlamourItemId ?? slot.ActualItemId;
+            if (itemId == 0) continue;
+
+            _tryOnQueue.Enqueue((itemId, 0));
+            queued++;
+        }
+
+        if (queued == 0)
+        {
+            _lastPreviewStatus = "Nothing to preview.";
+            return;
+        }
+
+        if (!_frameworkHooked)
+        {
+            _framework.Update += OnFrameworkDrainTryOn;
+            _frameworkHooked = true;
+        }
+        _tryOnDelay = 0;
+        _lastPreviewStatus = $"Queued {queued} slots — check Fitting Room.";
+    }
+
+    private unsafe void OnFrameworkDrainTryOn(IFramework framework)
+    {
+        if (_tryOnQueue.Count == 0)
+        {
+            _framework.Update -= OnFrameworkDrainTryOn;
+            _frameworkHooked = false;
+            return;
+        }
+        if (_tryOnDelay-- > 0) return;
+
+        try
+        {
+            var (itemId, _) = _tryOnQueue.Dequeue();
+            // AgentTryon.TryOn(openerAddonId, itemId, stain0, stain1, glamourItemId, applyCompanyCrest)
+            AgentTryon.TryOn(0, itemId, 0, 0, 0, false);
+            _tryOnDelay = 1;
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"[GlamSource] TryOn drain error: {ex.Message}");
+            _tryOnDelay = 5;
         }
     }
 

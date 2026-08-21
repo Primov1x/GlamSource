@@ -136,7 +136,7 @@ public class Plugin : IAsyncDalamudPlugin
             itemDetailWindow.ShowItem(itemId);
         });
 
-        characterGlamourWindow = new CharacterGlamourWindow(gameDataService, itemDetailWindow, TextureProvider, DataManager, ObjectTable, PluginInterface, Log);
+        characterGlamourWindow = new CharacterGlamourWindow(gameDataService, itemDetailWindow, TextureProvider, DataManager, ObjectTable, PluginInterface, Framework, Log);
         WindowSystem.AddWindow(characterGlamourWindow);
         mainWindow.OnOpenCharacterGlamour = () => characterGlamourWindow.Toggle();
 
