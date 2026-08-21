@@ -10,6 +10,7 @@ using Dalamud.Game.Text.SeStringHandling.Payloads;
 
 using Dalamud.Interface;
 using Dalamud.Interface.Textures;
+using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
@@ -227,23 +228,48 @@ public class ItemDetailWindow : Window, IDisposable
         else if (_marketLoading && _marketItemId == detail.ItemId)
             ImGui.TextDisabled("Loading prices...");
 
+        // ponytail: bordered child gives the Questionable-style section panel look without a new helper.
         SectionHeader("SOURCES");
         ImGui.Spacing();
-
-        DrawSourceCards(detail);
-        DrawGatheringActionButton(detail);
+        if (ImGui.BeginChild("##sourcesPanel", new Vector2(0, 0), true))
+        {
+            DrawSourceCards(detail);
+            DrawGatheringActionButton(detail);
+        }
+        ImGui.EndChild();
 
         if (_plugin?.Configuration?.ShowCraftingSavings == true && _craftingResult != null)
         {
             SectionHeader("CRAFTING SAVINGS");
             ImGui.Spacing();
-            DrawCraftingSavings();
+            if (ImGui.BeginChild("##craftingSavingsPanel", new Vector2(0, 0), true))
+            {
+                DrawCraftingSavings();
+            }
+            ImGui.EndChild();
         }
+    }
+
+    // ponytail: Questionable-style rounded frames; pushed in PreDraw so ChildWindows/popups inherit them.
+    public override void PreDraw()
+    {
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, 8f);
+        ImGui.PushStyleVar(ImGuiStyleVar.ChildRounding, 6f);
+        ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 5f);
+        ImGui.PushStyleVar(ImGuiStyleVar.PopupRounding, 6f);
+        ImGui.PushStyleVar(ImGuiStyleVar.GrabRounding, 4f);
+    }
+
+    public override void PostDraw()
+    {
+        ImGui.PopStyleVar(5);
     }
 
     private void DrawItemHeader(ItemDetail detail)
     {
-        var iconSize = new Vector2(40f, 40f);
+        // ponytail: icon size in font units — respects user Dalamud font scale, no hardcoded pixels.
+        var iconEdge = ImGui.GetFontSize() * 3f;
+        var iconSize = new Vector2(iconEdge, iconEdge);
         if (_textureProvider != null && detail.IconId > 0)
         {
             var iconTexture = _textureProvider.GetFromGameIcon(new GameIconLookup(detail.IconId)).GetWrapOrEmpty();
@@ -394,6 +420,61 @@ public class ItemDetailWindow : Window, IDisposable
         }
     }
 
+    // ponytail: draw-list channels so the card background paints behind the content,
+    // same pattern as Questionable's CardScope (QstWidgets).
+    private sealed class SourceCardScope : IDisposable
+    {
+        private const float Rounding = 8f;
+        private static readonly Vector4 FillColor = new(0f, 0f, 0f, 0.35f);
+
+        private readonly ImDrawListPtr _drawList;
+        private readonly Vector2 _topLeft;
+        private readonly float _width;
+        private readonly float _padding;
+        private readonly uint _borderColor;
+
+        public SourceCardScope(Vector4 borderColor)
+        {
+            _drawList = ImGui.GetWindowDrawList();
+            _topLeft = ImGui.GetCursorScreenPos();
+            _width = ImGui.GetContentRegionAvail().X;
+            _padding = 7f * ImGuiHelpers.GlobalScale;
+            _borderColor = ImGui.ColorConvertFloat4ToU32(borderColor);
+
+            _drawList.ChannelsSplit(2);
+            _drawList.ChannelsSetCurrent(1);
+            ImGui.SetCursorScreenPos(_topLeft + new Vector2(_padding, _padding));
+            ImGui.BeginGroup();
+        }
+
+        public void Dispose()
+        {
+            ImGui.EndGroup();
+            var bottomRight = new Vector2(_topLeft.X + _width, ImGui.GetItemRectMax().Y + _padding);
+
+            _drawList.ChannelsSetCurrent(0);
+            _drawList.AddRectFilled(_topLeft, bottomRight, ImGui.ColorConvertFloat4ToU32(FillColor), Rounding);
+            _drawList.AddRect(_topLeft, bottomRight, _borderColor, Rounding);
+            _drawList.ChannelsMerge();
+
+            ImGui.SetCursorScreenPos(new Vector2(_topLeft.X, bottomRight.Y));
+            ImGui.Dummy(Vector2.Zero);
+        }
+    }
+
+    private bool TryDrawSourceIcon(uint iconId, float size)
+    {
+        if (_textureProvider == null || iconId == 0)
+            return false;
+        var icon = _textureProvider.GetFromGameIcon(new GameIconLookup(iconId)).GetWrapOrEmpty();
+        var cursorPos = ImGui.GetCursorPos();
+        ImGui.SetCursorPosY(cursorPos.Y + (ImGui.GetTextLineHeight() - size) * 0.5f);
+        ImGui.Image(icon.Handle, new Vector2(size, size));
+        ImGui.SameLine();
+        ImGui.SetCursorPosY(cursorPos.Y);
+        return true;
+    }
+
     private void DrawSourceCards(ItemDetail detail)
     {
         if (detail.Sources.Count == 0)
@@ -454,7 +535,7 @@ public class ItemDetailWindow : Window, IDisposable
             {
                 var group = craftedGroups[g];
                 var sources = group.ToList();
-                DrawCraftedCard(sources, g);
+                DrawCraftedCard(sources, g, detail.IconId);
             }
         }
 
@@ -468,27 +549,27 @@ public class ItemDetailWindow : Window, IDisposable
             {
                 var group = vendorGroups[g];
                 var npcs = group.ToList();
-                DrawVendorCard(npcs, g, SourceStyles[ItemSourceType.Vendor].Item1);
+                DrawVendorCard(npcs, g, detail.IconId);
             }
         }
 
         foreach (var src in questSources)
         {
-            DrawSourceCard(src, sortedSources.IndexOf(src), SourceStyles.GetValueOrDefault(src.Type, (Vector4.One, Vector4.One, "UNKNOWN")).Item1);
+            DrawSourceCard(src, sortedSources.IndexOf(src), detail.IconId);
         }
 
         foreach (var src in dutySources)
         {
-            DrawSourceCard(src, sortedSources.IndexOf(src), SourceStyles.GetValueOrDefault(src.Type, (Vector4.One, Vector4.One, "UNKNOWN")).Item1);
+            DrawSourceCard(src, sortedSources.IndexOf(src), detail.IconId);
         }
 
         foreach (var src in otherSources)
         {
-            DrawSourceCard(src, sortedSources.IndexOf(src), SourceStyles.GetValueOrDefault(src.Type, (Vector4.One, Vector4.One, "UNKNOWN")).Item1);
+            DrawSourceCard(src, sortedSources.IndexOf(src), detail.IconId);
         }
     }
 
-    private void DrawSourceCard(ItemSourceDetail src, int sourceIdx, Vector4 borderColor, string? titleOverride = null)
+    private void DrawSourceCard(ItemSourceDetail src, int sourceIdx, uint itemIconId, string? titleOverride = null)
     {
         var srcStyle = SourceStyles.GetValueOrDefault(src.Type, (Vector4.One, Vector4.One, "UNKNOWN"));
         var hasContent = (src.Materials != null && src.Materials.Count > 0)
@@ -498,70 +579,69 @@ public class ItemDetailWindow : Window, IDisposable
                       || (src.CfcRowId.HasValue && src.CfcName != null)
                       || (src.SourceItemId.HasValue && src.SourceItemId.Value > 0);
 
-        ImGui.Separator();
-        ImGui.Spacing();
-
-        if (!hasContent)
+        using (new SourceCardScope(srcStyle.Item1))
         {
             DrawBadge(srcStyle.Item3, srcStyle.Item2);
             ImGui.SameLine();
-            ImGui.TextDisabled($" {titleOverride ?? src.Description}");
-            ImGui.Spacing();
-            return;
-        }
+            TryDrawSourceIcon(itemIconId, 24f);
 
-        DrawBadge(srcStyle.Item3, srcStyle.Item2);
-        ImGui.SameLine();
-        ImGui.Text($" {titleOverride ?? src.Description}");
-        if (src.SourceItemId.HasValue)
-        {
-            ImGui.SameLine();
-            if (ImGui.SmallButton($"[i]##source_{sourceIdx}"))
+            if (!hasContent)
             {
-                _navigateToItemId = src.SourceItemId.Value;
-                _navigateToSourceIdx = sourceIdx;
+                ImGui.TextDisabled($" {titleOverride ?? src.Description}");
+            }
+            else
+            {
+                ImGui.Text($" {titleOverride ?? src.Description}");
+                if (src.SourceItemId.HasValue)
+                {
+                    ImGui.SameLine();
+                    if (ImGui.SmallButton($"[i]##source_{sourceIdx}"))
+                    {
+                        _navigateToItemId = src.SourceItemId.Value;
+                        _navigateToSourceIdx = sourceIdx;
+                    }
+                }
+                // Actions row: Crafting Log (for crafted sources)
+                if (src.Type == ItemSourceType.Crafted)
+                {
+                    ImGui.SameLine();
+                    if (ImGui.SmallButton($"Open Crafting Log##craft_{sourceIdx}"))
+                    {
+                        TryOpenCraftingLog(_showingItemId ?? 0);
+                    }
+                }
+                if (src.NpcName != null && (src.ZoneName != null || src.MapX.HasValue))
+                {
+                    ImGui.Spacing();
+                    DrawNpcRow(src, sourceIdx, 0);
+                }
+
+                if (src.Materials != null && src.Materials.Count > 0)
+                {
+                    ImGui.Spacing();
+                    ImGui.TextDisabled("Materials:");
+                    for (int matIdx = 0; matIdx < src.Materials.Count; matIdx++)
+                    {
+                        DrawMaterialRow(src.Materials[matIdx], sourceIdx, matIdx);
+                    }
+                }
+
+                if (src.Costs != null && src.Costs.Count > 0)
+                {
+                    ImGui.Spacing();
+                    ImGui.TextDisabled("Cost:");
+                    int costIdx = 0;
+                    foreach (var cost in src.Costs)
+                    {
+                        DrawCostRow(cost, sourceIdx, costIdx);
+                        costIdx++;
+                    }
+                }
+
+                DrawDutyFinderRow(src, sourceIdx);
+                DrawQuestRow(src, sourceIdx);
             }
         }
-        // Actions row: Crafting Log (for crafted sources)
-        if (src.Type == ItemSourceType.Crafted)
-        {
-            ImGui.SameLine();
-            if (ImGui.SmallButton($"Open Crafting Log##craft_{sourceIdx}"))
-            {
-                TryOpenCraftingLog(_showingItemId ?? 0);
-            }
-        }
-        if (src.NpcName != null && (src.ZoneName != null || src.MapX.HasValue))
-        {
-            ImGui.Spacing();
-            DrawNpcRow(src, sourceIdx, 0);
-        }
-
-        if (src.Materials != null && src.Materials.Count > 0)
-        {
-            ImGui.Spacing();
-            ImGui.TextDisabled("Materials:");
-            for (int matIdx = 0; matIdx < src.Materials.Count; matIdx++)
-            {
-                DrawMaterialRow(src.Materials[matIdx], sourceIdx, matIdx);
-            }
-        }
-
-        if (src.Costs != null && src.Costs.Count > 0)
-        {
-            ImGui.Spacing();
-            ImGui.TextDisabled("Cost:");
-            int costIdx = 0;
-            foreach (var cost in src.Costs)
-            {
-                DrawCostRow(cost, sourceIdx, costIdx);
-                costIdx++;
-            }
-        }
-
-        DrawDutyFinderRow(src, sourceIdx);
-        DrawQuestRow(src, sourceIdx);
-
         ImGui.Spacing();
     }
 
@@ -830,56 +910,56 @@ if (_textureProvider != null && cost.IconId > 0)
         }
     }
 
-    private void DrawVendorCard(List<ItemSourceDetail> vendors, int groupIdx, Vector4 borderColor)
+    private void DrawVendorCard(List<ItemSourceDetail> vendors, int groupIdx, uint itemIconId)
     {
         var first = vendors[0];
 
-        ImGui.Separator();
-        ImGui.Spacing();
-
-        var style = SourceStyles.GetValueOrDefault(first.Type, (Vector4.One, Vector4.One, "UNKNOWN"));
-        DrawBadge(style.Item3, style.Item2);
-        ImGui.SameLine();
-
-        var isGilOnly = first.Costs != null && first.Costs.All(c => c.ItemId == 0);
-
-        if (isGilOnly && first.Costs?.Count > 0)
+        using (new SourceCardScope(SourceStyles[ItemSourceType.Vendor].Item1))
         {
-            ImGui.Text($"{FormatNumber(first.Costs[0].Count)} Gil");
-        }
-        else
-        {
-            ImGui.Text(first.Description);
-        }
+            var style = SourceStyles.GetValueOrDefault(first.Type, (Vector4.One, Vector4.One, "UNKNOWN"));
+            DrawBadge(style.Item3, style.Item2);
+            ImGui.SameLine();
+            TryDrawSourceIcon(itemIconId, 20f);
 
-        ImGui.Spacing();
+            var isGilOnly = first.Costs != null && first.Costs.All(c => c.ItemId == 0);
 
-        DrawNpcRow(first, groupIdx, 0);
-
-        if (vendors.Count > 1)
-        {
-            var moreLabel = vendors.Count == 2 ? "1 more vendor" : $"{vendors.Count - 1} more vendors";
-            if (ImGui.TreeNode($"{moreLabel}##vg_{groupIdx}"))
+            if (isGilOnly && first.Costs?.Count > 0)
             {
-                for (int i = 1; i < vendors.Count; i++)
-                {
-                    DrawNpcRow(vendors[i], groupIdx, i);
-                    ImGui.Spacing();
-                }
-                ImGui.TreePop();
+                ImGui.Text($"{FormatNumber(first.Costs[0].Count)} Gil");
             }
-        }
+            else
+            {
+                ImGui.Text(first.Description);
+            }
 
-        if (!isGilOnly && first.Costs?.Count > 0)
-        {
             ImGui.Spacing();
-            ImGui.TextDisabled("Cost:");
-            for (int costIdx = 0; costIdx < first.Costs.Count; costIdx++)
+
+            DrawNpcRow(first, groupIdx, 0);
+
+            if (vendors.Count > 1)
             {
-                DrawCostRow(first.Costs[costIdx], groupIdx, costIdx, showInfoButton: false, prefix: "\u2022");
+                var moreLabel = vendors.Count == 2 ? "1 more vendor" : $"{vendors.Count - 1} more vendors";
+                if (ImGui.TreeNode($"{moreLabel}##vg_{groupIdx}"))
+                {
+                    for (int i = 1; i < vendors.Count; i++)
+                    {
+                        DrawNpcRow(vendors[i], groupIdx, i);
+                        ImGui.Spacing();
+                    }
+                    ImGui.TreePop();
+                }
+            }
+
+            if (!isGilOnly && first.Costs?.Count > 0)
+            {
+                ImGui.Spacing();
+                ImGui.TextDisabled("Cost:");
+                for (int costIdx = 0; costIdx < first.Costs.Count; costIdx++)
+                {
+                    DrawCostRow(first.Costs[costIdx], groupIdx, costIdx, showInfoButton: false, prefix: "\u2022");
+                }
             }
         }
-
         ImGui.Spacing();
     }
 
@@ -1211,41 +1291,41 @@ if (_textureProvider != null && cost.IconId > 0)
                 : $"{FormatNumber(c.Count)} {c.Name}"));
     }
 
-    private void DrawCraftedCard(List<ItemSourceDetail> sources, int groupIdx)
+    private void DrawCraftedCard(List<ItemSourceDetail> sources, int groupIdx, uint itemIconId)
     {
         var first = sources[0];
 
-        ImGui.Separator();
-        ImGui.Spacing();
-
-        var style = SourceStyles.GetValueOrDefault(first.Type, (Vector4.One, Vector4.One, "UNKNOWN"));
-        DrawBadge(style.Item3, style.Item2);
-        ImGui.SameLine();
-
-        var levels = sources.Select(s => ExtractLevel(s.Description)).Where(l => l > 0).Distinct().OrderBy(l => l);
-        var jobs = sources.Select(s => ExtractJobName(s.Description)).Where(j => !string.IsNullOrEmpty(j)).Distinct();
-        var levelStr = levels.Any() ? $"Lv.{levels.Min()}" : "";
-        var jobStr = string.Join(", ", jobs.Any() ? jobs : (object?)levelStr);
-        var title = levels.Any() && jobs.Any()
-            ? $"{levelStr} ({string.Join(", ", jobs)})"
-            : (levelStr ?? jobStr ?? "Crafted");
-        ImGui.Text(title);
-
-        // ponytail: batch button dropped — SimpleGatherService is single-item; per-material
-        // Gather buttons cover it. Add batch queue when actually needed.
-
-        ImGui.Spacing();
-
-        if (first.Materials != null && first.Materials.Count > 0)
+        using (new SourceCardScope(SourceStyles[ItemSourceType.Crafted].Item1))
         {
+            var style = SourceStyles.GetValueOrDefault(first.Type, (Vector4.One, Vector4.One, "UNKNOWN"));
+            DrawBadge(style.Item3, style.Item2);
+            ImGui.SameLine();
+            TryDrawSourceIcon(itemIconId, 20f);
+
+            var levels = sources.Select(s => ExtractLevel(s.Description)).Where(l => l > 0).Distinct().OrderBy(l => l);
+            var jobs = sources.Select(s => ExtractJobName(s.Description)).Where(j => !string.IsNullOrEmpty(j)).Distinct();
+            var levelStr = levels.Any() ? $"Lv.{levels.Min()}" : "";
+            var jobStr = string.Join(", ", jobs.Any() ? jobs : (object?)levelStr);
+            var title = levels.Any() && jobs.Any()
+                ? $"{levelStr} ({string.Join(", ", jobs)})"
+                : (levelStr ?? jobStr ?? "Crafted");
+            ImGui.Text(title);
+
+            // ponytail: batch button dropped — SimpleGatherService is single-item; per-material
+            // Gather buttons cover it. Add batch queue when actually needed.
+
             ImGui.Spacing();
-            ImGui.TextDisabled("Materials:");
-            for (int matIdx = 0; matIdx < first.Materials.Count; matIdx++)
+
+            if (first.Materials != null && first.Materials.Count > 0)
             {
-                DrawMaterialRow(first.Materials[matIdx], groupIdx, matIdx, showCheckmark: false, prefix: "\u2022");
+                ImGui.Spacing();
+                ImGui.TextDisabled("Materials:");
+                for (int matIdx = 0; matIdx < first.Materials.Count; matIdx++)
+                {
+                    DrawMaterialRow(first.Materials[matIdx], groupIdx, matIdx, showCheckmark: false, prefix: "\u2022");
+                }
             }
         }
-
         ImGui.Spacing();
     }
 

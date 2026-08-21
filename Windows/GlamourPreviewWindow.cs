@@ -2,37 +2,58 @@ using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Windowing;
+using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
+using Glamourer.Api.Enums;
+using Glamourer.Api.IpcSubscribers;
 using GlamSource.Services;
+using Newtonsoft.Json.Linq;
 
 namespace GlamSource.Windows;
 
 // ponytail: Ktisis PreviewNode reduced to a Dalamud Window; no bone plumbing, no pose file logic.
 public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
 {
+    public enum PreviewMode
+    {
+        TargetGlam,
+        CurrentGear,
+    }
+
     private readonly PreviewRenderer _renderer;
     private readonly IFramework _framework;
     private readonly IClientState _clientState;
     private readonly IObjectTable _objectTable;
+    private readonly ITargetManager _targetManager;
+    private readonly IDalamudPluginInterface _pi;
     private readonly IPluginLog _log;
 
     private bool _frameworkHooked;
     private Vector2? _lastDragPos;
+    private PreviewMode _mode = PreviewMode.CurrentGear;
+
+    // ponytail: cache target index at open; game objects invalidate per-frame, indices don't.
+    private int _targetObjectIndex = -1;
+    private JObject? _selfSnapshot;
 
     public GlamourPreviewWindow(
         PreviewRenderer renderer,
         IFramework framework,
         IClientState clientState,
         IObjectTable objectTable,
+        ITargetManager targetManager,
+        IDalamudPluginInterface pluginInterface,
         IPluginLog log)
-        : base("GlamSource 3D Preview", ImGuiWindowFlags.None)
+    : base("GlamSource 3D Preview", ImGuiWindowFlags.None)
     {
         _renderer = renderer;
         _framework = framework;
         _clientState = clientState;
         _objectTable = objectTable;
+        _targetManager = targetManager;
+        _pi = pluginInterface;
         _log = log;
 
         SizeConstraints = new WindowSizeConstraints
@@ -45,24 +66,33 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
         _clientState.Logout += OnLogout;
     }
 
+    // ponytail: legacy entry-point kept so /glamsource preview + shell button still work.
     public void OpenForCurrentTarget()
     {
-        // ponytail: always render Self. The user wants to see the items they staged
-        // (Save-Mode / Apply-to-Self flow already mutates the local player's glamour via
-        // AgentTryon / Glamourer IPC), so pointing CharaView at LocalPlayer reflects them
-        // automatically. Callers must push items to Self before opening.
-        var src = _objectTable.LocalPlayer;
-        if (src == null)
+        var tgt = _targetManager.Target;
+        OpenForTarget(tgt);
+    }
+
+    /// <summary>Open the preview; if <paramref name="target"/> is non-null, defaults to Target-Glam mode.</summary>
+    public void OpenForTarget(Dalamud.Game.ClientState.Objects.Types.IGameObject? target)
+    {
+        _targetObjectIndex = target?.ObjectIndex ?? -1;
+        _mode = target != null ? PreviewMode.TargetGlam : PreviewMode.CurrentGear;
+
+        var localPlayer = _objectTable.LocalPlayer;
+        if (localPlayer == null)
         {
             _log.Info("[GlamourPreviewWindow] No local player; open ignored.");
             return;
         }
 
-        var addr = src.Address;
+        var selfAddr = localPlayer.Address;
+
         _framework.RunOnFrameworkThread(() =>
         {
             _renderer.Release();
-            _renderer.Initialize((Character*)addr);
+            _renderer.Initialize((Character*)selfAddr);
+            ApplyModeState();
         });
 
         IsOpen = true;
@@ -84,6 +114,8 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
             _framework.Update -= OnFrameworkTick;
             _frameworkHooked = false;
         }
+        // ponytail: always restore snapshot on close — user should not be silently left in target's glam.
+        RestoreSnapshotIfAny();
         _framework.RunOnFrameworkThread(_renderer.Release);
     }
 
@@ -91,7 +123,6 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
     {
         if (!_clientState.IsLoggedIn) return;
 
-        // Pause when game's own inspect agent is up — avoids fighting it for CharaView state.
         var agent = AgentInspect.Instance();
         if (agent != null && agent->AgentInterface.IsAgentActive() && !_renderer.IsInitialized)
             return;
@@ -104,18 +135,39 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
         if (!_renderer.IsInitialized)
         {
             ImGui.TextDisabled("Preview not initialized.");
-            if (ImGui.Button("Init from Target"))
-                OpenForCurrentTarget();
+            if (ImGui.Button("Init from Self"))
+                OpenForTarget(null);
             return;
         }
 
+        var hasTarget = _targetObjectIndex >= 0;
+        if (ImGui.RadioButton("Target Glamour##previewMode", _mode == PreviewMode.TargetGlam)
+            && _mode != PreviewMode.TargetGlam && hasTarget)
+        {
+            _mode = PreviewMode.TargetGlam;
+            _framework.RunOnFrameworkThread(ApplyModeState);
+        }
+        if (!hasTarget && ImGui.IsItemHovered())
+            ImGui.SetTooltip("No target stored — reopen with a target to enable.");
+        ImGui.SameLine();
+        if (ImGui.RadioButton("Aktuelle Ausrustung##previewMode", _mode == PreviewMode.CurrentGear)
+            && _mode != PreviewMode.CurrentGear)
+        {
+            _mode = PreviewMode.CurrentGear;
+            _framework.RunOnFrameworkThread(ApplyModeState);
+        }
+        ImGui.SameLine();
         if (ImGui.SmallButton("Reset"))
             _framework.RunOnFrameworkThread(_renderer.Reset);
         ImGui.SameLine();
-        if (ImGui.SmallButton("Reload from Self"))
-            OpenForCurrentTarget();
+        if (ImGui.SmallButton("Reload"))
+            _framework.RunOnFrameworkThread(ApplyModeState);
         ImGui.SameLine();
         ImGui.TextDisabled("Drag image to rotate");
+
+        var zoom = _renderer.Zoom;
+        if (ImGui.SliderFloat("Zoom", ref zoom, 0.5f, 3.0f))
+            _framework.RunOnFrameworkThread(() => _renderer.SetZoom(zoom));
 
         var handle = _renderer.GetTextureHandle();
         if (handle == 0)
@@ -125,7 +177,6 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
         }
 
         var avail = ImGui.GetContentRegionAvail();
-        // Portrait-ish aspect matching the CharaView render target (~192:320 = 0.6).
         var w = MathF.Max(160f, avail.X);
         var h = MathF.Max(240f, avail.Y - ImGui.GetFontSize());
         var target = w / h > 0.6f ? new Vector2(h * 0.6f, h) : new Vector2(w, w / 0.6f);
@@ -133,12 +184,120 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
         var cursor = ImGui.GetCursorScreenPos();
         ImGui.Image(new ImTextureID(handle), target);
 
-        // ponytail: overlay an InvisibleButton on the image so ImGui treats the area as an
-        // active item — the window no longer moves while we drag to rotate the camera.
         ImGui.SetCursorScreenPos(cursor);
         ImGui.InvisibleButton("##previewDrag", target);
 
+        // ponytail: wheel-zoom while hovering the image; SetZoom already clamps 0.5–3.0.
+        if (ImGui.IsItemHovered())
+        {
+            var wheel = ImGui.GetIO().MouseWheel;
+            if (wheel != 0f)
+            {
+                var newZoom = _renderer.Zoom + wheel * 0.1f;
+                _framework.RunOnFrameworkThread(() => _renderer.SetZoom(newZoom));
+            }
+        }
+
         HandleDrag(cursor, target);
+    }
+
+    // Framework thread only.
+    private void ApplyModeState()
+    {
+        if (!IsGlamourerInstalled())
+        {
+            // ponytail: without Glamourer we can't snapshot/copy; just refresh CharaView from LocalPlayer.
+            RefreshCharaViewFromLocalPlayer();
+            return;
+        }
+
+        try
+        {
+            // Snapshot self once, before any mutation.
+            if (_selfSnapshot == null)
+            {
+                var (ecGet, state) = new GetState(_pi).Invoke(0, 0);
+                if (ecGet == GlamourerApiEc.Success && state != null)
+                    _selfSnapshot = state;
+                else
+                    _log.Warning($"[GlamourPreviewWindow] GetState(self) failed: {ecGet}");
+            }
+
+            if (_mode == PreviewMode.TargetGlam && _targetObjectIndex >= 0)
+            {
+                var (ecTgt, tgtState) = new GetState(_pi).Invoke(_targetObjectIndex, 0);
+                if (ecTgt == GlamourerApiEc.Success && tgtState != null)
+                {
+                    var ecApp = new ApplyState(_pi).Invoke(tgtState, 0, 0, ApplyFlag.Once | ApplyFlag.Equipment);
+                    if (ecApp != GlamourerApiEc.Success)
+                        _log.Warning($"[GlamourPreviewWindow] ApplyState(target->self) failed: {ecApp}");
+                }
+                else
+                {
+                    _log.Warning($"[GlamourPreviewWindow] GetState(target={_targetObjectIndex}) failed: {ecTgt}");
+                }
+            }
+            else
+            {
+                // CurrentGear: restore snapshot if we mutated earlier.
+                if (_selfSnapshot != null)
+                {
+                    var ec = new ApplyState(_pi).Invoke(_selfSnapshot, 0, 0, ApplyFlag.Once | ApplyFlag.Equipment);
+                    if (ec != GlamourerApiEc.Success)
+                        _log.Warning($"[GlamourPreviewWindow] ApplyState(restore) failed: {ec}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"[GlamourPreviewWindow] ApplyModeState error: {ex.Message}");
+        }
+
+        RefreshCharaViewFromLocalPlayer();
+    }
+
+    private void RefreshCharaViewFromLocalPlayer()
+    {
+        var lp = _objectTable.LocalPlayer;
+        if (lp == null) return;
+        var agent = AgentInspect.Instance();
+        if (agent == null || !_renderer.IsInitialized) return;
+        agent->CharaView.ModelData.CopyFromCharacter((Character*)lp.Address);
+    }
+
+    private void RestoreSnapshotIfAny()
+    {
+        var snap = _selfSnapshot;
+        _selfSnapshot = null;
+        if (snap == null) return;
+        if (!IsGlamourerInstalled()) return;
+
+        _framework.RunOnFrameworkThread(() =>
+        {
+            try
+            {
+                var ec = new ApplyState(_pi).Invoke(snap, 0, 0, ApplyFlag.Once | ApplyFlag.Equipment);
+                if (ec != GlamourerApiEc.Success)
+                    _log.Warning($"[GlamourPreviewWindow] Restore on close failed: {ec}");
+            }
+            catch (Exception ex)
+            {
+                _log.Warning($"[GlamourPreviewWindow] Restore on close error: {ex.Message}");
+            }
+        });
+    }
+
+    private bool IsGlamourerInstalled()
+    {
+        try
+        {
+            var (major, _) = new ApiVersion(_pi).Invoke();
+            return major > 0;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private void HandleDrag(Vector2 imgTopLeft, Vector2 imgSize)
@@ -146,8 +305,6 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
         _ = imgTopLeft; _ = imgSize;
         var mouse = ImGui.GetIO().MousePos;
 
-        // The InvisibleButton drawn just above owns the hit-test; IsItemActive is true
-        // exactly while the user holds LMB on it (and window-move is suppressed).
         if (ImGui.IsItemActive())
         {
             if (_lastDragPos.HasValue)
@@ -155,7 +312,6 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
                 var delta = mouse - _lastDragPos.Value;
                 if (delta.LengthSquared() > 0f)
                 {
-                    // Scale mouse delta to camera deltas; Ktisis uses roughly ±50 units per button click.
                     var yaw = delta.X * 0.75f;
                     var pitch = delta.Y * 0.75f;
                     _framework.RunOnFrameworkThread(() => _renderer.SetYawPitch(yaw, pitch));
@@ -171,6 +327,7 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
 
     private void OnLogout(int type, int code)
     {
+        _selfSnapshot = null;
         _framework.RunOnFrameworkThread(_renderer.Release);
         IsOpen = false;
     }

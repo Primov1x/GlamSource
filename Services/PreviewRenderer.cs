@@ -17,6 +17,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
 
     private uint _counter = 1;
     private bool _initialized;
+    private float _zoom = 1.0f;
 
     public PreviewRenderer(IFramework framework, IPluginLog log)
     {
@@ -25,6 +26,9 @@ public sealed unsafe class PreviewRenderer : IDisposable
     }
 
     public bool IsInitialized => _initialized;
+
+    /// <summary>Current camera zoom (1.0 = CharaView default distance).</summary>
+    public float Zoom => _zoom;
 
     /// <summary>Initialize CharaView from a source character. Must be called on Framework thread.</summary>
     public void Initialize(Character* source)
@@ -63,12 +67,33 @@ public sealed unsafe class PreviewRenderer : IDisposable
         agent->CharaView.SetCameraYawAndPitch(yaw, pitch);
     }
 
+    /// <summary>Set camera distance. 1.0 = CharaView default distance. Must be called on the Framework thread.</summary>
+    public void SetZoom(float zoom)
+    {
+        var target = Math.Clamp(zoom, 0.5f, 3.0f);
+        var current = _zoom;
+        _zoom = target;
+        if (!_initialized || target == current) return;
+
+        var agent = AgentInspect.Instance();
+        if (agent == null) return;
+        var cam = agent->CharaView.Camera;
+        if (cam == null) return;
+
+        // ponytail: assumes positive SetCameraDistance delta = camera moves away; flip the sign
+        // if it feels inverted in-game. Distance ∝ 1/zoom ⇒ delta = dist·(z₀/z₁−1), dist read live.
+        var d = cam->Position - cam->LookAtVector;
+        var dist = MathF.Sqrt(d.X * d.X + d.Y * d.Y + d.Z * d.Z);
+        agent->CharaView.SetCameraDistance(dist * (current / target - 1f));
+    }
+
     public void Reset()
     {
         if (!_initialized) return;
         var agent = AgentInspect.Instance();
         if (agent == null) return;
         agent->CharaView.ResetPositions();
+        _zoom = 1.0f;
     }
 
     /// <summary>Get the SRV handle for ImGui.Image, or 0 if not ready.</summary>
@@ -100,6 +125,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
         {
             _initialized = false;
             _counter = 1;
+            _zoom = 1.0f;
         }
     }
 

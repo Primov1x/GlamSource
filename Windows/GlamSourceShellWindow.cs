@@ -389,7 +389,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
 
         ImGui.SameLine();
         if (ImGui.SmallButton("Preview 3D") && PreviewWindow != null)
-            PreviewWindow.OpenForCurrentTarget();
+            PreviewWindow.OpenForTarget(Plugin.TargetManager?.Target); // ponytail: pass live target, window falls back to self internally.
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip("Open a live 3D preview of the current target (or self if no target).");
 
