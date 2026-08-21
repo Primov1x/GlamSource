@@ -129,6 +129,8 @@ public unsafe class GameDataService : IGlamourService
             .AsReadOnly();
     }
 
+    public IReadOnlyList<EquipmentSlot> GetSelfEquipment() => GetOwnEquipment();
+
     private unsafe IReadOnlyList<EquipmentSlot> GetOwnEquipment()
     {
         Plugin.Log.Information("[EQUIP] GetOwnEquipment called");

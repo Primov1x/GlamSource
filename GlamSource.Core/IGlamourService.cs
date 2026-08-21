@@ -4,5 +4,7 @@ namespace GlamSource.Core;
 public interface IGlamourService
 {
     IReadOnlyList<EquipmentSlot> GetTargetEquipment();
+    // ponytail: self view reads InventoryType.EquippedItems directly, always available even without target.
+    IReadOnlyList<EquipmentSlot> GetSelfEquipment();
     IReadOnlyList<(uint id, string name)> SearchItems(string query);
 }

@@ -21,6 +21,9 @@ public sealed class FixtureGlamourService : IGlamourService
 
     public IReadOnlyList<(uint id, string name)> SearchItems(string query) => Array.Empty<(uint, string)>();
 
+    // ponytail: fixture doesn't distinguish self/target — reuse.
+    public IReadOnlyList<EquipmentSlot> GetSelfEquipment() => GetTargetEquipment();
+
     public IReadOnlyList<EquipmentSlot> GetTargetEquipment()
     {
         if (_cached != null)
