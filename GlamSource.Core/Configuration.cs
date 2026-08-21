@@ -15,4 +15,7 @@ public class Configuration
     public string MinerSetName { get; set; } = "";
     public string BotanistSetName { get; set; } = "";
     public string FisherSetName { get; set; } = "";
+
+    // Shell window: last active tab index (0=Lookup, 1=Character, 2=Settings).
+    public int SelectedTab { get; set; } = 0;
 }

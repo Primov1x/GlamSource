@@ -12,7 +12,7 @@ using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Misc;
 using GlamSource.Core;
 
-namespace GlamSource.Windows;
+namespace GlamSource.Services;
 
 public enum GatherState
 {

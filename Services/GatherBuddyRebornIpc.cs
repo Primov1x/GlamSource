@@ -4,7 +4,7 @@ using System.Reflection;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Ipc;
 
-namespace GlamSource.Windows;
+namespace GlamSource.Services;
 
 /// <summary>
 /// IPC bridge to GatherBuddy Reborn.

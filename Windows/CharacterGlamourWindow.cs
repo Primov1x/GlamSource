@@ -191,7 +191,10 @@ public class CharacterGlamourWindow : Window, IDisposable
                 var itemId = slot.GlamourItemId ?? slot.ActualItemId;
                 if (itemId == 0) continue;
 
-                var ret = setItem.Invoke(0, apiSlot, itemId, Array.Empty<byte>(), 0, ApplyFlag.Once);
+                // Glamourer's StainIds ctor NREs on null/empty; always pass 2 bytes.
+                // Snapshot has no stain data → default both slots to 0 (undyed).
+                byte stain0 = 0, stain1 = 0;
+                var ret = setItem.Invoke(0, apiSlot, itemId, new byte[] { stain0, stain1 }, 0, ApplyFlag.Once);
                 if (ret == GlamourerApiEc.Success) applied++;
                 else { failed++; _log.Warning($"[GlamSource] SetItem {apiSlot} id={itemId} -> {ret}"); }
             }

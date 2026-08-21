@@ -5,7 +5,7 @@ using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using ValueType = FFXIVClientStructs.FFXIV.Component.GUI.AtkValueType;
 
-namespace GlamSource.Windows;
+namespace GlamSource.Services;
 
 /// <summary>
 /// Native reimplementation of GBR's AtkReader/GatheringReader/Callback.Fire pattern for the

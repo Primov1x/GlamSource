@@ -1,7 +1,7 @@
 using Dalamud.Plugin;
 using Dalamud.Plugin.Ipc;
 
-namespace GlamSource.Windows;
+namespace GlamSource.Services;
 
 /// <summary>
 /// IPC bridge to the Teleporter plugin. Same soft-dep pattern as <see cref="VNavmeshIpc"/>.

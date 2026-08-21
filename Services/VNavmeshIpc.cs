@@ -2,7 +2,7 @@ using System.Numerics;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Ipc;
 
-namespace GlamSource.Windows;
+namespace GlamSource.Services;
 
 /// <summary>
 /// IPC bridge to the vnavmesh community plugin (soft dependency — may not be installed/active).
