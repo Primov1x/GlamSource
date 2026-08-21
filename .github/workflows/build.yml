@@ -58,3 +58,12 @@ jobs:
           name: GlamSource
           path: './artifacts/GlamSource.zip'
           if-no-files-found: error
+
+      - name: Publish to LATEST release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          Copy-Item ./artifacts/GlamSource.zip ./artifacts/latest.zip
+          gh release upload LATEST ./artifacts/GlamSource.zip ./artifacts/latest.zip --clobber --repo ${{ github.repository }}
