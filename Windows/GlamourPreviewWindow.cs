@@ -93,7 +93,7 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
         {
             _renderer.Release();
             // ponytail: pass a live LocalPlayer-address resolver so Tick can re-copy each frame
-            // (Examine shares AgentInspect.CharaView; without this the viewer flips to the target).
+            // (ApplyState lands async; without this the viewer shows pre-apply gear).
             _renderer.Initialize((Character*)selfAddr, () => _objectTable.LocalPlayer?.Address ?? nint.Zero);
             ApplyModeState();
         });
@@ -125,11 +125,6 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
     private void OnFrameworkTick(IFramework fw)
     {
         if (!_clientState.IsLoggedIn) return;
-
-        var agent = AgentInspect.Instance();
-        if (agent != null && agent->AgentInterface.IsAgentActive() && !_renderer.IsInitialized)
-            return;
-
         _renderer.Tick();
     }
 
@@ -256,17 +251,17 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
             _log.Warning($"[GlamourPreviewWindow] ApplyModeState error: {ex.Message}");
         }
 
-        RefreshCharaViewFromLocalPlayer();
-        // ponytail: Glamourer mutates the actor async; keep re-copying from LocalPlayer for
-        // several frames so we catch the post-apply model, not the pre-apply one.
-        _renderer.RequestRecopy(10);
+        // ponytail: no immediate CharaView refresh here — it would copy pre-apply gear, since
+        // ApplyState lands in the model a frame or two later. Let Tick re-copy from LocalPlayer
+        // until the post-apply model is in (target apply mutates more → longer window).
+        _renderer.RequestRecopy(_mode == PreviewMode.TargetGlam ? 15 : 5);
     }
 
     private void RefreshCharaViewFromLocalPlayer()
     {
         var lp = _objectTable.LocalPlayer;
         if (lp == null) return;
-        var agent = AgentInspect.Instance();
+        var agent = AgentTryon.Instance();
         if (agent == null || !_renderer.IsInitialized) return;
         agent->CharaView.ModelData.CopyFromCharacter((Character*)lp.Address);
     }

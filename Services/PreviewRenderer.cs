@@ -8,10 +8,16 @@ using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 namespace GlamSource.Services;
 
 // ponytail: minimal Ktisis-CharaView port — no bones, no penumbra, no dialog wiring.
-// Owns lifecycle of AgentInspect.CharaView (clientObjectIndex=1) plus a per-frame counter.
+// Owns lifecycle of AgentTryon.CharaView (CharaViewSlot) plus a per-frame counter.
 // All game-state calls must run on the Framework thread.
 public sealed unsafe class PreviewRenderer : IDisposable
 {
+    // ponytail: CharaView texture slot. 0=Character, 1=Inspect/CharaCard/Fashion, 2=TryOn/
+    // GearSetPreview, 3=Colorant, 4=Banners (see FFXIVClientStructs CharaView header).
+    // Slot 1 is what game Examine renders into — that's the conflict we were in.
+    // Slot 2 matches the agent we drive (AgentTryon); only lost if the game's TryOn opens.
+    private const uint CharaViewSlot = 2;
+
     private readonly IFramework _framework;
     private readonly IPluginLog _log;
 
@@ -40,15 +46,15 @@ public sealed unsafe class PreviewRenderer : IDisposable
         if (_initialized) return;
         if (source == null) return;
 
-        var agent = AgentInspect.Instance();
+        var agent = AgentTryon.Instance();
         if (agent == null) return;
 
         _sourceProvider = sourceProvider;
-        agent->CharaView.Initialize(&agent->AgentInterface, 1, 0);
+        agent->CharaView.Initialize(&agent->AgentInterface, CharaViewSlot, 0);
         agent->CharaView.ModelData.CopyFromCharacter(source);
         agent->CharaView.Update(_counter, agent->CharaView.GetCharacter());
         _initialized = true;
-        // ponytail: seed a few refresh frames so Examine can't hijack the first render.
+        // ponytail: seed a few refresh frames so early renders can't be clobbered by agent activity.
         _pendingRecopyFrames = 3;
     }
 
@@ -62,13 +68,14 @@ public sealed unsafe class PreviewRenderer : IDisposable
     public void Tick()
     {
         if (!_initialized) return;
-        var agent = AgentInspect.Instance();
+        var agent = AgentTryon.Instance();
         if (agent == null) return;
 
-        // ponytail: AgentInspect.CharaView is shared with the game's Examine window. When Examine
-        // is active or right after ApplyState, ModelData drifts — re-copy from LocalPlayer.
-        var examineActive = agent->AgentInterface.IsAgentActive();
-        if ((examineActive || _pendingRecopyFrames > 0) && _sourceProvider != null)
+        // ponytail: AgentTryon.CharaView is shared with the game's TryOn window (same object,
+        // same slot). While TryOn is active or right after ApplyState, ModelData drifts —
+        // re-copy from LocalPlayer.
+        var tryonActive = agent->AgentInterface.IsAgentActive();
+        if ((tryonActive || _pendingRecopyFrames > 0) && _sourceProvider != null)
         {
             var addr = _sourceProvider();
             if (addr != nint.Zero)
@@ -86,7 +93,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
     public void SetYawPitch(float yaw, float pitch)
     {
         if (!_initialized) return;
-        var agent = AgentInspect.Instance();
+        var agent = AgentTryon.Instance();
         if (agent == null) return;
         agent->CharaView.SetCameraYawAndPitch(yaw, pitch);
     }
@@ -99,7 +106,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
         _zoom = target;
         if (!_initialized || target == current) return;
 
-        var agent = AgentInspect.Instance();
+        var agent = AgentTryon.Instance();
         if (agent == null) return;
         var cam = agent->CharaView.Camera;
         if (cam == null) return;
@@ -114,7 +121,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
     public void Reset()
     {
         if (!_initialized) return;
-        var agent = AgentInspect.Instance();
+        var agent = AgentTryon.Instance();
         if (agent == null) return;
         agent->CharaView.ResetPositions();
         _zoom = 1.0f;
@@ -126,7 +133,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
         if (!_initialized) return 0;
         var rtm = RenderTargetManager.Instance();
         if (rtm == null) return 0;
-        var tex = rtm->GetCharaViewTexture(1);
+        var tex = rtm->GetCharaViewTexture(CharaViewSlot);
         if (tex == null) return 0;
         return (nint)tex->D3D11ShaderResourceView;
     }
@@ -137,7 +144,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
         if (!_initialized) return;
         try
         {
-            var agent = AgentInspect.Instance();
+            var agent = AgentTryon.Instance();
             if (agent != null)
                 agent->CharaView.Release();
         }
