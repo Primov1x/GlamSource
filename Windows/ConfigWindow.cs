@@ -5,6 +5,7 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Windowing;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
+using FFXIVClientStructs.FFXIV.Client.UI.Misc;
 using Lumina.Excel.Sheets;
 
 namespace GlamSource.Windows;
@@ -80,28 +81,39 @@ public class ConfigWindow : Window, IDisposable
         }
 
         ImGui.Spacing();
-        ImGui.TextUnformatted("Gearset names (exact, as shown in-game):");
+        ImGui.TextUnformatted("Gearsets (live from game):");
 
-        var miner = configuration.MinerSetName;
-        if (ImGui.InputText("Miner set", ref miner, 64))
-        {
-            configuration.MinerSetName = miner;
-            configuration.Save();
-        }
+        DrawGearsetCombo("Miner set",    16, configuration.MinerSetName,    n => configuration.MinerSetName = n);
+        DrawGearsetCombo("Botanist set", 17, configuration.BotanistSetName, n => configuration.BotanistSetName = n);
+        DrawGearsetCombo("Fisher set",   18, configuration.FisherSetName,   n => configuration.FisherSetName = n);
+    }
 
-        var botanist = configuration.BotanistSetName;
-        if (ImGui.InputText("Botanist set", ref botanist, 64))
-        {
-            configuration.BotanistSetName = botanist;
-            configuration.Save();
-        }
+    private unsafe void DrawGearsetCombo(string label, byte classJobId, string current, Action<string> setter)
+    {
+        // ponytail: rebuild list every frame — 100 entries, cheap; keeps combo fresh without invalidation logic.
+        var preview = string.IsNullOrEmpty(current) ? "<none>" : current;
+        if (!ImGui.BeginCombo(label, preview)) return;
 
-        var fisher = configuration.FisherSetName;
-        if (ImGui.InputText("Fisher set", ref fisher, 64))
+        var mod = RaptureGearsetModule.Instance();
+        if (mod != null)
         {
-            configuration.FisherSetName = fisher;
-            configuration.Save();
+            for (var i = 0; i < 100; i++)
+            {
+                var e = mod->GetGearset(i);
+                if (e == null || !e->Flags.HasFlag(RaptureGearsetModule.GearsetFlag.Exists)) continue;
+                if (e->ClassJob != classJobId) continue;
+
+                var name = e->NameString;
+                var selected = name == current;
+                if (ImGui.Selectable($"{name}##{i}", selected))
+                {
+                    setter(name);
+                    configuration.Save();
+                }
+                if (selected) ImGui.SetItemDefaultFocus();
+            }
         }
+        ImGui.EndCombo();
     }
 
     private void DrawMountPicker()
