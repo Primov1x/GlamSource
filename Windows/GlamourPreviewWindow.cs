@@ -46,7 +46,8 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
         ITargetManager targetManager,
         IDalamudPluginInterface pluginInterface,
         IPluginLog log)
-    : base("GlamSource 3D Preview", ImGuiWindowFlags.None)
+    // ponytail: NoScrollWithMouse so mouse wheel goes to zoom handler, not window scroll.
+    : base("GlamSource 3D Preview", ImGuiWindowFlags.NoScrollWithMouse)
     {
         _renderer = renderer;
         _framework = framework;

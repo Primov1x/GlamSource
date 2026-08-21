@@ -159,7 +159,8 @@ public unsafe class GameDataService : IGlamourService
             string? glamourName = glamourId.HasValue
                 ? ResolveItemName(itemSheet, glamourId.Value) : null;
 
-            result.Add(CreateSlot(slotType.Value, itemId, itemName, glamourId, glamourName));
+            // ponytail: 2 stains per slot since API12
+            result.Add(CreateSlot(slotType.Value, itemId, itemName, glamourId, glamourName, item.Stains[0], item.Stains[1]));
         }
 
         return result;
@@ -195,7 +196,8 @@ public unsafe class GameDataService : IGlamourService
             string? glamourName = glamourId.HasValue
                 ? ResolveItemName(itemSheet, glamourId.Value) : null;
 
-            result.Add(CreateSlot(slotType.Value, itemId, itemName, glamourId, glamourName));
+            // ponytail: 2 stains per slot since API12
+            result.Add(CreateSlot(slotType.Value, itemId, itemName, glamourId, glamourName, item.Stains[0], item.Stains[1]));
         }
 
         if (targetId > 0)
@@ -318,7 +320,8 @@ public unsafe class GameDataService : IGlamourService
             var itemRowId = matchedItem?.RowId ?? 0;
             var itemName = itemRowId > 0 ? (matchedItem?.Name.ToString() ?? "Unknown") : "Unknown";
 
-            result.Add(CreateSlot(glamourSlot, itemRowId, itemName, null, null));
+            // ponytail: draw-data path — stains read from CharacterArmor Stain0/Stain1
+            result.Add(CreateSlot(glamourSlot, itemRowId, itemName, null, null, eqData.Stain0, eqData.Stain1));
         }
 
         return result;
@@ -419,7 +422,7 @@ public unsafe class GameDataService : IGlamourService
         }
     }
 
-    private EquipmentSlot CreateSlot(EquipmentSlotType slot, uint actualItemId, string actualItemName, uint? glamourItemId, string? glamourItemName)
+    private EquipmentSlot CreateSlot(EquipmentSlotType slot, uint actualItemId, string actualItemName, uint? glamourItemId, string? glamourItemName, byte stain0 = 0, byte stain1 = 0)
     {
         var actualSources = actualItemId > 0 ? _sourceService.GetSources(actualItemId) : Array.Empty<ItemSource>();
         IReadOnlyList<ItemSource>? glamourSources = null;
@@ -434,6 +437,8 @@ public unsafe class GameDataService : IGlamourService
             GlamourItemId: glamourItemId,
             GlamourItemName: glamourItemName,
             ActualItemSources: actualSources,
-            GlamourItemSources: glamourSources);
+            GlamourItemSources: glamourSources,
+            Stain0: stain0,
+            Stain1: stain1);
     }
 }

@@ -226,7 +226,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
             ImGui.TableSetupColumn("Worn Item", ImGuiTableColumnFlags.WidthStretch);
             ImGui.TableSetupColumn("Glamour", ImGuiTableColumnFlags.WidthStretch);
             ImGui.TableSetupColumn("Source", ImGuiTableColumnFlags.WidthStretch);
-            ImGui.TableSetupColumn("Overlay", ImGuiTableColumnFlags.WidthFixed, 60f);
+            ImGui.TableSetupColumn("Stain", ImGuiTableColumnFlags.WidthFixed, ImGui.GetFontSize() * 8f);
             ImGui.TableHeadersRow();
 
             foreach (var (slot, idx) in slots.Select((s, i) => (s, i)))
@@ -296,14 +296,42 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
                 }
 
                 ImGui.TableSetColumnIndex(4);
-                if (slot.IsGlamoured)
-                    ImGui.TextColored(new Vector4(0.2f, 1f, 0.2f, 1f), "✓");
-                else
-                    ImGui.TextDisabled("-");
+                // ponytail: Stain0 primary channel only; secondary rare and adds clutter.
+                DrawStainCell(slot.Stain0);
             }
 
             ImGui.EndTable();
         }
+    }
+
+    // ponytail: Lumina Stain sheet; Color is BGRA-packed uint.
+    private void DrawStainCell(byte stainId)
+    {
+        if (stainId == 0)
+        {
+            ImGui.TextDisabled("Unbemalt");
+            return;
+        }
+
+        var sheet = _data.GetExcelSheet<Stain>();
+        var row = sheet?.GetRowOrDefault(stainId);
+        if (row is null)
+        {
+            ImGui.Text($"#{stainId}");
+            return;
+        }
+
+        var packed = row.Value.Color;
+        var b = (packed >> 16) & 0xFF;
+        var g = (packed >> 8) & 0xFF;
+        var r = packed & 0xFF;
+        var color = new Vector4(r / 255f, g / 255f, b / 255f, 1f);
+        var sz = ImGui.GetFontSize();
+        var p = ImGui.GetCursorScreenPos();
+        ImGui.GetWindowDrawList().AddRectFilled(p, new Vector2(p.X + sz, p.Y + sz), ImGui.ColorConvertFloat4ToU32(color));
+        ImGui.Dummy(new Vector2(sz, sz));
+        ImGui.SameLine();
+        ImGui.TextUnformatted(row.Value.Name.ExtractText());
     }
 
     private static string FormatSource(ItemSource src)
