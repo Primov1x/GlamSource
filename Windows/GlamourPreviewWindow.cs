@@ -34,8 +34,8 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
     private Vector2? _lastDragPos;
     private PreviewMode _mode = PreviewMode.CurrentGear;
 
-    // ponytail: cache target index at open; game objects invalidate per-frame, indices don't.
-    private int _targetObjectIndex = -1;
+    // ponytail: cache target by EntityId, not ObjectIndex (ObjectIndex is flaky during game updates).
+    private uint _targetEntityId = 0;
     private JObject? _selfSnapshot;
 
     public GlamourPreviewWindow(
@@ -77,7 +77,7 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
     /// <summary>Open the preview; if <paramref name="target"/> is non-null, defaults to Target-Glam mode.</summary>
     public void OpenForTarget(Dalamud.Game.ClientState.Objects.Types.IGameObject? target)
     {
-        _targetObjectIndex = target?.ObjectIndex ?? -1;
+        _targetEntityId = target?.EntityId ?? 0;
         _mode = target != null ? PreviewMode.TargetGlam : PreviewMode.CurrentGear;
 
         var localPlayer = _objectTable.LocalPlayer;
@@ -138,7 +138,7 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
             return;
         }
 
-        var hasTarget = _targetObjectIndex >= 0;
+        var hasTarget = _targetEntityId != 0;
         if (ImGui.RadioButton("Target Glamour##previewMode", _mode == PreviewMode.TargetGlam)
             && _mode != PreviewMode.TargetGlam && hasTarget)
         {
@@ -221,9 +221,25 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
                     _log.Warning($"[GlamourPreviewWindow] GetState(self) failed: {ecGet}");
             }
 
-            if (_mode == PreviewMode.TargetGlam && _targetObjectIndex >= 0)
+            Dalamud.Game.ClientState.Objects.Types.IGameObject? targetObj = null;
+            if (_mode == PreviewMode.TargetGlam && _targetEntityId != 0)
             {
-                var (ecTgt, tgtState) = new GetState(_pi).Invoke(_targetObjectIndex, 0);
+                var found = _objectTable.SearchByEntityId(_targetEntityId);
+                if (found == null || found == _objectTable.LocalPlayer)
+                {
+                    _log.Warning($"[GlamourPreviewWindow] Target not found (EntityId={_targetEntityId}), falling back to self");
+                    _mode = PreviewMode.CurrentGear;
+                }
+                else
+                {
+                    _log.Info($"[GlamourPreviewWindow] Target resolved: EntityId={_targetEntityId} ObjectIndex={found.ObjectIndex}");
+                    targetObj = found;
+                }
+            }
+
+            if (targetObj != null)
+            {
+                var (ecTgt, tgtState) = new GetState(_pi).Invoke(targetObj.ObjectIndex, 0);
                 if (ecTgt == GlamourerApiEc.Success && tgtState != null)
                 {
                     var ecApp = new ApplyState(_pi).Invoke(tgtState, 0, 0, ApplyFlag.Once | ApplyFlag.Equipment);
@@ -232,7 +248,7 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
                 }
                 else
                 {
-                    _log.Warning($"[GlamourPreviewWindow] GetState(target={_targetObjectIndex}) failed: {ecTgt}");
+                    _log.Warning($"[GlamourPreviewWindow] GetState(target={targetObj.ObjectIndex}, EntityId={_targetEntityId}) failed: {ecTgt}");
                 }
             }
             else
