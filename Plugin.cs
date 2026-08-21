@@ -146,7 +146,7 @@ public class Plugin : IAsyncDalamudPlugin
         WindowSystem.AddWindow(shellWindow);
 
         previewRenderer = new PreviewRenderer(Framework, Log);
-        previewWindow = new GlamourPreviewWindow(previewRenderer, Framework, ClientState, TargetManager, ObjectTable, Log);
+        previewWindow = new GlamourPreviewWindow(previewRenderer, Framework, ClientState, ObjectTable, Log);
         WindowSystem.AddWindow(previewWindow);
         shellWindow.PreviewWindow = previewWindow;
 

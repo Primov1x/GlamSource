@@ -1,7 +1,6 @@
 using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
-using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
@@ -16,7 +15,6 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
     private readonly PreviewRenderer _renderer;
     private readonly IFramework _framework;
     private readonly IClientState _clientState;
-    private readonly ITargetManager _targetManager;
     private readonly IObjectTable _objectTable;
     private readonly IPluginLog _log;
 
@@ -27,7 +25,6 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
         PreviewRenderer renderer,
         IFramework framework,
         IClientState clientState,
-        ITargetManager targetManager,
         IObjectTable objectTable,
         IPluginLog log)
         : base("GlamSource 3D Preview", ImGuiWindowFlags.None)
@@ -35,7 +32,6 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
         _renderer = renderer;
         _framework = framework;
         _clientState = clientState;
-        _targetManager = targetManager;
         _objectTable = objectTable;
         _log = log;
 
@@ -51,11 +47,14 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
 
     public void OpenForCurrentTarget()
     {
-        // Prefer target, fall back to LocalPlayer.
-        var src = (IGameObject?)_targetManager.Target ?? _objectTable.LocalPlayer;
+        // ponytail: always render Self. The user wants to see the items they staged
+        // (Save-Mode / Apply-to-Self flow already mutates the local player's glamour via
+        // AgentTryon / Glamourer IPC), so pointing CharaView at LocalPlayer reflects them
+        // automatically. Callers must push items to Self before opening.
+        var src = _objectTable.LocalPlayer;
         if (src == null)
         {
-            _log.Info("[GlamourPreviewWindow] No target or local player; open ignored.");
+            _log.Info("[GlamourPreviewWindow] No local player; open ignored.");
             return;
         }
 
@@ -113,7 +112,7 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
         if (ImGui.SmallButton("Reset"))
             _framework.RunOnFrameworkThread(_renderer.Reset);
         ImGui.SameLine();
-        if (ImGui.SmallButton("Reload from Target"))
+        if (ImGui.SmallButton("Reload from Self"))
             OpenForCurrentTarget();
         ImGui.SameLine();
         ImGui.TextDisabled("Drag image to rotate");
@@ -134,17 +133,22 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
         var cursor = ImGui.GetCursorScreenPos();
         ImGui.Image(new ImTextureID(handle), target);
 
+        // ponytail: overlay an InvisibleButton on the image so ImGui treats the area as an
+        // active item — the window no longer moves while we drag to rotate the camera.
+        ImGui.SetCursorScreenPos(cursor);
+        ImGui.InvisibleButton("##previewDrag", target);
+
         HandleDrag(cursor, target);
     }
 
     private void HandleDrag(Vector2 imgTopLeft, Vector2 imgSize)
     {
-        var io = ImGui.GetIO();
-        var mouse = io.MousePos;
-        var inside = mouse.X >= imgTopLeft.X && mouse.X <= imgTopLeft.X + imgSize.X
-                  && mouse.Y >= imgTopLeft.Y && mouse.Y <= imgTopLeft.Y + imgSize.Y;
+        _ = imgTopLeft; _ = imgSize;
+        var mouse = ImGui.GetIO().MousePos;
 
-        if (ImGui.IsMouseDown(ImGuiMouseButton.Left) && (inside || _lastDragPos.HasValue))
+        // The InvisibleButton drawn just above owns the hit-test; IsItemActive is true
+        // exactly while the user holds LMB on it (and window-move is suppressed).
+        if (ImGui.IsItemActive())
         {
             if (_lastDragPos.HasValue)
             {
