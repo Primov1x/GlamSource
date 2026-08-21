@@ -5,8 +5,11 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
 using Dalamud.Interface.Windowing;
+using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using GlamSource.Core;
+using Glamourer.Api.Enums;
+using Glamourer.Api.IpcSubscribers;
 using Lumina.Excel.Sheets;
 
 namespace GlamSource.Windows;
@@ -19,6 +22,9 @@ public class CharacterGlamourWindow : Window, IDisposable
     private readonly ITextureProvider _textures;
     private readonly IDataManager _data;
     private readonly IObjectTable _objectTable;
+    private readonly IDalamudPluginInterface _pi;
+    private readonly IPluginLog _log;
+    private string? _lastApplyStatus;
 
     private IReadOnlyList<EquipmentSlot> _snapshot = Array.Empty<EquipmentSlot>();
     private bool _pinned;
@@ -32,7 +38,7 @@ public class CharacterGlamourWindow : Window, IDisposable
     private static readonly EquipmentSlotType[] RightCol =
         { EquipmentSlotType.Earrings, EquipmentSlotType.Necklace, EquipmentSlotType.Bracelets, EquipmentSlotType.RingRight, EquipmentSlotType.RingLeft };
 
-    public CharacterGlamourWindow(IGlamourService glamour, ItemDetailWindow detailWindow, ITextureProvider textures, IDataManager data, IObjectTable objectTable)
+    public CharacterGlamourWindow(IGlamourService glamour, ItemDetailWindow detailWindow, ITextureProvider textures, IDataManager data, IObjectTable objectTable, IDalamudPluginInterface pi, IPluginLog log)
         : base("Character Glamour")
     {
         _glamour = glamour;
@@ -40,6 +46,8 @@ public class CharacterGlamourWindow : Window, IDisposable
         _textures = textures;
         _data = data;
         _objectTable = objectTable;
+        _pi = pi;
+        _log = log;
 
         SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(480, 320) };
         SizeCondition = ImGuiCond.FirstUseEver;
@@ -87,7 +95,95 @@ public class CharacterGlamourWindow : Window, IDisposable
         }
         ImGui.SameLine();
         ImGui.TextDisabled(_pinned ? $"Pinned — {_pinnedFor}" : (_selfMode ? "Live from local player" : "Live from target"));
+
+        // Apply Target Glamour to Self
+        var glamourerInstalled = IsGlamourerInstalled();
+        // ponytail: enabled only when viewing target data (either target-mode live, or a pinned target snapshot) AND Glamourer present.
+        var canApply = glamourerInstalled && !_selfMode && _snapshot.Count > 0;
+
+        if (!canApply) ImGui.BeginDisabled();
+        if (ImGui.SmallButton("Apply Target Glamour to Self"))
+            ApplyTargetGlamourToSelf();
+        if (!canApply) ImGui.EndDisabled();
+
+        if (ImGui.IsItemHovered())
+        {
+            if (!glamourerInstalled)
+                ImGui.SetTooltip("Requires Glamourer plugin");
+            else if (_selfMode)
+                ImGui.SetTooltip("Switch to Target view to copy a target's glamour onto yourself");
+            else
+                ImGui.SetTooltip("Copy the target's equipment (glamour where set, else actual) to your own character.\nWeapons are skipped.");
+        }
+
+        if (!string.IsNullOrEmpty(_lastApplyStatus))
+        {
+            ImGui.SameLine();
+            ImGui.TextDisabled(_lastApplyStatus);
+        }
     }
+
+    private bool IsGlamourerInstalled()
+    {
+        try
+        {
+            var (major, minor) = new ApiVersion(_pi).Invoke();
+            return major > 0 || minor > 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private void ApplyTargetGlamourToSelf()
+    {
+        try
+        {
+            var setItem = new SetItem(_pi);
+            var applied = 0;
+            var failed = 0;
+            foreach (var slot in _snapshot)
+            {
+                // ponytail: skip weapons — MainHand/OffHand model matching is fragile and cross-class swaps can crash the character.
+                if (slot.Slot == EquipmentSlotType.MainHand || slot.Slot == EquipmentSlotType.OffHand)
+                    continue;
+
+                var apiSlot = MapToApiSlot(slot.Slot);
+                if (apiSlot == ApiEquipSlot.Unknown)
+                    continue;
+
+                // Prefer the glamoured appearance; fall back to the actual item if no glamour set.
+                var itemId = slot.GlamourItemId ?? slot.ActualItemId;
+                if (itemId == 0) continue;
+
+                var ret = setItem.Invoke(0, apiSlot, itemId, Array.Empty<byte>(), 0, ApplyFlag.Once);
+                if (ret == GlamourerApiEc.Success) applied++;
+                else { failed++; _log.Warning($"[GlamSource] SetItem {apiSlot} id={itemId} -> {ret}"); }
+            }
+            _lastApplyStatus = failed == 0 ? $"Applied {applied}." : $"Applied {applied}, {failed} failed (see /xllog).";
+        }
+        catch (Exception ex)
+        {
+            _log.Error(ex, "[GlamSource] Apply target glamour failed");
+            _lastApplyStatus = "Failed — Glamourer IPC error.";
+        }
+    }
+
+    private static ApiEquipSlot MapToApiSlot(EquipmentSlotType s) => s switch
+    {
+        EquipmentSlotType.Head => ApiEquipSlot.Head,
+        EquipmentSlotType.Body => ApiEquipSlot.Body,
+        EquipmentSlotType.Hands => ApiEquipSlot.Hands,
+        EquipmentSlotType.Legs => ApiEquipSlot.Legs,
+        EquipmentSlotType.Feet => ApiEquipSlot.Feet,
+        EquipmentSlotType.Earrings => ApiEquipSlot.Ears,
+        EquipmentSlotType.Necklace => ApiEquipSlot.Neck,
+        EquipmentSlotType.Bracelets => ApiEquipSlot.Wrists,
+        EquipmentSlotType.RingRight => ApiEquipSlot.RFinger,
+        EquipmentSlotType.RingLeft => ApiEquipSlot.LFinger,
+        _ => ApiEquipSlot.Unknown,
+    };
 
     private void DrawVanillaLayout()
     {
@@ -107,11 +203,12 @@ public class CharacterGlamourWindow : Window, IDisposable
         ImGui.NewLine();
         ImGui.Spacing();
 
-        // 3-column body
-        if (ImGui.BeginTable("##charLayout", 3, ImGuiTableFlags.SizingFixedFit))
+        // 3-column body. ponytail: fixed center width derived from font size — WidthStretch inside SizingFixedFit collapses to 0 (BUG 1).
+        var centerWidth = ImGui.GetFontSize() * 12f;
+        if (ImGui.BeginTable("##charLayout", 3, ImGuiTableFlags.BordersInnerV | ImGuiTableFlags.SizingFixedFit))
         {
             ImGui.TableSetupColumn("left", ImGuiTableColumnFlags.WidthFixed, colWidth);
-            ImGui.TableSetupColumn("center", ImGuiTableColumnFlags.WidthStretch);
+            ImGui.TableSetupColumn("center", ImGuiTableColumnFlags.WidthFixed, centerWidth);
             ImGui.TableSetupColumn("right", ImGuiTableColumnFlags.WidthFixed, colWidth);
 
             var rows = Math.Max(LeftCol.Length, RightCol.Length);
@@ -142,14 +239,14 @@ public class CharacterGlamourWindow : Window, IDisposable
 
     private void DrawCenterCard()
     {
-        // ponytail: text-only card. No custom font scaling. Only shown for Self; fallback string for Target.
-        string name = "-";
+        // ponytail: text-only card. No custom font scaling. Fills from local player in Self mode, else shows target name if available.
+        string name = "Loading...";
         string job = "-";
         string level = "-";
 
+        var lp = _objectTable.LocalPlayer;
         if (_selfMode)
         {
-            var lp = _objectTable.LocalPlayer;
             if (lp != null)
             {
                 name = lp.Name.TextValue;
@@ -165,8 +262,8 @@ public class CharacterGlamourWindow : Window, IDisposable
 
         ImGui.TextColored(new Vector4(0.9f, 0.7f, 0.2f, 1f), name);
         ImGui.Separator();
-        ImGui.Text(job);
-        ImGui.Text(level);
+        ImGui.TextUnformatted(job);
+        ImGui.TextUnformatted(level);
     }
 
     private void DrawSlot(EquipmentSlotType slotType, EquipmentSlot? slot, Vector2 iconVec)
