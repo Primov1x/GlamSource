@@ -34,6 +34,32 @@ internal static class UiStyle
         return new Scope(varCount: 7, colorCount: 1);
     }
 
+    // ponytail: mirror Questionable's QstTheme pattern — rounding + border + solid WindowBg so corners are actually visible.
+    public static void PushWindow()
+    {
+        var r = MathF.Max(8f, ImGui.GetFontSize() * 0.6f);
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding,    r);
+        ImGui.PushStyleVar(ImGuiStyleVar.ChildRounding,     r * 0.75f);
+        ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding,     r * 0.6f);
+        ImGui.PushStyleVar(ImGuiStyleVar.PopupRounding,     r);
+        ImGui.PushStyleVar(ImGuiStyleVar.GrabRounding,      r * 0.5f);
+        ImGui.PushStyleVar(ImGuiStyleVar.TabRounding,       r * 0.6f);
+        ImGui.PushStyleVar(ImGuiStyleVar.ScrollbarRounding, r);
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize,  1f);
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding,     new Vector2(10, 9));
+
+        ImGui.PushStyleColor(ImGuiCol.WindowBg,      new Vector4(21/255f, 21/255f, 21/255f, 0.96f));
+        ImGui.PushStyleColor(ImGuiCol.Border,        new Vector4(64/255f, 64/255f, 64/255f, 1f));
+        ImGui.PushStyleColor(ImGuiCol.TitleBg,       new Vector4(14/255f, 14/255f, 14/255f, 1f));
+        ImGui.PushStyleColor(ImGuiCol.TitleBgActive, new Vector4(26/255f, 26/255f, 26/255f, 1f));
+    }
+
+    public static void PopWindow()
+    {
+        ImGui.PopStyleColor(4);
+        ImGui.PopStyleVar(9);
+    }
+
     /// <summary>
     /// Consistent section header: accent dot + label + thin separator.
     /// Replaces the copy-pasted TextColored(...) + Separator() pairs.

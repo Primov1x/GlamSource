@@ -126,6 +126,12 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         Flags = _configuration.IsConfigWindowMovable
             ? Flags & ~ImGuiWindowFlags.NoMove
             : Flags | ImGuiWindowFlags.NoMove;
+        UiStyle.PushWindow();
+    }
+
+    public override void PostDraw()
+    {
+        UiStyle.PopWindow();
     }
 
     public override void Draw()

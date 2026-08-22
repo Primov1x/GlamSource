@@ -276,20 +276,9 @@ public class ItemDetailWindow : Window, IDisposable
         }
     }
 
-    // ponytail: Questionable-style rounded frames; pushed in PreDraw so ChildWindows/popups inherit them.
-    public override void PreDraw()
-    {
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, 8f);
-        ImGui.PushStyleVar(ImGuiStyleVar.ChildRounding, 6f);
-        ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 5f);
-        ImGui.PushStyleVar(ImGuiStyleVar.PopupRounding, 6f);
-        ImGui.PushStyleVar(ImGuiStyleVar.GrabRounding, 4f);
-    }
-
-    public override void PostDraw()
-    {
-        ImGui.PopStyleVar(5);
-    }
+    // ponytail: window-chrome rounding must be pushed before ImGui.Begin — Draw() is too late.
+    public override void PreDraw()  => UiStyle.PushWindow();
+    public override void PostDraw() => UiStyle.PopWindow();
 
     private void DrawItemHeader(ItemDetail detail)
     {

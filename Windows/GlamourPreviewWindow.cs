@@ -129,6 +129,9 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
         _renderer.Tick();
     }
 
+    public override void PreDraw()  => UiStyle.PushWindow();
+    public override void PostDraw() => UiStyle.PopWindow();
+
     public override void Draw()
     {
         using var _style = UiStyle.Push();
