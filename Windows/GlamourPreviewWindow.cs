@@ -98,12 +98,40 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
         }
     }
 
-    // ponytail: shell needs to re-apply target glam to CharaView when Recent-hover previews.
-    public void ApplyTargetGlamToPreview(uint targetEntityId)
+    // ponytail: shell switches the preview source character (0 = self). No glam apply, no mode change.
+    public void ShowCharacterInPreview(uint entityId)
     {
-        _targetEntityId = targetEntityId;
-        _mode = targetEntityId != 0 ? PreviewMode.TargetGlam : PreviewMode.CurrentGear;
-        _framework.RunOnFrameworkThread(ApplyModeState);
+        if (!_renderer.IsInitialized)
+            EnsureInitializedForSelf();
+
+        nint addr = nint.Zero;
+        Func<nint> provider;
+        if (entityId == 0)
+        {
+            var lp = _objectTable.LocalPlayer;
+            if (lp == null) return;
+            addr = lp.Address;
+            provider = () => _objectTable.LocalPlayer?.Address ?? nint.Zero;
+        }
+        else
+        {
+            var obj = _objectTable.SearchByEntityId(entityId);
+            if (obj == null)
+            {
+                _log.Warning($"[GlamourPreviewWindow] ShowCharacterInPreview: entity {entityId} not found");
+                return;
+            }
+            addr = obj.Address;
+            provider = () => _objectTable.SearchByEntityId(entityId)?.Address ?? nint.Zero;
+        }
+
+        _framework.RunOnFrameworkThread(() => _renderer.SetSource(addr, provider));
+    }
+
+    // ponytail: delta orbit for the shell's inline preview; mirrors HandleDrag's dispatch.
+    public void SetYawPitch(float dx, float dy)
+    {
+        _framework.RunOnFrameworkThread(() => _renderer.SetYawPitch(dx, dy));
     }
 
     public PreviewRenderer Renderer => _renderer;

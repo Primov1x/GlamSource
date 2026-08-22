@@ -68,6 +68,10 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
     private IReadOnlyList<EquipmentSlot>? _recentOverride;
     // ponytail: entity id for hover-preview cleanup (0 = show self glam again).
     private uint _hoverTargetEntityId;
+    // ponytail: Name (not index) of the clicked Recent — survives Recent list mutations.
+    private string? _activeRecentName;
+    // ponytail: last entity handed to the preview (0 = self); guards the per-frame dispatch.
+    private uint _previewEntityId;
     // ponytail: live DrawData snapshot of the hovered Recent character while it is visible.
     private IReadOnlyList<EquipmentSlot>? _hoverSnapshot;
 
@@ -402,6 +406,8 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         var avail = ImGui.GetContentRegionAvail();
         var centerW = MathF.Max(fontSize * 12f, avail.X - (slotW * 2f) - recentW - fontSize * 1.5f);
 
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(4, 4));
+
         // Left slot column
         if (ImGui.BeginChild("##char_left", new Vector2(slotW, 0), true))
         {
@@ -434,6 +440,18 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
             DrawRecentSidebar();
         }
         ImGui.EndChild();
+
+        ImGui.PopStyleVar();
+
+        // Preview source: hovered player, else visible player of the clicked Recent, else self (0).
+        var desired = _hoverTargetEntityId;
+        if (desired == 0 && _activeRecentName != null)
+            desired = FindVisiblePlayer(_activeRecentName)?.EntityId ?? 0u;
+        if (desired != _previewEntityId)
+        {
+            _previewEntityId = desired;
+            PreviewWindow?.ShowCharacterInPreview(desired);
+        }
     }
 
     private void DrawCharacterToolbar()
@@ -455,6 +473,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
             if (ImGui.SmallButton("Clear Recent"))
             {
                 _recentOverride = null;
+                _activeRecentName = null;
                 ClearRecentHover();
             }
             ImGui.SameLine();
@@ -523,7 +542,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
 
     private void DrawSlotColumn(EquipmentSlotType[] slots)
     {
-        var iconEdge = ImGui.GetFontSize() * 2.2f;
+        var iconEdge = ImGui.GetFontSize() * 1.8f;
         var iconVec = new Vector2(iconEdge, iconEdge);
         foreach (var st in slots)
         {
@@ -534,7 +553,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
 
     private void DrawSlotRow(EquipmentSlotType[] slots)
     {
-        var iconEdge = ImGui.GetFontSize() * 2.2f;
+        var iconEdge = ImGui.GetFontSize() * 1.8f;
         var iconVec = new Vector2(iconEdge, iconEdge);
         for (var i = 0; i < slots.Length; i++)
         {
@@ -609,6 +628,15 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
             }
         }
 
+        // ponytail: right-button orbit (inline view only); left drag above stays as-is.
+        var io = ImGui.GetIO();
+        if (io.MouseDown[1] && ImGui.IsItemHovered())
+        {
+            var dx = (float)io.MouseDelta.X;
+            var dy = (float)io.MouseDelta.Y;
+            PreviewWindow?.SetYawPitch(dx * 0.75f, dy * 0.75f);
+        }
+
         if (ImGui.IsItemActive())
         {
             var mouse = ImGui.GetIO().MousePos;
@@ -650,23 +678,20 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         {
             var r = recents[i];
             var label = string.IsNullOrEmpty(r.World) ? r.Name : $"{r.Name}\n{r.World}";
-            if (ImGui.Selectable($"{label}##recent_{i}", false, ImGuiSelectableFlags.None, new Vector2(0, ImGui.GetFontSize() * 2.4f)))
+            if (ImGui.Selectable($"{label}##recent_{i}", false, ImGuiSelectableFlags.None, new Vector2(0, ImGui.GetFontSize() * 2.0f)))
             {
                 _recentOverride = BuildSnapshotFromIds(r.ItemIds);
                 _snapshot = _recentOverride;
                 _pinned = false;
+                _activeRecentName = r.Name;
             }
             if (ImGui.IsItemHovered())
             {
                 anyHovered = true;
                 var pc = FindVisiblePlayer(r.Name);
+                _hoverTargetEntityId = pc?.EntityId ?? 0u;
                 if (pc != null)
                 {
-                    if (_hoverTargetEntityId != pc.EntityId)
-                    {
-                        _hoverTargetEntityId = pc.EntityId;
-                        PreviewWindow?.ApplyTargetGlamToPreview(pc.EntityId);
-                    }
                     // ponytail: refreshed every hovered frame, same cost as the live target scan already done per frame.
                     _hoverSnapshot = _glamour.TryGetVisibleGlamour(pc.ObjectIndex);
                 }
@@ -698,7 +723,6 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         if (_hoverTargetEntityId == 0 && _hoverSnapshot == null) return;
         _hoverTargetEntityId = 0;
         _hoverSnapshot = null;
-        PreviewWindow?.ApplyTargetGlamToPreview(0);
     }
 
     // ponytail: minimal synthetic snapshot — just IDs from Recent; names resolved from Item sheet.

@@ -19,7 +19,7 @@ public sealed class RecentTarget
 [Serializable]
 public class Configuration : Core.Configuration, IPluginConfiguration
 {
-    public const int MaxRecentTargets = 5;
+    public const int MaxRecentTargets = 10;
 
     public List<RecentTarget> RecentTargets { get; set; } = new();
 

@@ -90,6 +90,26 @@ public sealed unsafe class PreviewRenderer : IDisposable
         agent->CharaView.Render(_counter++);
     }
 
+    /// <summary>Switch the rendered source character. Must be called on Framework thread.</summary>
+    public void SetSource(nint address, Func<nint> sourceProvider)
+    {
+        _sourceProvider = sourceProvider;
+        if (!_initialized)
+        {
+            Initialize(address != nint.Zero ? (Character*)address : null, sourceProvider);
+            return;
+        }
+
+        var agent = AgentTryon.Instance();
+        if (agent == null) return;
+        if (address != nint.Zero)
+        {
+            agent->CharaView.ModelData.CopyFromCharacter((Character*)address);
+            // ponytail: few forced re-copies so the new character lands even without an active TryOn agent.
+            RequestRecopy(5);
+        }
+    }
+
     public void SetYawPitch(float yaw, float pitch)
     {
         if (!_initialized) return;
