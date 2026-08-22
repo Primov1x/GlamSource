@@ -385,6 +385,8 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
                 var ec = new ApplyState(_pi).Invoke(snap, 0, 0, ApplyFlag.Once | ApplyFlag.Equipment);
                 if (ec != GlamourerApiEc.Success)
                     _log.Warning($"[GlamourPreviewWindow] Restore on close failed: {ec}");
+                else
+                    _log.Info("[GlamourPreviewWindow] Restored own glamour.");
             }
             catch (Exception ex)
             {
@@ -392,6 +394,34 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
             }
         });
     }
+
+    // ponytail: capture LocalPlayer glamour once, so the shell can mutate self via SetItem
+    // and later restore. Silent no-op if Glamourer missing or snapshot already stored.
+    public void TrySnapshotSelfOnce()
+    {
+        if (_selfSnapshot != null) return;
+        if (!IsGlamourerInstalled())
+        {
+            _log.Warning("[GlamourPreviewWindow] TrySnapshotSelfOnce: Glamourer not installed; skipping.");
+            return;
+        }
+        try
+        {
+            var (ec, state) = new GetStateBase64(_pi).Invoke(0, 0);
+            if (ec == GlamourerApiEc.Success && state != null)
+                _selfSnapshot = state;
+            else
+                _log.Warning($"[GlamourPreviewWindow] TrySnapshotSelfOnce: GetStateBase64 failed: {ec}");
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"[GlamourPreviewWindow] TrySnapshotSelfOnce error: {ex.Message}");
+        }
+    }
+
+    // ponytail: public entry for the shell to restore LocalPlayer's original glamour
+    // when the user clears/leaves the Recent preview.
+    public void RestoreSelf() => RestoreSnapshotIfAny();
 
     private bool IsGlamourerInstalled()
     {
@@ -440,6 +470,9 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
 
     public void Dispose()
     {
+        // ponytail: always restore before tearing down — otherwise LocalPlayer stays glamoured
+        // if the plugin is disposed while a Recent preview is active.
+        RestoreSnapshotIfAny();
         _clientState.Logout -= OnLogout;
         if (_frameworkHooked)
         {

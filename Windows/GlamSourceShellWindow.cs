@@ -74,6 +74,9 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
     private uint _previewEntityId;
     // ponytail: live DrawData snapshot of the hovered Recent character while it is visible.
     private IReadOnlyList<EquipmentSlot>? _hoverSnapshot;
+    // ponytail: true iff we currently have LocalPlayer's glam mutated for a Recent preview
+    // — used to know when to trigger PreviewWindow.RestoreSelf().
+    private bool _recentGlamApplied;
 
     private static readonly EquipmentSlotType[] TopRow =
         { EquipmentSlotType.MainHand, EquipmentSlotType.OffHand };
@@ -118,6 +121,10 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
 
     public void Dispose()
     {
+        // ponytail: restore LocalPlayer's original glam if a Recent preview is still active.
+        // Belt-and-braces: GlamourPreviewWindow.Dispose() also restores.
+        if (_recentGlamApplied)
+            ClearRecentGlamOverride();
         if (_frameworkHooked)
         {
             _framework.Update -= OnFrameworkDrainTryOn;
@@ -176,6 +183,9 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         {
             if (_configuration.SelectedTab != (int)id)
             {
+                // ponytail: leaving Character tab while a Recent-glam is applied to self → restore.
+                if (_configuration.SelectedTab == (int)TabId.Character && _recentGlamApplied)
+                    ClearRecentGlamOverride();
                 _configuration.SelectedTab = (int)id;
                 _configuration.Save();
             }
@@ -476,6 +486,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
                 _recentOverride = null;
                 _activeRecentName = null;
                 ClearRecentHover();
+                ClearRecentGlamOverride();
             }
             ImGui.SameLine();
             ImGui.TextDisabled("Viewing recent snapshot");
@@ -685,6 +696,9 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
                 _snapshot = _recentOverride;
                 _pinned = false;
                 _activeRecentName = r.Name;
+                // ponytail: mutate LocalPlayer's glam so the inline CharaView (which mirrors LocalPlayer)
+                // shows this Recent snapshot. Restore hooks: Clear Recent, tab switch, Dispose.
+                ApplyRecentGlamOverride(_recentOverride);
             }
             if (ImGui.IsItemHovered())
             {
@@ -751,6 +765,49 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
             return major > 0 || minor > 0;
         }
         catch { return false; }
+    }
+
+    // ponytail: apply a Recent snapshot to LocalPlayer's Glamourer state so the inline
+    // CharaView (which mirrors LocalPlayer) renders it. Original glam is snapshotted once
+    // via PreviewWindow.TrySnapshotSelfOnce(); PreviewWindow.RestoreSelf() puts it back.
+    private void ApplyRecentGlamOverride(IReadOnlyList<EquipmentSlot> snapshot)
+    {
+        if (PreviewWindow == null) return;
+        if (!IsGlamourerInstalled())
+        {
+            _log.Warning("[GlamSource] ApplyRecentGlamOverride: Glamourer not installed; skipping preview swap.");
+            return;
+        }
+        // Snapshot self first (idempotent) so we can restore later.
+        PreviewWindow.TrySnapshotSelfOnce();
+        try
+        {
+            var setItem = new SetItem(_pi);
+            foreach (var slot in snapshot)
+            {
+                if (slot.Slot == EquipmentSlotType.MainHand || slot.Slot == EquipmentSlotType.OffHand)
+                    continue;
+                var apiSlot = MapToApiSlot(slot.Slot);
+                if (apiSlot == ApiEquipSlot.Unknown) continue;
+                var itemId = slot.GlamourItemId ?? slot.ActualItemId;
+                if (itemId == 0) continue;
+                var ret = setItem.Invoke(0, apiSlot, itemId, new List<byte> { 0, 0 }, 0, ApplyFlag.Once);
+                if (ret != GlamourerApiEc.Success)
+                    _log.Warning($"[GlamSource] Recent preview SetItem {apiSlot} id={itemId} -> {ret}");
+            }
+            _recentGlamApplied = true;
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"[GlamSource] ApplyRecentGlamOverride error: {ex.Message}");
+        }
+    }
+
+    private void ClearRecentGlamOverride()
+    {
+        if (!_recentGlamApplied) return;
+        _recentGlamApplied = false;
+        PreviewWindow?.RestoreSelf();
     }
 
     private void ApplyTargetGlamourToSelf()

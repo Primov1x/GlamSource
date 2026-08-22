@@ -213,7 +213,7 @@ public class Plugin : IAsyncDalamudPlugin
         var key = $"{name}@{world}";
         if (key == _lastRecentKey) return;
 
-        var slots = GameDataService.TryGetVisibleGlamour(pc.ObjectIndex);
+        var slots = GameDataService.TryGetVisibleGlamour(pc.ObjectIndex) ?? GameDataService.GetTargetEquipment();
         if (slots == null || slots.Count == 0) return;
 
         _lastRecentKey = key;
