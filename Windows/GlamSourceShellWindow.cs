@@ -801,8 +801,8 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         _recentGlamApplied = false;
         if (PreviewWindow == null) return;
         // ponytail: resume LocalPlayer-copy so the CharaView goes back to mirroring the user.
-        // Tryon slots stay populated until the game clears them or the user opens Fitting Room;
-        // that's fine — CopyFromCharacter overwrites the render source each tick.
+        // The direct slot writes stay in the CharaView until overwritten; that's fine —
+        // CopyFromCharacter overwrites the render source each tick.
         PreviewWindow.Renderer.SuspendCharacterCopy(false);
         PreviewWindow.Renderer.RequestRecopy(5);
     }
