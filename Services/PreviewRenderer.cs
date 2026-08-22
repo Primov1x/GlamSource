@@ -83,11 +83,11 @@ public sealed unsafe class PreviewRenderer : IDisposable
         var agent = AgentTryon.Instance();
         if (agent == null) return;
 
-        // ponytail: AgentTryon.CharaView is shared with the game's TryOn window (same object,
-        // same slot). While TryOn is active or right after ApplyState, ModelData drifts —
-        // re-copy from LocalPlayer.
-        var tryonActive = agent->AgentInterface.IsAgentActive();
-        if ((tryonActive || _pendingRecopyFrames > 0) && _sourceProvider != null)
+        // ponytail: recopy every tick while a source is set. Real warmup keeps AgentTryon
+        // active, so gating on IsAgentActive is redundant and stops live Glamourer edits
+        // from propagating until the user opens the Fitting Room. _pendingRecopyFrames
+        // stays for callers that want to force extra ticks after ApplyState.
+        if (_sourceProvider != null)
         {
             var addr = _sourceProvider();
             if (addr != nint.Zero)
