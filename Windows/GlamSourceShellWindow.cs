@@ -796,9 +796,13 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
                     _log.Warning($"[GlamSource] Recent preview SetItem {apiSlot} id={itemId} -> {ret}");
             }
             _recentGlamApplied = true;
+            // ponytail: SetItem alone does not force a model reload; without AutoRedrawEquipOnChanges
+            // the CharaView copy shows stale gear. ReapplyState nudges Glamourer to redraw the actor.
+            try { new ReapplyState(_pi).Invoke(0, 0, ApplyFlag.Once); }
+            catch (Exception ex) { _log.Warning($"[GlamSource] Recent preview ReapplyState: {ex.Message}"); }
             // ponytail: Glamourer redraw lands async over ~0.5s; pump the CharaView re-copy so the
             // inline preview picks up the new gear instead of showing pre-apply frames.
-            PreviewWindow.Renderer.RequestRecopy(30);
+            PreviewWindow.Renderer.RequestRecopy(60);
         }
         catch (Exception ex)
         {
