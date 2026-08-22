@@ -14,19 +14,31 @@
     <IsPackable>false</IsPackable>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <NoWarn>$(NoWarn);CA1416</NoWarn>
-    <Version>0.0.0.32</Version>
-    <AssemblyVersion>0.0.0.32</AssemblyVersion>
+    <Version>0.0.0.33</Version>
+    <AssemblyVersion>0.0.0.33</AssemblyVersion>
     <InternalsVisibleTo>GlamSource.Mock</InternalsVisibleTo>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="$(MSBuildThisFileDirectory)GlamSource.Core\GlamSource.Core.csproj" />
-    <ProjectReference Include="..\Glamourer.Api\Glamourer.Api.csproj" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Glamourer.Api" Version="2.8.2">
+      <PrivateAssets>none</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="Lumina.Excel" Version="7.4.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>$(NuGetPackageRoot)newtonsoft.json\13.0.3\lib\netstandard2.0\Newtonsoft.Json.dll</HintPath>
+    </Reference>
+    <Reference Include="Glamourer.Api">
+      <HintPath>$(NuGetPackageRoot)glamourer.api\2.8.2\lib\net10.0-windows7.0\Glamourer.Api.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
   <ItemGroup>
