@@ -8,6 +8,7 @@ using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using Glamourer.Api.Enums;
 using Glamourer.Api.IpcSubscribers;
+using GlamSource.Core;
 using GlamSource.Services;
 
 namespace GlamSource.Windows;
@@ -28,6 +29,7 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
     private readonly ITargetManager _targetManager;
     private readonly IDalamudPluginInterface _pi;
     private readonly IPluginLog _log;
+    private readonly IGlamourService _glamour;
 
     private bool _frameworkHooked;
     private Vector2? _lastDragPos;
@@ -46,7 +48,8 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
         IObjectTable objectTable,
         ITargetManager targetManager,
         IDalamudPluginInterface pluginInterface,
-        IPluginLog log)
+        IPluginLog log,
+        IGlamourService glamour)
     // ponytail: NoScrollWithMouse so mouse wheel goes to zoom handler, not window scroll.
     : base("GlamSource 3D Preview", ImGuiWindowFlags.NoScrollWithMouse)
     {
@@ -57,6 +60,7 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
         _targetManager = targetManager;
         _pi = pluginInterface;
         _log = log;
+        _glamour = glamour;
 
         SizeConstraints = new WindowSizeConstraints
         {
@@ -91,7 +95,7 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
 
         _framework.RunOnFrameworkThread(() =>
         {
-            _renderer.Initialize((Character*)selfAddr, () => _objectTable.LocalPlayer?.Address ?? nint.Zero);
+            _renderer.Initialize((Character*)selfAddr, ResolveWarmupItemId(), () => _objectTable.LocalPlayer?.Address ?? nint.Zero);
         });
 
         if (!_frameworkHooked)
@@ -99,6 +103,23 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
             _framework.Update += OnFrameworkTick;
             _frameworkHooked = true;
         }
+    }
+
+    // ponytail: any equipped ItemId works to activate AgentTryon. Pick the first non-zero slot
+    // from the live self read; returns 0 if nothing is equipped (caller retries next frame).
+    private uint ResolveWarmupItemId()
+    {
+        try
+        {
+            var eq = _glamour.GetSelfEquipment();
+            foreach (var slot in eq)
+            {
+                var id = slot.GlamourItemId ?? slot.ActualItemId;
+                if (id != 0) return id;
+            }
+        }
+        catch (Exception ex) { _log.Warning($"[GlamourPreviewWindow] ResolveWarmupItemId: {ex.Message}"); }
+        return 0;
     }
 
     // ponytail: shell switches the preview source character (0 = self). No glam apply, no mode change.
@@ -128,7 +149,7 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
             provider = () => _objectTable.SearchByEntityId(entityId)?.Address ?? nint.Zero;
         }
 
-        _framework.RunOnFrameworkThread(() => _renderer.SetSource(addr, provider));
+        _framework.RunOnFrameworkThread(() => _renderer.SetSource(addr, ResolveWarmupItemId(), provider));
     }
 
     // ponytail: delta orbit for the shell's inline preview; mirrors HandleDrag's dispatch.
@@ -166,7 +187,7 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
             _renderer.Release();
             // ponytail: pass a live LocalPlayer-address resolver so Tick can re-copy each frame
             // (ApplyState lands async; without this the viewer shows pre-apply gear).
-            _renderer.Initialize((Character*)selfAddr, () => _objectTable.LocalPlayer?.Address ?? nint.Zero);
+            _renderer.Initialize((Character*)selfAddr, ResolveWarmupItemId(), () => _objectTable.LocalPlayer?.Address ?? nint.Zero);
             ApplyModeState();
         });
 

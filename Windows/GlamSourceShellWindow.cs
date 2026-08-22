@@ -796,6 +796,9 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
                     _log.Warning($"[GlamSource] Recent preview SetItem {apiSlot} id={itemId} -> {ret}");
             }
             _recentGlamApplied = true;
+            // ponytail: Glamourer redraw lands async over ~0.5s; pump the CharaView re-copy so the
+            // inline preview picks up the new gear instead of showing pre-apply frames.
+            PreviewWindow.Renderer.RequestRecopy(30);
         }
         catch (Exception ex)
         {

@@ -40,8 +40,11 @@ public sealed unsafe class PreviewRenderer : IDisposable
     /// <summary>Current camera zoom (1.0 = CharaView default distance).</summary>
     public float Zoom => _zoom;
 
-    /// <summary>Initialize CharaView from a source character. Must be called on Framework thread.</summary>
-    public void Initialize(Character* source, Func<nint>? sourceProvider = null)
+    /// <summary>Initialize CharaView from a source character. Must be called on Framework thread.
+    /// <paramref name="warmupItemId"/> is a real Item RowId used to activate AgentTryon when the
+    /// Fitting Room has never been opened — passing 0 (invalid) leaves the agent inactive and lets
+    /// AgentCharaCard hijack our CharaView slot. Caller retries next frame if this returns without initializing.</summary>
+    public void Initialize(Character* source, uint warmupItemId, Func<nint>? sourceProvider = null)
     {
         if (_initialized) return;
         if (source == null) return;
@@ -50,8 +53,10 @@ public sealed unsafe class PreviewRenderer : IDisposable
         if (agent == null)
         {
             // ponytail: Tryon agent only exists once the Fitting Room has been opened.
-            // AgentTryon.TryOn is the game's own entry point (openerAddonId 0 = no opener addon).
-            AgentTryon.TryOn(0, 0);
+            // Warm it with a real equipped ItemId — TryOn(0,0) leaves the agent inactive and the
+            // game then hijacks CharaView slot 2 for AgentCharaCard (portraits/adventure plates).
+            if (warmupItemId == 0) return;
+            AgentTryon.TryOn(0, warmupItemId, 0, 0, 0, false);
             agent = AgentTryon.Instance();
             if (agent == null) return;
         }
@@ -98,12 +103,12 @@ public sealed unsafe class PreviewRenderer : IDisposable
     }
 
     /// <summary>Switch the rendered source character. Must be called on Framework thread.</summary>
-    public void SetSource(nint address, Func<nint> sourceProvider)
+    public void SetSource(nint address, uint warmupItemId, Func<nint> sourceProvider)
     {
         _sourceProvider = sourceProvider;
         if (!_initialized)
         {
-            Initialize(address != nint.Zero ? (Character*)address : null, sourceProvider);
+            Initialize(address != nint.Zero ? (Character*)address : null, warmupItemId, sourceProvider);
             return;
         }
 
