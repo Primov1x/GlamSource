@@ -9,7 +9,6 @@ using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using Glamourer.Api.Enums;
 using Glamourer.Api.IpcSubscribers;
 using GlamSource.Services;
-using Newtonsoft.Json.Linq;
 
 namespace GlamSource.Windows;
 
@@ -36,7 +35,9 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
 
     // ponytail: cache target by EntityId, not ObjectIndex (ObjectIndex is flaky during game updates).
     private uint _targetEntityId = 0;
-    private JObject? _selfSnapshot;
+    // ponytail: base64 string, not JObject — JObject crosses IPC unreliably (assembly-identity mismatch on the Newtonsoft type);
+    // GetStateBase64/ApplyState(string) are the IPC-safe endpoints the current Glamourer ships.
+    private string? _selfSnapshot;
 
     public GlamourPreviewWindow(
         PreviewRenderer renderer,
@@ -213,10 +214,10 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
         {
             if (_selfSnapshot == null)
             {
-                GetState? getStateInstance = new(_pi);
+                GetStateBase64? getStateInstance = new(_pi);
                 if (!getStateInstance.Valid)
                 {
-                    _log.Error("[GlamourPreviewWindow] GetState IPC not available");
+                    _log.Error("[GlamourPreviewWindow] GetStateBase64 IPC not available");
                     return;
                 }
 
@@ -224,7 +225,7 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
                 if (ecGet == GlamourerApiEc.Success && state != null)
                     _selfSnapshot = state;
                 else
-                    _log.Warning($"[GlamourPreviewWindow] GetState(self) failed: {ecGet}");
+                    _log.Warning($"[GlamourPreviewWindow] GetStateBase64(self) failed: {ecGet}");
             }
 
             Dalamud.Game.ClientState.Objects.Types.IGameObject? targetObj = null;
@@ -245,7 +246,7 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
 
             if (targetObj != null)
             {
-                GetState? getStateInstance = new(_pi);
+                GetStateBase64? getStateInstance = new(_pi);
                 if (getStateInstance.Valid)
                 {
                     var (ecTgt, tgtState) = getStateInstance.Invoke(targetObj.ObjectIndex, 0);
