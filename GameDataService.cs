@@ -131,6 +131,23 @@ public unsafe class GameDataService : IGlamourService
 
     public IReadOnlyList<EquipmentSlot> GetSelfEquipment() => GetOwnEquipment();
 
+    // ponytail: passive glamour scan — reuses the existing DrawData path used as target fallback.
+    // Caller must invoke on the framework thread (matches GetTargetEquipment / GetSelfEquipment contract).
+    public IReadOnlyList<EquipmentSlot>? TryGetVisibleGlamour(int objectIndex)
+    {
+        if (objectIndex < 0 || objectIndex >= _objectTable.Length)
+            return null;
+
+        var obj = _objectTable[objectIndex];
+        if (obj == null || obj.Address == nint.Zero)
+            return null;
+
+        if (obj is not IPlayerCharacter player)
+            return null;
+
+        return GetDrawDataEquipment(player);
+    }
+
     private unsafe IReadOnlyList<EquipmentSlot> GetOwnEquipment()
     {
         Plugin.Log.Information("[EQUIP] GetOwnEquipment called");

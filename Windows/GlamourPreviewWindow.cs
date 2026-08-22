@@ -68,6 +68,46 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
         _clientState.Logout += OnLogout;
     }
 
+    // ponytail: inline preview lives in the Character tab. Init the renderer + framework tick
+    // without flipping IsOpen so the shell can render the texture inside its own BeginChild.
+    public void EnsureInitializedForSelf()
+    {
+        if (_renderer.IsInitialized)
+        {
+            if (!_frameworkHooked)
+            {
+                _framework.Update += OnFrameworkTick;
+                _frameworkHooked = true;
+            }
+            return;
+        }
+
+        var localPlayer = _objectTable.LocalPlayer;
+        if (localPlayer == null) return;
+        var selfAddr = localPlayer.Address;
+
+        _framework.RunOnFrameworkThread(() =>
+        {
+            _renderer.Initialize((Character*)selfAddr, () => _objectTable.LocalPlayer?.Address ?? nint.Zero);
+        });
+
+        if (!_frameworkHooked)
+        {
+            _framework.Update += OnFrameworkTick;
+            _frameworkHooked = true;
+        }
+    }
+
+    // ponytail: shell needs to re-apply target glam to CharaView when Recent-hover previews.
+    public void ApplyTargetGlamToPreview(uint targetEntityId)
+    {
+        _targetEntityId = targetEntityId;
+        _mode = targetEntityId != 0 ? PreviewMode.TargetGlam : PreviewMode.CurrentGear;
+        _framework.RunOnFrameworkThread(ApplyModeState);
+    }
+
+    public PreviewRenderer Renderer => _renderer;
+
     // ponytail: legacy entry-point kept so /glamsource preview + shell button still work.
     public void OpenForCurrentTarget()
     {

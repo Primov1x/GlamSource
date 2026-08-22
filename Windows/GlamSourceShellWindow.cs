@@ -62,7 +62,14 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
     private IReadOnlyList<EquipmentSlot> _snapshot = Array.Empty<EquipmentSlot>();
     private bool _pinned;
     private string _pinnedFor = "";
-    private bool _selfMode = true;
+    // ponytail: tracks the last target we PushRecent'd so we don't spam Configuration.Save every frame.
+    private string _lastRecentKey = "";
+    // ponytail: when non-null, Character tab renders this synthesized snapshot (from Recent click / hover).
+    private IReadOnlyList<EquipmentSlot>? _recentOverride;
+    // ponytail: entity id for hover-preview cleanup (0 = show self glam again).
+    private uint _hoverTargetEntityId;
+    // ponytail: live DrawData snapshot of the hovered Recent character while it is visible.
+    private IReadOnlyList<EquipmentSlot>? _hoverSnapshot;
 
     private static readonly EquipmentSlotType[] TopRow =
         { EquipmentSlotType.MainHand, EquipmentSlotType.OffHand };
@@ -364,68 +371,116 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
     };
 
     // =====================================================================
-    // Character tab (formerly CharacterGlamourWindow.Draw)
+    // Character tab — paperdoll layout (slot columns + inline 3D + recent sidebar)
     // =====================================================================
     private void DrawCharacterTab()
     {
-        if (!_pinned)
-            _snapshot = _selfMode ? _glamour.GetSelfEquipment() : _glamour.GetTargetEquipment();
+        // Refresh live snapshot every frame unless pinned or Recent-override active.
+        if (!_pinned && _recentOverride == null)
+        {
+            var target = Plugin.TargetManager?.Target;
+            IReadOnlyList<EquipmentSlot>? live = null;
+            if (target != null)
+            {
+                live = _glamour.TryGetVisibleGlamour(target.ObjectIndex) ?? _glamour.GetTargetEquipment();
+                MaybePushRecentForTarget(target, live);
+            }
+            _snapshot = live ?? Array.Empty<EquipmentSlot>();
+        }
+        if (_hoverSnapshot != null)
+            _snapshot = _hoverSnapshot;
+
+        // Ensure the CharaView renderer is running as long as this tab is drawn.
+        PreviewWindow?.EnsureInitializedForSelf();
 
         DrawCharacterToolbar();
         ImGui.Separator();
 
-        if (_snapshot.Count == 0)
-        {
-            ImGui.Spacing();
-            ImGui.TextColored(UiStyle.Muted,
-                _pinned ? "Pinned snapshot is empty." :
-                _selfMode ? "Waiting for local player..." :
-                "No target selected — pick one in-game.");
-            return;
-        }
+        var fontSize = ImGui.GetFontSize();
+        var recentW = fontSize * 10f;
+        var slotW = fontSize * 9f;
+        var avail = ImGui.GetContentRegionAvail();
+        var centerW = MathF.Max(fontSize * 12f, avail.X - (slotW * 2f) - recentW - fontSize * 1.5f);
 
-        DrawVanillaLayout();
+        // Left slot column
+        if (ImGui.BeginChild("##char_left", new Vector2(slotW, 0), true))
+        {
+            DrawSlotColumn(LeftCol);
+        }
+        ImGui.EndChild();
+        ImGui.SameLine();
+
+        // Center: 3D preview + toprow (weapons) below
+        if (ImGui.BeginChild("##char_center", new Vector2(centerW, 0), true))
+        {
+            DrawInlinePreview();
+            ImGui.Separator();
+            DrawSlotRow(TopRow);
+        }
+        ImGui.EndChild();
+        ImGui.SameLine();
+
+        // Right slot column
+        if (ImGui.BeginChild("##char_right", new Vector2(slotW, 0), true))
+        {
+            DrawSlotColumn(RightCol);
+        }
+        ImGui.EndChild();
+        ImGui.SameLine();
+
+        // Recents sidebar
+        if (ImGui.BeginChild("##char_recents", new Vector2(recentW, 0), true))
+        {
+            DrawRecentSidebar();
+        }
+        ImGui.EndChild();
     }
 
     private void DrawCharacterToolbar()
     {
-        if (ImGui.SmallButton(_selfMode ? "Self" : "Target"))
-        {
-            _selfMode = !_selfMode;
-            if (_pinned) { _pinned = false; _pinnedFor = ""; }
-        }
-        ImGui.SameLine();
-
         var label = _pinned ? "Unpin" : "Pin";
         if (ImGui.SmallButton(label))
         {
             _pinned = !_pinned;
             if (_pinned)
             {
-                var live = _selfMode ? _glamour.GetSelfEquipment() : _glamour.GetTargetEquipment();
-                _snapshot = live.ToList();
+                _snapshot = _snapshot.ToList();
                 _pinnedFor = $"snapshot ({_snapshot.Count} slots)";
             }
         }
         ImGui.SameLine();
-        ImGui.TextDisabled(_pinned ? $"Pinned — {_pinnedFor}" : (_selfMode ? "Live from local player" : "Live from target"));
+
+        if (_recentOverride != null)
+        {
+            if (ImGui.SmallButton("Clear Recent"))
+            {
+                _recentOverride = null;
+                ClearRecentHover();
+            }
+            ImGui.SameLine();
+            ImGui.TextDisabled("Viewing recent snapshot");
+        }
+        else if (_pinned)
+        {
+            ImGui.TextDisabled($"Pinned — {_pinnedFor}");
+        }
+        else
+        {
+            ImGui.TextDisabled(Plugin.TargetManager?.Target != null ? "Live from target" : "Click somebody or pick from Recent");
+        }
 
         var glamourerInstalled = IsGlamourerInstalled();
-        var canApply = glamourerInstalled && !_selfMode && _snapshot.Count > 0;
+        var canApply = glamourerInstalled && _snapshot.Count > 0;
 
+        ImGui.SameLine();
         if (!canApply) ImGui.BeginDisabled();
-        if (ImGui.SmallButton("Apply Target Glamour to Self"))
+        if (ImGui.SmallButton("Apply to Self"))
             ApplyTargetGlamourToSelf();
         if (!canApply) ImGui.EndDisabled();
-
         if (ImGui.IsItemHovered())
         {
-            if (!glamourerInstalled)
-                ImGui.SetTooltip("Requires Glamourer plugin");
-            else if (_selfMode)
-                ImGui.SetTooltip("Switch to Target view to copy a target's glamour onto yourself");
-            else
-                ImGui.SetTooltip("Copy the target's equipment (glamour where set, else actual) to your own character.\nWeapons are skipped.");
+            if (!glamourerInstalled) ImGui.SetTooltip("Requires Glamourer plugin");
+            else ImGui.SetTooltip("Copy this snapshot (glamour where set, else actual) to your own character.\nWeapons are skipped.");
         }
 
         if (!string.IsNullOrEmpty(_lastApplyStatus))
@@ -435,25 +490,232 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         }
 
         ImGui.SameLine();
-        if (ImGui.SmallButton("Preview 3D") && PreviewWindow != null)
-            PreviewWindow.OpenForTarget(Plugin.TargetManager?.Target); // ponytail: pass live target, window falls back to self internally.
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Open a live 3D preview of the current target (or self if no target).");
-
-        ImGui.SameLine();
         var canPreview = _snapshot.Count > 0;
         if (!canPreview) ImGui.BeginDisabled();
-        if (ImGui.SmallButton("Preview Target (Save Mode)"))
+        if (ImGui.SmallButton("Fitting Room"))
             QueueTryOnPreview();
         if (!canPreview) ImGui.EndDisabled();
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Opens the vanilla Fitting Room and queues each slot (glamour if set, else actual).\nWeapons are skipped. This is the game's own 3D preview — separate window.");
+            ImGui.SetTooltip("Queue each slot into the vanilla Fitting Room. Weapons skipped.");
 
         if (!string.IsNullOrEmpty(_lastPreviewStatus))
         {
             ImGui.SameLine();
             ImGui.TextDisabled(_lastPreviewStatus);
         }
+    }
+
+    // ponytail: only push if we have a real player target and its glam differs from what we last stored.
+    private void MaybePushRecentForTarget(Dalamud.Game.ClientState.Objects.Types.IGameObject target, IReadOnlyList<EquipmentSlot>? live)
+    {
+        if (live == null || live.Count == 0) return;
+        if (target is not Dalamud.Game.ClientState.Objects.SubKinds.IPlayerCharacter pc) return;
+
+        var name = pc.Name.TextValue;
+        var world = pc.HomeWorld.ValueNullable?.Name.ExtractText() ?? "";
+        var key = $"{name}@{world}";
+        if (key == _lastRecentKey) return;
+        _lastRecentKey = key;
+
+        var itemIds = live.Select(s => s.GlamourItemId ?? s.ActualItemId).ToList();
+        _configuration.PushRecent(name, world, pc.GameObjectId, itemIds);
+    }
+
+    private void DrawSlotColumn(EquipmentSlotType[] slots)
+    {
+        var iconEdge = ImGui.GetFontSize() * 2.2f;
+        var iconVec = new Vector2(iconEdge, iconEdge);
+        foreach (var st in slots)
+        {
+            var slot = _snapshot.FirstOrDefault(x => x.Slot == st);
+            DrawSlotBlock(st, slot, iconVec);
+        }
+    }
+
+    private void DrawSlotRow(EquipmentSlotType[] slots)
+    {
+        var iconEdge = ImGui.GetFontSize() * 2.2f;
+        var iconVec = new Vector2(iconEdge, iconEdge);
+        for (var i = 0; i < slots.Length; i++)
+        {
+            if (i > 0) ImGui.SameLine();
+            var slot = _snapshot.FirstOrDefault(x => x.Slot == slots[i]);
+            ImGui.BeginGroup();
+            DrawSlotBlock(slots[i], slot, iconVec);
+            ImGui.EndGroup();
+        }
+    }
+
+    private void DrawSlotBlock(EquipmentSlotType st, EquipmentSlot? slot, Vector2 iconVec)
+    {
+        ImGui.PushID($"slotblock_{st}");
+        var itemId = slot?.GlamourItemId ?? slot?.ActualItemId ?? 0u;
+        var iconId = itemId > 0 ? GetIconId(itemId) : 0u;
+        if (iconId > 0)
+        {
+            var tex = _textures.GetFromGameIcon(new GameIconLookup(iconId)).GetWrapOrEmpty();
+            ImGui.Image(tex.Handle, iconVec);
+            if (ImGui.IsItemClicked() && slot != null)
+                _detailWindow?.Open(itemId, slot);
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip($"{st}\n{slot?.GlamourItemName ?? slot?.ActualItemName ?? "(none)"}");
+        }
+        else
+        {
+            var p = ImGui.GetCursorScreenPos();
+            ImGui.GetWindowDrawList().AddRect(p, new Vector2(p.X + iconVec.X, p.Y + iconVec.Y),
+                ImGui.ColorConvertFloat4ToU32(UiStyle.Muted));
+            ImGui.Dummy(iconVec);
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip($"{st}\n(empty)");
+        }
+        ImGui.PopID();
+    }
+
+    private void DrawInlinePreview()
+    {
+        var renderer = PreviewWindow?.Renderer;
+        if (renderer == null || !renderer.IsInitialized)
+        {
+            ImGui.TextDisabled("Preview initializing...");
+            return;
+        }
+
+        var handle = renderer.GetTextureHandle();
+        if (handle == 0)
+        {
+            ImGui.TextDisabled("Waiting for texture...");
+            return;
+        }
+
+        var avail = ImGui.GetContentRegionAvail();
+        var h = MathF.Max(ImGui.GetFontSize() * 12f, avail.Y - ImGui.GetFontSize() * 6f);
+        var w = MathF.Max(ImGui.GetFontSize() * 8f, avail.X);
+        // ponytail: character aspect ~0.6 wide/tall; fit whichever axis is tighter.
+        var size = w / h > 0.6f ? new Vector2(h * 0.6f, h) : new Vector2(w, w / 0.6f);
+
+        var cursor = ImGui.GetCursorScreenPos();
+        ImGui.Image(new ImTextureID(handle), size);
+        ImGui.SetCursorScreenPos(cursor);
+        ImGui.InvisibleButton("##inline_preview_drag", size);
+
+        if (ImGui.IsItemHovered())
+        {
+            var wheel = ImGui.GetIO().MouseWheel;
+            if (wheel != 0f)
+            {
+                var newZoom = renderer.Zoom + wheel * 0.1f;
+                _framework.RunOnFrameworkThread(() => renderer.SetZoom(newZoom));
+            }
+        }
+
+        if (ImGui.IsItemActive())
+        {
+            var mouse = ImGui.GetIO().MousePos;
+            if (_previewDragLast.HasValue)
+            {
+                var delta = mouse - _previewDragLast.Value;
+                if (delta.LengthSquared() > 0f)
+                {
+                    var yaw = delta.X * 0.75f;
+                    var pitch = delta.Y * 0.75f;
+                    _framework.RunOnFrameworkThread(() => renderer.SetYawPitch(yaw, pitch));
+                }
+            }
+            _previewDragLast = mouse;
+        }
+        else
+        {
+            _previewDragLast = null;
+        }
+    }
+
+    private Vector2? _previewDragLast;
+
+    private void DrawRecentSidebar()
+    {
+        ImGui.TextColored(UiStyle.Accent, "Recent");
+        ImGui.Separator();
+
+        var recents = _configuration.RecentTargets;
+        if (recents.Count == 0)
+        {
+            ImGui.TextDisabled("(none yet)");
+            ClearRecentHover();
+            return;
+        }
+
+        var anyHovered = false;
+        for (var i = 0; i < recents.Count; i++)
+        {
+            var r = recents[i];
+            var label = string.IsNullOrEmpty(r.World) ? r.Name : $"{r.Name}\n{r.World}";
+            if (ImGui.Selectable($"{label}##recent_{i}", false, ImGuiSelectableFlags.None, new Vector2(0, ImGui.GetFontSize() * 2.4f)))
+            {
+                _recentOverride = BuildSnapshotFromIds(r.ItemIds);
+                _snapshot = _recentOverride;
+                _pinned = false;
+            }
+            if (ImGui.IsItemHovered())
+            {
+                anyHovered = true;
+                var pc = FindVisiblePlayer(r.Name);
+                if (pc != null)
+                {
+                    if (_hoverTargetEntityId != pc.EntityId)
+                    {
+                        _hoverTargetEntityId = pc.EntityId;
+                        PreviewWindow?.ApplyTargetGlamToPreview(pc.EntityId);
+                    }
+                    // ponytail: refreshed every hovered frame, same cost as the live target scan already done per frame.
+                    _hoverSnapshot = _glamour.TryGetVisibleGlamour(pc.ObjectIndex);
+                }
+                ImGui.SetTooltip(pc != null
+                    ? "Click: view stored snapshot\nHover: live glam (currently visible)"
+                    : "Click: view stored snapshot\n(not visible — no live data)");
+            }
+        }
+
+        if (!anyHovered)
+            ClearRecentHover();
+    }
+
+    // ponytail: linear ObjectTable scan, only while hovering; fine at <200 visible objects, names are zone-unique.
+    private Dalamud.Game.ClientState.Objects.SubKinds.IPlayerCharacter? FindVisiblePlayer(string name)
+    {
+        if (string.IsNullOrEmpty(name)) return null;
+        foreach (var obj in _objectTable)
+        {
+            if (obj is Dalamud.Game.ClientState.Objects.SubKinds.IPlayerCharacter pc &&
+                pc.Name.TextValue == name)
+                return pc;
+        }
+        return null;
+    }
+
+    private void ClearRecentHover()
+    {
+        if (_hoverTargetEntityId == 0 && _hoverSnapshot == null) return;
+        _hoverTargetEntityId = 0;
+        _hoverSnapshot = null;
+        PreviewWindow?.ApplyTargetGlamToPreview(0);
+    }
+
+    // ponytail: minimal synthetic snapshot — just IDs from Recent; names resolved from Item sheet.
+    private IReadOnlyList<EquipmentSlot> BuildSnapshotFromIds(IReadOnlyList<uint> ids)
+    {
+        var order = new List<EquipmentSlotType>();
+        order.AddRange(TopRow); order.AddRange(LeftCol); order.AddRange(RightCol);
+
+        var itemSheet = _data.GetExcelSheet<Item>();
+        var result = new List<EquipmentSlot>();
+        for (var i = 0; i < order.Count && i < ids.Count; i++)
+        {
+            var id = ids[i];
+            var name = id > 0 && itemSheet != null && itemSheet.TryGetRow(id, out var row) ? row.Name.ExtractText() : $"#{id}";
+            result.Add(new EquipmentSlot(order[i], id, name, null, null));
+        }
+        return result;
     }
 
     private bool IsGlamourerInstalled()
@@ -580,107 +842,6 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         EquipmentSlotType.RingLeft => ApiEquipSlot.LFinger,
         _ => ApiEquipSlot.Unknown,
     };
-
-    // ponytail: BeginTable Gear/Glamour/Stain per slot, analogous to Lookup-Tab layout.
-    private void DrawVanillaLayout()
-    {
-        DrawCenterCard();
-        ImGui.Separator();
-
-        var iconEdge = ImGui.GetFontSize() * 1.8f;
-        var iconVec = new Vector2(iconEdge, iconEdge);
-
-        var order = new List<EquipmentSlotType>();
-        order.AddRange(TopRow);
-        for (var i = 0; i < Math.Max(LeftCol.Length, RightCol.Length); i++)
-        {
-            if (i < LeftCol.Length) order.Add(LeftCol[i]);
-            if (i < RightCol.Length) order.Add(RightCol[i]);
-        }
-
-        if (!ImGui.BeginTable("##charVanillaTable", 4, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp))
-            return;
-
-        ImGui.TableSetupColumn("Slot", ImGuiTableColumnFlags.WidthFixed, ImGui.GetFontSize() * 7f);
-        ImGui.TableSetupColumn("Gear", ImGuiTableColumnFlags.WidthStretch);
-        ImGui.TableSetupColumn("Glamour", ImGuiTableColumnFlags.WidthStretch);
-        ImGui.TableSetupColumn("Stain", ImGuiTableColumnFlags.WidthFixed, ImGui.GetFontSize() * 8f);
-        ImGui.TableHeadersRow();
-
-        foreach (var st in order)
-        {
-            var slot = _snapshot.FirstOrDefault(x => x.Slot == st);
-            ImGui.TableNextRow();
-
-            ImGui.TableSetColumnIndex(0);
-            ImGui.TextUnformatted(st.ToString());
-
-            ImGui.TableSetColumnIndex(1);
-            DrawSlotItemCell($"gear_{st}", slot?.ActualItemId ?? 0u, slot?.ActualItemName, slot, iconVec, muted: false);
-
-            ImGui.TableSetColumnIndex(2);
-            var glamId = slot?.GlamourItemId ?? 0u;
-            var glamName = slot?.GlamourItemName;
-            var muted = slot == null || !slot.IsGlamoured || glamId == slot.ActualItemId;
-            DrawSlotItemCell($"glam_{st}", glamId, glamName, slot, iconVec, muted: muted);
-
-            ImGui.TableSetColumnIndex(3);
-            DrawStainCell(slot?.Stain0 ?? 0);
-        }
-
-        ImGui.EndTable();
-    }
-
-    private void DrawSlotItemCell(string id, uint itemId, string? name, EquipmentSlot? slot, Vector2 iconVec, bool muted)
-    {
-        if (itemId == 0)
-        {
-            ImGui.TextDisabled("(none)");
-            return;
-        }
-        ImGui.PushID(id);
-        var iconId = GetIconId(itemId);
-        if (iconId > 0)
-        {
-            var tex = _textures.GetFromGameIcon(new GameIconLookup(iconId)).GetWrapOrEmpty();
-            ImGui.Image(tex.Handle, iconVec);
-            if (ImGui.IsItemClicked() && slot != null)
-                _detailWindow?.Open(itemId, slot);
-            ImGui.SameLine();
-        }
-        var label = name ?? $"#{itemId}";
-        if (muted) ImGui.TextDisabled(label);
-        else ImGui.TextUnformatted(label);
-        ImGui.PopID();
-    }
-
-    private void DrawCenterCard()
-    {
-        string name = "Loading...";
-        string job = "-";
-        string level = "-";
-
-        var lp = _objectTable.LocalPlayer;
-        if (_selfMode)
-        {
-            if (lp != null)
-            {
-                name = lp.Name.TextValue;
-                var cj = lp.ClassJob.ValueNullable;
-                job = cj.HasValue ? cj.Value.Name.ExtractText() : "-";
-                level = $"Lv. {lp.Level}";
-            }
-        }
-        else
-        {
-            name = "(target)";
-        }
-
-        ImGui.TextColored(UiStyle.Accent, name);
-        UiStyle.MutedHint(_selfMode ? "self" : "target");
-        ImGui.Separator();
-        ImGui.TextUnformatted($"{job}   {level}");
-    }
 
     private uint GetIconId(uint itemId)
     {
