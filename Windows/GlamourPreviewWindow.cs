@@ -211,10 +211,16 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
 
         try
         {
-            // Snapshot self once, before any mutation.
             if (_selfSnapshot == null)
             {
-                var (ecGet, state) = new GetState(_pi).Invoke(0, 0);
+                GetState? getStateInstance = new(_pi);
+                if (!getStateInstance.Valid)
+                {
+                    _log.Error("[GlamourPreviewWindow] GetState IPC not available");
+                    return;
+                }
+
+                var (ecGet, state) = getStateInstance.Invoke(0, 0);
                 if (ecGet == GlamourerApiEc.Success && state != null)
                     _selfSnapshot = state;
                 else
@@ -239,16 +245,20 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
 
             if (targetObj != null)
             {
-                var (ecTgt, tgtState) = new GetState(_pi).Invoke(targetObj.ObjectIndex, 0);
-                if (ecTgt == GlamourerApiEc.Success && tgtState != null)
+                GetState? getStateInstance = new(_pi);
+                if (getStateInstance.Valid)
                 {
-                    var ecApp = new ApplyState(_pi).Invoke(tgtState, 0, 0, ApplyFlag.Once | ApplyFlag.Equipment);
-                    if (ecApp != GlamourerApiEc.Success)
-                        _log.Warning($"[GlamourPreviewWindow] ApplyState(target->self) failed: {ecApp}");
-                }
-                else
-                {
-                    _log.Warning($"[GlamourPreviewWindow] GetState(target={targetObj.ObjectIndex}, EntityId={_targetEntityId}) failed: {ecTgt}");
+                    var (ecTgt, tgtState) = getStateInstance.Invoke(targetObj.ObjectIndex, 0);
+                    if (ecTgt == GlamourerApiEc.Success && tgtState != null)
+                    {
+                        var ecApp = new ApplyState(_pi).Invoke(tgtState, 0, 0, ApplyFlag.Once | ApplyFlag.Equipment);
+                        if (ecApp != GlamourerApiEc.Success)
+                            _log.Warning($"[GlamourPreviewWindow] ApplyState(target->self) failed: {ecApp}");
+                    }
+                    else
+                    {
+                        _log.Warning($"[GlamourPreviewWindow] GetState(target={targetObj.ObjectIndex}, EntityId={_targetEntityId}) failed: {ecTgt}");
+                    }
                 }
             }
             else
