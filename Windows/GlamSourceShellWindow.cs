@@ -130,6 +130,14 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
 
     public override void Draw()
     {
+        using var _style = UiStyle.Push();
+
+        // Header: plugin identity + subtle version chip; keeps every tab anchored to the same brand.
+        ImGui.TextColored(UiStyle.Accent, "GlamSource");
+        UiStyle.MutedHint("glamour source resolver");
+        ImGui.Separator();
+        ImGui.Spacing();
+
         if (ImGui.BeginTabBar("##GlamSourceShellTabs", ImGuiTabBarFlags.None))
         {
             DrawTab("Lookup",    TabId.Lookup,    DrawLookupTab);
@@ -164,12 +172,8 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
     // =====================================================================
     private void DrawLookupTab()
     {
-        if (ImGui.Button("Open Character Glamour"))
-            SwitchToTab(TabId.Character);
-        ImGui.Spacing();
-
-        ImGui.TextColored(new Vector4(0.9f, 0.7f, 0.2f, 1f), "Item Lookup");
-        ImGui.SetNextItemWidth(300f);
+        UiStyle.SectionHeader("Item Lookup");
+        ImGui.SetNextItemWidth(ImGui.GetFontSize() * 22f);
         if (ImGui.InputTextWithHint("##item_lookup", "Search any item...", ref _lookupText, 256))
         {
             if (_lookupText.Length >= 3)
@@ -180,31 +184,36 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
 
         if (_lookupResults is { Count: > 0 })
         {
-            if (ImGui.BeginChild("##lookup_results", new Vector2(350, 150), true))
+            var childSize = new Vector2(ImGui.GetFontSize() * 26f, ImGui.GetFontSize() * 11f);
+            using (var card = UiStyle.BeginCard("##lookup_results", childSize))
             {
-                foreach (var (id, name) in _lookupResults)
+                if (card.Opened)
                 {
-                    if (ImGui.Selectable($"{name} ({id})##lookup_{id}"))
+                    foreach (var (id, name) in _lookupResults)
                     {
-                        _detailWindow?.ShowItem(id);
-                        _lookupText = "";
-                        _lookupResults = null;
+                        if (ImGui.Selectable($"{name}  ({id})##lookup_{id}"))
+                        {
+                            _detailWindow?.ShowItem(id);
+                            _lookupText = "";
+                            _lookupResults = null;
+                        }
                     }
                 }
             }
-            ImGui.EndChild();
+        }
+        else if (!string.IsNullOrEmpty(_lookupText) && _lookupText.Length < 3)
+        {
+            ImGui.TextColored(UiStyle.Muted, "Type 3+ characters to search.");
         }
 
-        ImGui.Separator();
-        ImGui.TextColored(new Vector4(0.9f, 0.7f, 0.2f, 1f), "Target Equipment");
-        ImGui.Separator();
         ImGui.Spacing();
+        UiStyle.SectionHeader("Target Equipment");
 
         var slots = _glamour.GetTargetEquipment();
 
         if (slots.Count == 0)
         {
-            ImGui.Text("No equipment data available.");
+            ImGui.TextColored(UiStyle.Muted, "No equipment data available — pick a target or examine a player.");
             return;
         }
 
@@ -216,7 +225,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
 
         if (isDrawDataFallback)
         {
-            ImGui.TextColored(new Vector4(1f, 0.6f, 0f, 1f), "[!] Equipment data from DrawData (incomplete). Right-click target -> Examine for full equipment data.");
+            ImGui.TextColored(UiStyle.Warning, "  [!]  DrawData fallback in use — Examine the target for full equipment data.");
             ImGui.Spacing();
         }
 
@@ -361,7 +370,11 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
 
         if (_snapshot.Count == 0)
         {
-            ImGui.TextDisabled(_pinned ? "Pinned but empty." : (_selfMode ? "No local player." : "No target."));
+            ImGui.Spacing();
+            ImGui.TextColored(UiStyle.Muted,
+                _pinned ? "Pinned snapshot is empty." :
+                _selfMode ? "Waiting for local player..." :
+                "No target selected — pick one in-game.");
             return;
         }
 
@@ -657,10 +670,10 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
             name = "(target)";
         }
 
-        ImGui.TextColored(new Vector4(0.9f, 0.7f, 0.2f, 1f), name);
+        ImGui.TextColored(UiStyle.Accent, name);
+        UiStyle.MutedHint(_selfMode ? "self" : "target");
         ImGui.Separator();
-        ImGui.TextUnformatted(job);
-        ImGui.TextUnformatted(level);
+        ImGui.TextUnformatted($"{job}   {level}");
     }
 
     private uint GetIconId(uint itemId)
@@ -697,8 +710,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         }
 
         ImGui.Spacing();
-        ImGui.TextColored(new Vector4(0.9f, 0.7f, 0.2f, 1f), "Auto-Gathering");
-        ImGui.Separator();
+        UiStyle.SectionHeader("Auto-Gathering");
 
         DrawMountPicker();
 

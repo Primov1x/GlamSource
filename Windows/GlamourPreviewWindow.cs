@@ -131,9 +131,13 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
 
     public override void Draw()
     {
+        using var _style = UiStyle.Push();
+
         if (!_renderer.IsInitialized)
         {
-            ImGui.TextDisabled("Preview not initialized.");
+            ImGui.Spacing();
+            ImGui.TextColored(UiStyle.Muted, "Preview is idle.");
+            ImGui.Spacing();
             if (ImGui.Button("Init from Self"))
                 OpenForTarget(null);
             return;

@@ -219,6 +219,8 @@ public class ItemDetailWindow : Window, IDisposable
 
     public override void Draw()
     {
+        using var _style = UiStyle.Push();
+
         UpdateGatherFeedback();
 
         if (!_isOpen || _showingItemId == null)
@@ -1087,12 +1089,8 @@ if (_textureProvider != null && cost.IconId > 0)
         }
     }
 
-    // ponytail: simple header helper to avoid duplicate TextColored+Separator
-    private static void SectionHeader(string title)
-    {
-        ImGui.TextColored(new Vector4(0.9f, 0.7f, 0.2f, 1f), title);
-        ImGui.Separator();
-    }
+    // ponytail: delegate to shared UiStyle so every window gets the accent-dot header.
+    private static void SectionHeader(string title) => UiStyle.SectionHeader(title);
 
     private static unsafe void TryOpenCraftingLog(uint itemId)
     {
