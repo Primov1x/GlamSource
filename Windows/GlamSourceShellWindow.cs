@@ -121,8 +121,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
 
     public void Dispose()
     {
-        // ponytail: restore LocalPlayer's original glam if a Recent preview is still active.
-        // Belt-and-braces: GlamourPreviewWindow.Dispose() also restores.
+        // Resume per-frame character copy if a Recent preview is still active.
         if (_recentGlamApplied)
             ClearRecentGlamOverride();
         if (_frameworkHooked)
@@ -314,7 +313,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
                 {
                     if (slot.IsGlamoured && hasGlamourSources)
                     {
-                        foreach (var src in slot.GlamourItemSources)
+                        foreach (var src in slot.GlamourItemSources!)
                         {
                             var color = GetSourceColor(src.Type);
                             ImGui.TextColored(color, $"Glam: {FormatSource(src)}");
@@ -323,7 +322,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
 
                     if (hasActualSources)
                     {
-                        foreach (var src in slot.ActualItemSources)
+                        foreach (var src in slot.ActualItemSources!)
                         {
                             var color = GetSourceColor(src.Type);
                             ImGui.TextColored(color, $"Worn: {FormatSource(src)}");
@@ -696,8 +695,9 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
                 _snapshot = _recentOverride;
                 _pinned = false;
                 _activeRecentName = r.Name;
-                // ponytail: mutate LocalPlayer's glam so the inline CharaView (which mirrors LocalPlayer)
-                // shows this Recent snapshot. Restore hooks: Clear Recent, tab switch, Dispose.
+                // Drive AgentTryon (Fitting-Room agent) via TryOn — CharaView renders the
+                // agent's own EquipItems. No LocalPlayer mutation, no Glamourer.
+                // Restore hooks: Clear Recent, tab switch, Dispose.
                 ApplyRecentGlamOverride(_recentOverride);
             }
             if (ImGui.IsItemHovered())
@@ -767,54 +767,44 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         catch { return false; }
     }
 
-    // ponytail: apply a Recent snapshot to LocalPlayer's Glamourer state so the inline
-    // CharaView (which mirrors LocalPlayer) renders it. Original glam is snapshotted once
-    // via PreviewWindow.TrySnapshotSelfOnce(); PreviewWindow.RestoreSelf() puts it back.
+    // ponytail: feed the Recent snapshot directly into AgentTryon via the native TryOn call —
+    // that is what the Fitting Room does per item. CharaView (our 3D preview slot) then renders
+    // from Tryon's own EquipItems, no Glamourer round-trip, no LocalPlayer mutation, no restore.
     private void ApplyRecentGlamOverride(IReadOnlyList<EquipmentSlot> snapshot)
     {
         if (PreviewWindow == null) return;
-        if (!IsGlamourerInstalled())
+        _framework.RunOnFrameworkThread(() =>
         {
-            _log.Warning("[GlamSource] ApplyRecentGlamOverride: Glamourer not installed; skipping preview swap.");
-            return;
-        }
-        // Snapshot self first (idempotent) so we can restore later.
-        PreviewWindow.TrySnapshotSelfOnce();
-        try
-        {
-            var setItem = new SetItem(_pi);
-            foreach (var slot in snapshot)
+            try
             {
-                if (slot.Slot == EquipmentSlotType.MainHand || slot.Slot == EquipmentSlotType.OffHand)
-                    continue;
-                var apiSlot = MapToApiSlot(slot.Slot);
-                if (apiSlot == ApiEquipSlot.Unknown) continue;
-                var itemId = slot.GlamourItemId ?? slot.ActualItemId;
-                if (itemId == 0) continue;
-                var ret = setItem.Invoke(0, apiSlot, itemId, new List<byte> { 0, 0 }, 0, ApplyFlag.Once);
-                if (ret != GlamourerApiEc.Success)
-                    _log.Warning($"[GlamSource] Recent preview SetItem {apiSlot} id={itemId} -> {ret}");
+                PreviewWindow.Renderer.SuspendCharacterCopy(true);
+                foreach (var slot in snapshot)
+                {
+                    if (slot.Slot == EquipmentSlotType.MainHand || slot.Slot == EquipmentSlotType.OffHand)
+                        continue;
+                    var itemId = slot.GlamourItemId ?? slot.ActualItemId;
+                    if (itemId == 0) continue;
+                    unsafe { AgentTryon.TryOn(0, itemId, 0, 0, 0, false); }
+                }
+                _recentGlamApplied = true;
             }
-            _recentGlamApplied = true;
-            // ponytail: SetItem alone does not force a model reload; without AutoRedrawEquipOnChanges
-            // the CharaView copy shows stale gear. ReapplyState nudges Glamourer to redraw the actor.
-            try { new ReapplyState(_pi).Invoke(0, 0, ApplyFlag.Once); }
-            catch (Exception ex) { _log.Warning($"[GlamSource] Recent preview ReapplyState: {ex.Message}"); }
-            // ponytail: Glamourer redraw lands async over ~0.5s; pump the CharaView re-copy so the
-            // inline preview picks up the new gear instead of showing pre-apply frames.
-            PreviewWindow.Renderer.RequestRecopy(60);
-        }
-        catch (Exception ex)
-        {
-            _log.Warning($"[GlamSource] ApplyRecentGlamOverride error: {ex.Message}");
-        }
+            catch (Exception ex)
+            {
+                _log.Warning($"[GlamSource] ApplyRecentGlamOverride error: {ex.Message}");
+            }
+        });
     }
 
     private void ClearRecentGlamOverride()
     {
         if (!_recentGlamApplied) return;
         _recentGlamApplied = false;
-        PreviewWindow?.RestoreSelf();
+        if (PreviewWindow == null) return;
+        // ponytail: resume LocalPlayer-copy so the CharaView goes back to mirroring the user.
+        // Tryon slots stay populated until the game clears them or the user opens Fitting Room;
+        // that's fine — CopyFromCharacter overwrites the render source each tick.
+        PreviewWindow.Renderer.SuspendCharacterCopy(false);
+        PreviewWindow.Renderer.RequestRecopy(5);
     }
 
     private void ApplyTargetGlamourToSelf()

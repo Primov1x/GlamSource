@@ -28,6 +28,12 @@ public sealed unsafe class PreviewRenderer : IDisposable
     private Func<nint>? _sourceProvider;
     // ponytail: force re-copy for N Ticks after ApplyState / Examine hijacks CharaView.ModelData.
     private int _pendingRecopyFrames;
+    // ponytail: when true, Tick() skips CopyFromCharacter so AgentTryon's own EquipItems
+    // (populated via AgentTryon.TryOn) drive the CharaView render. Cleared on Recent revert.
+    private bool _suspendCharacterCopy;
+
+    /// <summary>Suspend/resume per-frame CopyFromCharacter. Set true while AgentTryon owns the slots.</summary>
+    public void SuspendCharacterCopy(bool suspend) => _suspendCharacterCopy = suspend;
 
     public PreviewRenderer(IFramework framework, IPluginLog log)
     {
@@ -87,7 +93,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
         // active, so gating on IsAgentActive is redundant and stops live Glamourer edits
         // from propagating until the user opens the Fitting Room. _pendingRecopyFrames
         // stays for callers that want to force extra ticks after ApplyState.
-        if (_sourceProvider != null)
+        if (_sourceProvider != null && !_suspendCharacterCopy)
         {
             var addr = _sourceProvider();
             if (addr != nint.Zero)

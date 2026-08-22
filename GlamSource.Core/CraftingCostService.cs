@@ -64,7 +64,7 @@ public sealed class CraftingCostService : ICraftingCostService, IDisposable
             // Double-check: another caller may have cached while we were computing
             if (!_cache.TryGetValue(itemId, out var existing) || existing.expires <= DateTime.UtcNow)
             {
-                _cache[itemId] = (result, DateTime.UtcNow.AddMinutes(CacheTtlMinutes));
+                _cache[itemId] = (result!, DateTime.UtcNow.AddMinutes(CacheTtlMinutes));
             }
         }
 
@@ -78,7 +78,7 @@ public sealed class CraftingCostService : ICraftingCostService, IDisposable
             return null;
 
         var craftedSource = detail.Sources.FirstOrDefault(s => s.Type == ItemSourceType.Crafted && s.Materials != null);
-        if (craftedSource == null || craftedSource.Materials.Count == 0)
+        if (craftedSource == null || craftedSource.Materials == null || craftedSource.Materials.Count == 0)
             return null;
 
         var materials = new List<MaterialCost>();

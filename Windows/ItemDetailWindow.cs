@@ -25,7 +25,7 @@ public class ItemDetailWindow : Window, IDisposable
     private readonly IItemDetailService _detailService;
     private readonly IItemSourceService _sourceService;
     private readonly IUniversalisService _universalisService;
-    private readonly ITextureProvider _textureProvider;
+    private readonly ITextureProvider? _textureProvider;
     private readonly IDataManager? _data;
     private Plugin _plugin = null!;
     // ponytail: optional per-slot context (Gear/Glamour/Stain snapshot). null = old single-item mode.
@@ -949,7 +949,7 @@ if (_textureProvider != null && cost.IconId > 0)
             ImGui.SameLine();
             ImGui.TextDisabled($" \u00b7 {src.ZoneName}");
         }
-        if (src.MapX.HasValue)
+        if (src.MapX.HasValue && src.MapY.HasValue)
         {
             ImGui.SameLine();
             ImGui.TextDisabled($" ({src.MapX:F1}, {src.MapY:F1})");
@@ -984,13 +984,14 @@ if (_textureProvider != null && cost.IconId > 0)
             ImGui.SameLine();
             DrawNpcRow(src, sourceIdx, -1);
         }
-        var questLocked = src.QuestForUnlock.HasValue && IsQuestLockedByQuestionable(src.QuestForUnlock.Value);
+        var questId = src.QuestForUnlock;
+        var questLocked = questId.HasValue && IsQuestLockedByQuestionable(questId.Value);
         if (questLocked)
         {
             ImGui.TextColored(new Vector4(1f, 0.6f, 0f, 1f), "🔒 Locked (prerequisites incomplete)");
             if (ImGui.SmallButton($"▶ Start quest chain##quest_{sourceIdx}"))
             {
-                TryStartWithQuestionable(src.QuestForUnlock.Value);
+                TryStartWithQuestionable(questId!.Value);
             }
         }
         else if (src.QuestForUnlock.HasValue)

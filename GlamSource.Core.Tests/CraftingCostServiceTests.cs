@@ -99,6 +99,7 @@ public class CraftingCostServiceTests
         var result = await service.GetCostBreakdownAsync(12345);
 
         // (200 * 5) + (150 * 3) = 1000 + 450 = 1450
+        Assert.NotNull(result);
         Assert.Equal(1450u, result.CraftedCost);
     }
 
