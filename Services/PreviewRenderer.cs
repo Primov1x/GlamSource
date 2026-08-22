@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.CompilerServices;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Kernel;
@@ -28,21 +29,48 @@ public sealed unsafe class PreviewRenderer : IDisposable
     private Func<nint>? _sourceProvider;
     // ponytail: force re-copy for N Ticks after ApplyState / Examine hijacks CharaView.ModelData.
     private int _pendingRecopyFrames;
-    // ponytail: when true, Tick() skips CopyFromCharacter so direct SetItemSlotData writes
+    // ponytail: when true, Tick() skips CopyFromCharacter so direct ModelData writes
     // drive the CharaView render. Cleared on Recent revert.
     private bool _suspendCharacterCopy;
 
     /// <summary>Suspend/resume per-frame CopyFromCharacter. Set true while direct slot writes own the view.</summary>
     public void SuspendCharacterCopy(bool suspend) => _suspendCharacterCopy = suspend;
 
-    /// <summary>Write one try-on item directly into the CharaView. The agent stays inactive, so
-    /// the Fitting Room addon never opens. Must be called on the Framework thread.</summary>
-    public void SetCharaViewSlot(byte slotId, uint itemId, byte stain0, byte stain1)
+    /// <summary>Write a pre-packed model value into CharaViewModelData._equipmentModelIds[slotIndex]
+    /// (10 entries @ 0x20). <paramref name="modelValue"/> is the raw Item.ModelMain 8-byte sheet
+    /// value (Id | Type&lt;&lt;16 | Variant&lt;&lt;32), repacked into the runtime EquipmentModelId
+    /// layout (Id | Variant&lt;&lt;16 | Stain0&lt;&lt;24 | Stain1&lt;&lt;32). No agent/CharaView member
+    /// functions are called, so the agent stays inactive and the Fitting Room addon never opens.
+    /// Must be called on the Framework thread.</summary>
+    public void SetCharaViewEquipmentSlot(byte slotIndex, ulong modelValue, byte stain0, byte stain1)
     {
-        if (!_initialized) return;
+        if (!_initialized || slotIndex >= 10) return;
         var agent = AgentTryon.Instance();
         if (agent == null) return;
-        agent->CharaView.SetItemSlotData(slotId, itemId, stain0, stain1, 0, false);
+        // CharaViewModelData: _equipmentModelIds @ 0x20, 10 × 8B → ulong indices 2..11.
+        var basePtr = (ulong*)Unsafe.AsPointer(ref agent->CharaView.ModelData);
+        basePtr[2 + slotIndex] = (modelValue & 0xFFFF)
+            | (((modelValue >> 32) & 0xFF) << 16)
+            | ((ulong)stain0 << 24)
+            | ((ulong)stain1 << 32);
+    }
+
+    /// <summary>Write a pre-packed model value into CharaViewModelData._weaponModelIds[slotIndex]
+    /// (3 entries @ 0x70). <paramref name="modelValue"/> is the raw Item.ModelMain/ModelSub 8-byte
+    /// sheet value, which already matches the runtime WeaponModelId layout (Id | Type&lt;&lt;16 |
+    /// Variant&lt;&lt;32) — only the stain bytes are appended. No agent/CharaView member functions
+    /// are called, so the agent stays inactive and the Fitting Room addon never opens.
+    /// Must be called on the Framework thread.</summary>
+    public void SetCharaViewWeaponSlot(byte slotIndex, ulong modelValue, byte stain0, byte stain1)
+    {
+        if (!_initialized || slotIndex >= 3) return;
+        var agent = AgentTryon.Instance();
+        if (agent == null) return;
+        // CharaViewModelData: _weaponModelIds @ 0x70, 3 × 8B → ulong indices 14..16.
+        var basePtr = (ulong*)Unsafe.AsPointer(ref agent->CharaView.ModelData);
+        basePtr[14 + slotIndex] = (modelValue & 0xFFFF_FFFF_FFFF)
+            | ((ulong)stain0 << 48)
+            | ((ulong)stain1 << 56);
     }
 
     public PreviewRenderer(IFramework framework, IPluginLog log)
@@ -80,7 +108,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
         _sourceProvider = sourceProvider;
         // ponytail: agent is intentionally left INACTIVE — Show() opens the game's Fitting Room
         // addon. CharaView renders fine with an inactive agent (Ktisis precedent): Initialize
-        // once, then per-tick Update/Render; items are written via SetItemSlotData.
+        // once, then per-tick Update/Render; items are written directly into ModelData.
         agent->CharaView.Initialize(&agent->AgentInterface, CharaViewSlot, 0);
         agent->CharaView.ModelData.CopyFromCharacter(source);
         agent->CharaView.Update(_counter, agent->CharaView.GetCharacter());
