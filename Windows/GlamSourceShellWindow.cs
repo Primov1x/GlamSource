@@ -767,9 +767,8 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         catch { return false; }
     }
 
-    // ponytail: feed the Recent snapshot directly into AgentTryon via the native TryOn call —
-    // that is what the Fitting Room does per item. CharaView (our 3D preview slot) then renders
-    // from Tryon's own EquipItems, no Glamourer round-trip, no LocalPlayer mutation, no restore.
+    // ponytail: feed the Recent snapshot straight into the CharaView via SetItemSlotData — the
+    // agent stays inactive, so the game's Fitting Room addon never opens (Ktisis-style writes).
     private void ApplyRecentGlamOverride(IReadOnlyList<EquipmentSlot> snapshot)
     {
         if (PreviewWindow == null) return;
@@ -777,15 +776,16 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         {
             try
             {
-                PreviewWindow.Renderer.SuspendCharacterCopy(true);
+                var renderer = PreviewWindow.Renderer;
+                renderer.SuspendCharacterCopy(true);
                 foreach (var slot in snapshot)
                 {
-                    if (slot.Slot == EquipmentSlotType.MainHand || slot.Slot == EquipmentSlotType.OffHand)
-                        continue;
+                    var slotId = MapToCharaViewSlot(slot.Slot);
                     var itemId = slot.GlamourItemId ?? slot.ActualItemId;
-                    if (itemId == 0) continue;
-                    unsafe { AgentTryon.TryOn(0, itemId, 0, 0, 0, false); }
+                    if (itemId == 0 || slotId == 0xFF) continue;
+                    renderer.SetCharaViewSlot(slotId, itemId, slot.Stain0, slot.Stain1);
                 }
+                renderer.RequestRecopy(5);
                 _recentGlamApplied = true;
             }
             catch (Exception ex)
@@ -906,6 +906,28 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
             _tryOnDelay = 5;
         }
     }
+
+    // ponytail: CharaView slot domain = Item-sheet EquipSlotCategory columns (CharaView._items has
+    // 14 entries, AgentInspect._items 13 — the 14th is SoulCrystal). NOT verified in-game yet —
+    // if gear renders in the wrong place (or MH/OH swapped), adjust the values here.
+    // 0xFF = unmapped, caller skips.
+    private static byte MapToCharaViewSlot(EquipmentSlotType s) => s switch
+    {
+        EquipmentSlotType.OffHand => 0,
+        EquipmentSlotType.MainHand => 1,
+        EquipmentSlotType.Head => 2,
+        EquipmentSlotType.Body => 3,
+        EquipmentSlotType.Hands => 4,
+        EquipmentSlotType.Waist => 5,
+        EquipmentSlotType.Legs => 6,
+        EquipmentSlotType.Feet => 7,
+        EquipmentSlotType.Earrings => 8,
+        EquipmentSlotType.Necklace => 9,
+        EquipmentSlotType.Bracelets => 10,
+        EquipmentSlotType.RingLeft => 11,
+        EquipmentSlotType.RingRight => 12,
+        _ => 0xFF,
+    };
 
     private static ApiEquipSlot MapToApiSlot(EquipmentSlotType s) => s switch
     {

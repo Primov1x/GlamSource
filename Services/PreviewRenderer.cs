@@ -28,12 +28,22 @@ public sealed unsafe class PreviewRenderer : IDisposable
     private Func<nint>? _sourceProvider;
     // ponytail: force re-copy for N Ticks after ApplyState / Examine hijacks CharaView.ModelData.
     private int _pendingRecopyFrames;
-    // ponytail: when true, Tick() skips CopyFromCharacter so AgentTryon's own EquipItems
-    // (populated via AgentTryon.TryOn) drive the CharaView render. Cleared on Recent revert.
+    // ponytail: when true, Tick() skips CopyFromCharacter so direct SetItemSlotData writes
+    // drive the CharaView render. Cleared on Recent revert.
     private bool _suspendCharacterCopy;
 
-    /// <summary>Suspend/resume per-frame CopyFromCharacter. Set true while AgentTryon owns the slots.</summary>
+    /// <summary>Suspend/resume per-frame CopyFromCharacter. Set true while direct slot writes own the view.</summary>
     public void SuspendCharacterCopy(bool suspend) => _suspendCharacterCopy = suspend;
+
+    /// <summary>Write one try-on item directly into the CharaView. The agent stays inactive, so
+    /// the Fitting Room addon never opens. Must be called on the Framework thread.</summary>
+    public void SetCharaViewSlot(byte slotId, uint itemId, byte stain0, byte stain1)
+    {
+        if (!_initialized) return;
+        var agent = AgentTryon.Instance();
+        if (agent == null) return;
+        agent->CharaView.SetItemSlotData(slotId, itemId, stain0, stain1, 0, false);
+    }
 
     public PreviewRenderer(IFramework framework, IPluginLog log)
     {
@@ -68,11 +78,9 @@ public sealed unsafe class PreviewRenderer : IDisposable
         }
 
         _sourceProvider = sourceProvider;
-        // ponytail: activate the agent — try-on items only reach the CharaView (vf10 pull)
-        // while the agent is active; a bare Instance() stays hidden and the model keeps
-        // showing the copied character. No-op if already active (Fitting Room open).
-        agent->AgentInterface.Show();
-        _log.Debug($"[PreviewRenderer] AgentTryon active after Show: {agent->AgentInterface.IsAgentActive()}");
+        // ponytail: agent is intentionally left INACTIVE — Show() opens the game's Fitting Room
+        // addon. CharaView renders fine with an inactive agent (Ktisis precedent): Initialize
+        // once, then per-tick Update/Render; items are written via SetItemSlotData.
         agent->CharaView.Initialize(&agent->AgentInterface, CharaViewSlot, 0);
         agent->CharaView.ModelData.CopyFromCharacter(source);
         agent->CharaView.Update(_counter, agent->CharaView.GetCharacter());
@@ -94,14 +102,8 @@ public sealed unsafe class PreviewRenderer : IDisposable
         var agent = AgentTryon.Instance();
         if (agent == null) return;
 
-        // ponytail: re-activate if the game hid the agent (Fitting Room closed mid-session) —
-        // the try-on pull in vf10 only runs while the agent is active.
-        if (!agent->AgentInterface.IsAgentActive())
-            agent->AgentInterface.Show();
-
-        // ponytail: recopy every tick while a source is set (the agent is kept active via
-        // Show() in Initialize, so live Glamourer edits propagate immediately).
-        // _pendingRecopyFrames stays for callers that want to force extra ticks after ApplyState.
+        // ponytail: recopy every tick while a source is set, so live Glamourer edits propagate
+        // immediately. _pendingRecopyFrames stays for callers that want to force extra ticks after ApplyState.
         if (_sourceProvider != null && !_suspendCharacterCopy)
         {
             var addr = _sourceProvider();
