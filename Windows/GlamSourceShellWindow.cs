@@ -401,12 +401,13 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         ImGui.Separator();
 
         var fontSize = ImGui.GetFontSize();
-        var recentW = fontSize * 10f;
-        var slotW = fontSize * 9f;
+        var recentW = fontSize * 8f;
+        var slotW = fontSize * 3.3f;
         var avail = ImGui.GetContentRegionAvail();
-        var centerW = MathF.Max(fontSize * 12f, avail.X - (slotW * 2f) - recentW - fontSize * 1.5f);
+        var centerW = MathF.Max(fontSize * 12f, avail.X - (slotW * 2f) - recentW - fontSize * 0.5f);
 
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(4, 4));
+        ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(fontSize * 0.3f, fontSize * 0.2f));
 
         // Left slot column
         if (ImGui.BeginChild("##char_left", new Vector2(slotW, 0), true))
@@ -441,7 +442,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         }
         ImGui.EndChild();
 
-        ImGui.PopStyleVar();
+        ImGui.PopStyleVar(2);
 
         // Preview source: hovered player, else visible player of the clicked Recent, else self (0).
         var desired = _hoverTargetEntityId;
@@ -542,7 +543,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
 
     private void DrawSlotColumn(EquipmentSlotType[] slots)
     {
-        var iconEdge = ImGui.GetFontSize() * 1.8f;
+        var iconEdge = ImGui.GetFontSize() * 2.8f;
         var iconVec = new Vector2(iconEdge, iconEdge);
         foreach (var st in slots)
         {
@@ -553,7 +554,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
 
     private void DrawSlotRow(EquipmentSlotType[] slots)
     {
-        var iconEdge = ImGui.GetFontSize() * 1.8f;
+        var iconEdge = ImGui.GetFontSize() * 2.8f;
         var iconVec = new Vector2(iconEdge, iconEdge);
         for (var i = 0; i < slots.Length; i++)
         {

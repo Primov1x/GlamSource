@@ -159,6 +159,10 @@ public class Plugin : IAsyncDalamudPlugin
         PluginInterface.UiBuilder.OpenConfigUi += OpenConfigUi;
         PluginInterface.UiBuilder.OpenMainUi += ToggleMainUi;
 
+        // ponytail: passive target-scan for the Recent list. Runs even when the Character tab
+        // isn't drawn; throttled to every 30 frames so it doesn't hammer the sheets.
+        Framework.Update += OnFrameworkUpdate;
+
         Log.Information($"===A cool log message from {PluginInterface.Manifest.Name}===");
 
         if (GlamourServiceOverride != null)
@@ -174,6 +178,7 @@ public class Plugin : IAsyncDalamudPlugin
         PluginInterface.UiBuilder.Draw -= WindowSystem.Draw;
         PluginInterface.UiBuilder.OpenConfigUi -= OpenConfigUi;
         PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUi;
+        Framework.Update -= OnFrameworkUpdate;
 
         WindowSystem.RemoveAllWindows();
 
@@ -189,6 +194,32 @@ public class Plugin : IAsyncDalamudPlugin
         CommandManager.RemoveHandler(CommandName);
 
         await Task.CompletedTask;
+    }
+
+    private int _recentScanFrame;
+    private string _lastRecentKey = "";
+
+    private void OnFrameworkUpdate(IFramework fw)
+    {
+        // Throttle: every 30 frames (~0.5s at 60fps).
+        if (++_recentScanFrame < 30) return;
+        _recentScanFrame = 0;
+
+        var target = TargetManager.Target;
+        if (target is not Dalamud.Game.ClientState.Objects.SubKinds.IPlayerCharacter pc) return;
+
+        var name = pc.Name.TextValue;
+        var world = pc.HomeWorld.ValueNullable?.Name.ExtractText() ?? "";
+        var key = $"{name}@{world}";
+        if (key == _lastRecentKey) return;
+
+        var slots = GameDataService.TryGetVisibleGlamour(pc.ObjectIndex);
+        if (slots == null || slots.Count == 0) return;
+
+        _lastRecentKey = key;
+        var itemIds = new System.Collections.Generic.List<uint>(slots.Count);
+        foreach (var s in slots) itemIds.Add(s.GlamourItemId ?? s.ActualItemId);
+        Configuration.PushRecent(name, world, pc.GameObjectId, itemIds);
     }
 
     private void OnCommand(string command, string args)

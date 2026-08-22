@@ -79,6 +79,9 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
                 _framework.Update += OnFrameworkTick;
                 _frameworkHooked = true;
             }
+            // ponytail: keep the recopy pump alive so the CharaView refreshes each frame
+            // even when the game's TryOn agent is inactive (Fitting Room never opened).
+            _renderer.RequestRecopy(2);
             return;
         }
 

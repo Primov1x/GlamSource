@@ -47,7 +47,14 @@ public sealed unsafe class PreviewRenderer : IDisposable
         if (source == null) return;
 
         var agent = AgentTryon.Instance();
-        if (agent == null) return;
+        if (agent == null)
+        {
+            // ponytail: Tryon agent only exists once the Fitting Room has been opened.
+            // AgentTryon.TryOn is the game's own entry point (openerAddonId 0 = no opener addon).
+            AgentTryon.TryOn(0, 0);
+            agent = AgentTryon.Instance();
+            if (agent == null) return;
+        }
 
         _sourceProvider = sourceProvider;
         agent->CharaView.Initialize(&agent->AgentInterface, CharaViewSlot, 0);
