@@ -68,6 +68,11 @@ public sealed unsafe class PreviewRenderer : IDisposable
         }
 
         _sourceProvider = sourceProvider;
+        // ponytail: activate the agent — try-on items only reach the CharaView (vf10 pull)
+        // while the agent is active; a bare Instance() stays hidden and the model keeps
+        // showing the copied character. No-op if already active (Fitting Room open).
+        agent->AgentInterface.Show();
+        _log.Debug($"[PreviewRenderer] AgentTryon active after Show: {agent->AgentInterface.IsAgentActive()}");
         agent->CharaView.Initialize(&agent->AgentInterface, CharaViewSlot, 0);
         agent->CharaView.ModelData.CopyFromCharacter(source);
         agent->CharaView.Update(_counter, agent->CharaView.GetCharacter());
@@ -89,10 +94,14 @@ public sealed unsafe class PreviewRenderer : IDisposable
         var agent = AgentTryon.Instance();
         if (agent == null) return;
 
-        // ponytail: recopy every tick while a source is set. Real warmup keeps AgentTryon
-        // active, so gating on IsAgentActive is redundant and stops live Glamourer edits
-        // from propagating until the user opens the Fitting Room. _pendingRecopyFrames
-        // stays for callers that want to force extra ticks after ApplyState.
+        // ponytail: re-activate if the game hid the agent (Fitting Room closed mid-session) —
+        // the try-on pull in vf10 only runs while the agent is active.
+        if (!agent->AgentInterface.IsAgentActive())
+            agent->AgentInterface.Show();
+
+        // ponytail: recopy every tick while a source is set (the agent is kept active via
+        // Show() in Initialize, so live Glamourer edits propagate immediately).
+        // _pendingRecopyFrames stays for callers that want to force extra ticks after ApplyState.
         if (_sourceProvider != null && !_suspendCharacterCopy)
         {
             var addr = _sourceProvider();
