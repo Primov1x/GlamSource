@@ -4,6 +4,7 @@
   "InternalName": "GlamSource",
   "AssemblyVersion": "0.0.0.32",
   "Description": "Hover über ein Item oder Mount und sieh sofort die Quelle — Dungeon, Shop, Craft, Event. Kein Wiki mehr nötig. Befehle: /glamsource",
+  "IconPath": "glmsrc_13477456200560497766.jpg",
   "ApplicableVersion": "any",
   "Tags": [
     "glamour",
