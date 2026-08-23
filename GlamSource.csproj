@@ -53,10 +53,6 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Visible>false</Visible>
     </Content>
-    <Content Include="glmsrc_13477456200560497766.jpg">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <Visible>false</Visible>
-    </Content>
     <Content Include="GlamSource.Core.Tests\fixtures\target-example.json">
       <Link>fixtures\target-example.json</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

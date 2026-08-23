@@ -767,9 +767,8 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         catch { return false; }
     }
 
-    // ponytail: write pre-packed model values straight into CharaView.ModelData — the old path
-    // went through CharaView.SetItemSlotData, which poked the agent and opened the game's Fitting
-    // Room addon (stuck uncloseable). Direct memory writes keep the agent inert, so no addon.
+    // ponytail: feed the Recent snapshot straight into the CharaView via SetItemSlotData — the
+    // agent stays inactive, so the game's Fitting Room addon never opens (Ktisis-style writes).
     private void ApplyRecentGlamOverride(IReadOnlyList<EquipmentSlot> snapshot)
     {
         if (PreviewWindow == null) return;
@@ -781,15 +780,10 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
                 renderer.SuspendCharacterCopy(true);
                 foreach (var slot in snapshot)
                 {
-                    if (MapToModelSlot(slot.Slot) is not (var isWeapon, var index)) continue;
+                    var slotId = MapToCharaViewSlot(slot.Slot);
                     var itemId = slot.GlamourItemId ?? slot.ActualItemId;
-                    if (itemId == 0) continue;
-                    var model = ReadItemModelValue(itemId, isWeapon && index == 1);
-                    if (model == 0) continue;
-                    if (isWeapon)
-                        renderer.SetCharaViewWeaponSlot((byte)index, model, slot.Stain0, slot.Stain1);
-                    else
-                        renderer.SetCharaViewEquipmentSlot((byte)index, model, slot.Stain0, slot.Stain1);
+                    if (itemId == 0 || slotId == 0xFF) continue;
+                    renderer.SetCharaViewSlot(slotId, itemId, slot.Stain0, slot.Stain1);
                 }
                 renderer.RequestRecopy(5);
                 _recentGlamApplied = true;
@@ -913,35 +907,27 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         }
     }
 
-    // ponytail: CharaViewModelData domains — _equipmentModelIds (10 entries) + _weaponModelIds
-    // (3 entries). NOT verified in-game yet — if gear renders in the wrong place (or MH/OH
-    // swapped), adjust the values here. null = unmapped (waist has no ModelData slot), caller skips.
-    private static (bool isWeapon, int index)? MapToModelSlot(EquipmentSlotType s) => s switch
+    // ponytail: CharaView slot domain = Item-sheet EquipSlotCategory columns (CharaView._items has
+    // 14 entries, AgentInspect._items 13 — the 14th is SoulCrystal). NOT verified in-game yet —
+    // if gear renders in the wrong place (or MH/OH swapped), adjust the values here.
+    // 0xFF = unmapped, caller skips.
+    private static byte MapToCharaViewSlot(EquipmentSlotType s) => s switch
     {
-        EquipmentSlotType.MainHand => (true, 0),
-        EquipmentSlotType.OffHand => (true, 1),
-        EquipmentSlotType.Head => (false, 0),
-        EquipmentSlotType.Body => (false, 1),
-        EquipmentSlotType.Hands => (false, 2),
-        EquipmentSlotType.Legs => (false, 3),
-        EquipmentSlotType.Feet => (false, 4),
-        EquipmentSlotType.Earrings => (false, 5),
-        EquipmentSlotType.Necklace => (false, 6),
-        EquipmentSlotType.Bracelets => (false, 7),
-        EquipmentSlotType.RingRight => (false, 8),
-        EquipmentSlotType.RingLeft => (false, 9),
-        _ => null,
+        EquipmentSlotType.OffHand => 0,
+        EquipmentSlotType.MainHand => 1,
+        EquipmentSlotType.Head => 2,
+        EquipmentSlotType.Body => 3,
+        EquipmentSlotType.Hands => 4,
+        EquipmentSlotType.Waist => 5,
+        EquipmentSlotType.Legs => 6,
+        EquipmentSlotType.Feet => 7,
+        EquipmentSlotType.Earrings => 8,
+        EquipmentSlotType.Necklace => 9,
+        EquipmentSlotType.Bracelets => 10,
+        EquipmentSlotType.RingLeft => 11,
+        EquipmentSlotType.RingRight => 12,
+        _ => 0xFF,
     };
-
-    // ponytail: raw 8-byte model value (Id | Type<<16 | Variant<<32) from the generated sheet
-    // property; ModelSub for the off-hand weapon, ModelMain for everything else. 0 = unknown row.
-    private ulong ReadItemModelValue(uint itemId, bool offHandWeapon)
-    {
-        var sheet = _data.GetExcelSheet<Item>();
-        return sheet != null && sheet.TryGetRow(itemId, out var row)
-            ? (offHandWeapon ? row.ModelSub : row.ModelMain)
-            : 0;
-    }
 
     private static ApiEquipSlot MapToApiSlot(EquipmentSlotType s) => s switch
     {
