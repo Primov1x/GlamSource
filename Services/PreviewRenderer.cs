@@ -36,9 +36,15 @@ public sealed unsafe class PreviewRenderer : IDisposable
     // ItemId from the live source's DrawData each frame until AgentTryon activates.
     private bool _retryWarmup;
     private nint _warmupSource;
+    // ponytail: equipment overlay source — body stays self; only 10 equipment + 3 weapon ModelIds
+    // come from this live character's DrawData. Character* would go stale, a func won't.
+    private Func<nint>? _equipmentProvider;
 
     /// <summary>Suspend/resume per-frame CopyFromCharacter. Set true while direct slot writes own the view.</summary>
     public void SuspendCharacterCopy(bool suspend) => _suspendCharacterCopy = suspend;
+
+    /// <summary>Set the live character whose equipment/weapon ModelIds overlay the self body, or null for pure self. Framework thread.</summary>
+    public void SetEquipmentSource(Func<nint>? provider) => _equipmentProvider = provider;
 
     /// <summary>Write a pre-packed model value into CharaViewModelData._equipmentModelIds[slotIndex]
     /// (10 entries @ 0x20). <paramref name="modelValue"/> is the raw Item.ModelMain 8-byte sheet
@@ -75,6 +81,26 @@ public sealed unsafe class PreviewRenderer : IDisposable
         basePtr[14 + slotIndex] = (modelValue & 0xFFFF_FFFF_FFFF)
             | ((ulong)stain0 << 48)
             | ((ulong)stain1 << 56);
+    }
+
+    /// <summary>Write a raw 8-byte runtime model value into CharaViewModelData._equipmentModelIds[slotIndex]. Framework thread.</summary>
+    public void SetCharaViewEquipmentSlotRaw(byte slotIndex, ulong value)
+    {
+        if (!_initialized || slotIndex >= 10) return;
+        var agent = AgentTryon.Instance();
+        if (agent == null) return;
+        var basePtr = (ulong*)Unsafe.AsPointer(ref agent->CharaView.ModelData);
+        basePtr[2 + slotIndex] = value;
+    }
+
+    /// <summary>Write a raw 8-byte runtime model value into CharaViewModelData._weaponModelIds[slotIndex]. Framework thread.</summary>
+    public void SetCharaViewWeaponSlotRaw(byte slotIndex, ulong value)
+    {
+        if (!_initialized || slotIndex >= 3) return;
+        var agent = AgentTryon.Instance();
+        if (agent == null) return;
+        var basePtr = (ulong*)Unsafe.AsPointer(ref agent->CharaView.ModelData);
+        basePtr[14 + slotIndex] = value;
     }
 
     public PreviewRenderer(IFramework framework, IPluginLog log)
@@ -169,6 +195,25 @@ public sealed unsafe class PreviewRenderer : IDisposable
             if (addr != nint.Zero)
                 agent->CharaView.ModelData.CopyFromCharacter((Character*)addr);
             if (_pendingRecopyFrames > 0) _pendingRecopyFrames--;
+        }
+
+        // ponytail: equipment overlay — body stays self, only the 10+3 ModelIds come from the overlay
+        // source's DrawData. Whole 8-byte copies: both sides are the same runtime structs
+        // (EquipmentModelId / WeaponModelId), so no field repacking.
+        if (_equipmentProvider != null)
+        {
+            var addr = _equipmentProvider();
+            if (addr != nint.Zero)
+            {
+                var src = (Character*)addr;
+                if (src->DrawData.OwnerObject != null)
+                {
+                    for (var i = 0; i < 10; i++)
+                        SetCharaViewEquipmentSlotRaw((byte)i, *(ulong*)Unsafe.AsPointer(ref src->DrawData.Equipment((DrawDataContainer.EquipmentSlot)i)));
+                    for (var i = 0; i < 3; i++)
+                        SetCharaViewWeaponSlotRaw((byte)i, *(ulong*)Unsafe.AsPointer(ref src->DrawData.Weapon((DrawDataContainer.WeaponSlot)i).ModelId));
+                }
+            }
         }
 
         var ch = agent->CharaView.GetCharacter();
@@ -266,6 +311,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
             _counter = 1;
             _zoom = 1.0f;
             _sourceProvider = null;
+            _equipmentProvider = null;
             _pendingRecopyFrames = 0;
             _retryWarmup = false;
             _warmupSource = nint.Zero;

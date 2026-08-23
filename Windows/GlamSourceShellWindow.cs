@@ -453,10 +453,12 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
 
         ImGui.PopStyleVar(2);
 
-        // Preview source: hovered player, else visible player of the clicked Recent, else self (0).
+        // Preview = self body + equipment of: hovered player, else live target.
+        // While a Recent snapshot is active (or pinned) the stored/pinned state owns the view,
+        // so the overlay is cleared and the Recent direct slot writes drive the CharaView.
         var desired = _hoverTargetEntityId;
-        if (desired == 0 && _activeRecentName != null)
-            desired = FindVisiblePlayer(_activeRecentName)?.EntityId ?? 0u;
+        if (desired == 0 && _recentOverride == null && !_pinned)
+            desired = Plugin.TargetManager?.Target?.EntityId ?? 0;
         if (desired != _previewEntityId)
         {
             _previewEntityId = desired;

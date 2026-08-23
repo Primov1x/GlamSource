@@ -150,7 +150,6 @@ public unsafe class GameDataService : IGlamourService
 
     private unsafe IReadOnlyList<EquipmentSlot> GetOwnEquipment()
     {
-        Plugin.Log.Information("[EQUIP] GetOwnEquipment called");
         var im = InventoryManager.Instance();
         if (im == null)
             return Array.Empty<EquipmentSlot>();
@@ -262,7 +261,6 @@ public unsafe class GameDataService : IGlamourService
 
     private IReadOnlyList<EquipmentSlot> GetDrawDataEquipment(IGameObject target)
     {
-        Plugin.Log.Information("[EQUIP] GetDrawDataEquipment FALLBACK");
         if (target is not IPlayerCharacter playerChar)
             return Array.Empty<EquipmentSlot>();
 
