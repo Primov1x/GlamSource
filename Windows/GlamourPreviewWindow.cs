@@ -97,7 +97,7 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
 
         _framework.RunOnFrameworkThread(() =>
         {
-            _renderer.Initialize((Character*)selfAddr, ResolveWarmupItemId(), () => _objectTable.LocalPlayer?.Address ?? nint.Zero);
+            _renderer.Initialize((Character*)selfAddr, 0, () => _objectTable.LocalPlayer?.Address ?? nint.Zero);
         });
 
         if (!_frameworkHooked)
@@ -199,7 +199,7 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
             if (sourceEntityId == 0)
             {
                 _sourceEntityId = 0;
-                _renderer.Initialize((Character*)localPlayer.Address, ResolveWarmupItemId(),
+                _renderer.Initialize((Character*)localPlayer.Address, 0,
                     () => _objectTable.LocalPlayer?.Address ?? nint.Zero);
             }
             else
@@ -217,7 +217,7 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
                 _log.Info($"[GlamourPreviewWindow] Show target: EntityId={sourceEntityId}");
                 _sourceEntityId = sourceEntityId;
                 // Live provider: Tick re-copies the target each frame, so the preview tracks the target live.
-                _renderer.Initialize((Character*)targetObj.Address, ResolveWarmupItemId(),
+                _renderer.Initialize((Character*)targetObj.Address, 0,
                     () => _objectTable.SearchByEntityId(_sourceEntityId)?.Address ?? nint.Zero);
             }
 

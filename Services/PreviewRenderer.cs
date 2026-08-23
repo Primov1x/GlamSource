@@ -32,6 +32,10 @@ public sealed unsafe class PreviewRenderer : IDisposable
     // ponytail: when true, Tick() skips CopyFromCharacter so direct ModelData writes
     // drive the CharaView render. Cleared on Recent revert.
     private bool _suspendCharacterCopy;
+    // ponytail: pending warmup — Initialize(0) queues it; Tick() resolves a real equipped
+    // ItemId from the live source's DrawData each frame until AgentTryon activates.
+    private bool _retryWarmup;
+    private nint _warmupSource;
 
     /// <summary>Suspend/resume per-frame CopyFromCharacter. Set true while direct slot writes own the view.</summary>
     public void SuspendCharacterCopy(bool suspend) => _suspendCharacterCopy = suspend;
@@ -86,12 +90,17 @@ public sealed unsafe class PreviewRenderer : IDisposable
 
     /// <summary>Initialize CharaView from a source character. Must be called on Framework thread.
     /// <paramref name="warmupItemId"/> is a real Item RowId used to activate AgentTryon when the
-    /// Fitting Room has never been opened — passing 0 (invalid) leaves the agent inactive and lets
-    /// AgentCharaCard hijack our CharaView slot. Caller retries next frame if this returns without initializing.</summary>
+    /// Fitting Room has never been opened. Pass 0 to defer activation: the source address is
+    /// queued and Tick() resolves a real equipped ItemId from the live source's DrawData each
+    /// frame until the agent activates.</summary>
     public void Initialize(Character* source, uint warmupItemId, Func<nint>? sourceProvider = null)
     {
         if (_initialized) return;
         if (source == null) return;
+
+        _sourceProvider = sourceProvider;
+        _warmupSource = (nint)source;
+        _retryWarmup = true;
 
         var agent = AgentTryon.Instance();
         if (agent == null)
@@ -99,13 +108,17 @@ public sealed unsafe class PreviewRenderer : IDisposable
             // ponytail: Tryon agent only exists once the Fitting Room has been opened.
             // Warm it with a real equipped ItemId — TryOn(0,0) leaves the agent inactive and the
             // game then hijacks CharaView slot 2 for AgentCharaCard (portraits/adventure plates).
-            if (warmupItemId == 0) return;
+            if (warmupItemId == 0) return; // _retryWarmup stays set — Tick() retries.
             AgentTryon.TryOn(0, warmupItemId, 0, 0, 0, false);
             agent = AgentTryon.Instance();
-            if (agent == null) return;
+            if (agent == null) return; // _retryWarmup stays set — Tick() retries.
         }
 
-        _sourceProvider = sourceProvider;
+        DoInitialize(source, agent);
+    }
+
+    private void DoInitialize(Character* source, AgentTryon* agent)
+    {
         // ponytail: agent is intentionally left INACTIVE — Show() opens the game's Fitting Room
         // addon. CharaView renders fine with an inactive agent (Ktisis precedent): Initialize
         // once, then per-tick Update/Render; items are written directly into ModelData.
@@ -126,7 +139,25 @@ public sealed unsafe class PreviewRenderer : IDisposable
     /// <summary>Per-frame update/render. Must be called on Framework thread.</summary>
     public void Tick()
     {
-        if (!_initialized) return;
+        if (!_initialized)
+        {
+            // ponytail: deferred warmup — Initialize(0) queued a source; resolve a real
+            // equipped ItemId from the live source's DrawData and activate AgentTryon.
+            if (!_retryWarmup) return;
+            var addr = _sourceProvider?.Invoke() ?? _warmupSource;
+            if (addr == nint.Zero) return;
+            var src = (Character*)addr;
+            uint warmupItemId = 0;
+            foreach (var slot in src->DrawData.EquipmentModelIds)
+                if (slot.Id != 0) { warmupItemId = slot.Id; break; }
+            if (warmupItemId == 0) return; // not drawn yet — retry next frame
+            AgentTryon.TryOn(0, warmupItemId, 0, 0, 0, false);
+            var warmupAgent = AgentTryon.Instance();
+            if (warmupAgent == null) return;
+            _retryWarmup = false;
+            DoInitialize(src, warmupAgent);
+            return;
+        }
         var agent = AgentTryon.Instance();
         if (agent == null) return;
 
@@ -236,6 +267,8 @@ public sealed unsafe class PreviewRenderer : IDisposable
             _zoom = 1.0f;
             _sourceProvider = null;
             _pendingRecopyFrames = 0;
+            _retryWarmup = false;
+            _warmupSource = nint.Zero;
         }
     }
 
