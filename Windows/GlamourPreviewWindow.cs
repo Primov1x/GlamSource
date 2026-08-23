@@ -5,7 +5,6 @@ using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
-using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using Glamourer.Api.Enums;
 using Glamourer.Api.IpcSubscribers;
 using GlamSource.Core;
@@ -37,6 +36,8 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
 
     // ponytail: cache target by EntityId, not ObjectIndex (ObjectIndex is flaky during game updates).
     private uint _targetEntityId = 0;
+    // Who the preview is currently showing (0 = self).
+    private uint _sourceEntityId;
     // ponytail: base64 string, not JObject — JObject crosses IPC unreliably (assembly-identity mismatch on the Newtonsoft type);
     // GetStateBase64/ApplyState(string) are the IPC-safe endpoints the current Glamourer ships.
     private string? _selfSnapshot;
@@ -76,6 +77,7 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
     // without flipping IsOpen so the shell can render the texture inside its own BeginChild.
     public void EnsureInitializedForSelf()
     {
+        _sourceEntityId = 0;
         if (_renderer.IsInitialized)
         {
             if (!_frameworkHooked)
@@ -180,15 +182,48 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
             return;
         }
 
-        var selfAddr = localPlayer.Address;
-
+        // ponytail: Target-Glam renders the target's own character (live per-tick copy) instead of
+        // ApplyState-ing its glam onto LocalPlayer — no async propagation, no Fitting Room needed.
         _framework.RunOnFrameworkThread(() =>
         {
             _renderer.Release();
-            // ponytail: pass a live LocalPlayer-address resolver so Tick can re-copy each frame
-            // (ApplyState lands async; without this the viewer shows pre-apply gear).
-            _renderer.Initialize((Character*)selfAddr, ResolveWarmupItemId(), () => _objectTable.LocalPlayer?.Address ?? nint.Zero);
-            ApplyModeState();
+
+            uint sourceEntityId = 0;
+            if (_mode == PreviewMode.TargetGlam && _targetEntityId != 0)
+            {
+                var found = _objectTable.SearchByEntityId(_targetEntityId);
+                if (found != null && found != localPlayer)
+                    sourceEntityId = _targetEntityId;
+            }
+
+            if (sourceEntityId == 0)
+            {
+                _sourceEntityId = 0;
+                _renderer.Initialize((Character*)localPlayer.Address, ResolveWarmupItemId(),
+                    () => _objectTable.LocalPlayer?.Address ?? nint.Zero);
+            }
+            else
+            {
+                var targetObj = _objectTable.SearchByEntityId(sourceEntityId);
+                if (targetObj == null)
+                {
+                    _log.Warning($"[GlamourPreviewWindow] Target not found (EntityId={sourceEntityId}), showing self");
+                    _sourceEntityId = 0;
+                    _renderer.Initialize((Character*)localPlayer.Address, ResolveWarmupItemId(),
+                        () => _objectTable.LocalPlayer?.Address ?? nint.Zero);
+                    return;
+                }
+
+                _log.Info($"[GlamourPreviewWindow] Show target: EntityId={sourceEntityId}");
+                _sourceEntityId = sourceEntityId;
+                // Live provider: Tick re-copies the target each frame, so the preview tracks the target live.
+                _renderer.Initialize((Character*)targetObj.Address, ResolveWarmupItemId(),
+                    () => _objectTable.SearchByEntityId(_sourceEntityId)?.Address ?? nint.Zero);
+            }
+
+            // Keep a self snapshot so Recent/close paths can still restore own glam.
+            if (_mode == PreviewMode.TargetGlam)
+                TrySnapshotSelfOnce();
         });
 
         IsOpen = true;
@@ -210,8 +245,38 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
             _framework.Update -= OnFrameworkTick;
             _frameworkHooked = false;
         }
-        // ponytail: always restore snapshot on close — user should not be silently left in target's glam.
-        RestoreSnapshotIfAny();
+
+        // If we were showing the target, switch back to self before releasing and restore
+        // own glam if a snapshot exists (defensive — Target-Glam itself no longer mutates self).
+        if (_mode == PreviewMode.TargetGlam && _sourceEntityId != 0)
+        {
+            var lp = _objectTable.LocalPlayer;
+            if (lp != null)
+            {
+                _framework.RunOnFrameworkThread(() => _renderer.SetSource(
+                    lp.Address, ResolveWarmupItemId(),
+                    () => _objectTable.LocalPlayer?.Address ?? nint.Zero));
+            }
+
+            var snap = _selfSnapshot;
+            if (snap != null)
+            {
+                _framework.RunOnFrameworkThread(() =>
+                {
+                    try
+                    {
+                        var ec = new ApplyState(_pi).Invoke(snap, 0, 0, ApplyFlag.Once | ApplyFlag.Equipment);
+                        if (ec != GlamourerApiEc.Success)
+                            _log.Warning($"[GlamourPreviewWindow] Restore on close failed: {ec}");
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.Warning($"[GlamourPreviewWindow] Restore on close error: {ex.Message}");
+                    }
+                });
+            }
+        }
+
         _framework.RunOnFrameworkThread(_renderer.Release);
     }
 
@@ -299,97 +364,36 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
         HandleDrag(cursor, target);
     }
 
-    // Framework thread only.
+    // Framework thread only. Mode switch = source switch; no glam mutation of LocalPlayer.
     private void ApplyModeState()
     {
-        if (!IsGlamourerInstalled())
+        if (!IsGlamourerInstalled() || _mode == PreviewMode.CurrentGear)
         {
-            // ponytail: without Glamourer we can't snapshot/copy; just refresh CharaView from LocalPlayer.
-            RefreshCharaViewFromLocalPlayer();
+            if (_sourceEntityId != 0)
+            {
+                _sourceEntityId = 0;
+                var lp = _objectTable.LocalPlayer;
+                if (lp != null)
+                {
+                    _framework.RunOnFrameworkThread(() => _renderer.SetSource(
+                        lp.Address, ResolveWarmupItemId(),
+                        () => _objectTable.LocalPlayer?.Address ?? nint.Zero));
+                }
+            }
             return;
         }
 
-        try
+        if (_targetEntityId != 0 && _sourceEntityId != _targetEntityId)
         {
-            if (_selfSnapshot == null)
-            {
-                GetStateBase64? getStateInstance = new(_pi);
-                if (!getStateInstance.Valid)
-                {
-                    _log.Error("[GlamourPreviewWindow] GetStateBase64 IPC not available");
-                    return;
-                }
-
-                var (ecGet, state) = getStateInstance.Invoke(0, 0);
-                if (ecGet == GlamourerApiEc.Success && state != null)
-                    _selfSnapshot = state;
-                else
-                    _log.Warning($"[GlamourPreviewWindow] GetStateBase64(self) failed: {ecGet}");
-            }
-
-            Dalamud.Game.ClientState.Objects.Types.IGameObject? targetObj = null;
-            if (_mode == PreviewMode.TargetGlam && _targetEntityId != 0)
-            {
-                var found = _objectTable.SearchByEntityId(_targetEntityId);
-                if (found == null || found == _objectTable.LocalPlayer)
-                {
-                    _log.Warning($"[GlamourPreviewWindow] Target not found (EntityId={_targetEntityId}), falling back to self");
-                    _mode = PreviewMode.CurrentGear;
-                }
-                else
-                {
-                    _log.Info($"[GlamourPreviewWindow] Target resolved: EntityId={_targetEntityId} ObjectIndex={found.ObjectIndex}");
-                    targetObj = found;
-                }
-            }
-
+            _sourceEntityId = _targetEntityId;
+            var targetObj = _objectTable.SearchByEntityId(_targetEntityId);
             if (targetObj != null)
             {
-                GetStateBase64? getStateInstance = new(_pi);
-                if (getStateInstance.Valid)
-                {
-                    var (ecTgt, tgtState) = getStateInstance.Invoke(targetObj.ObjectIndex, 0);
-                    if (ecTgt == GlamourerApiEc.Success && tgtState != null)
-                    {
-                        var ecApp = new ApplyState(_pi).Invoke(tgtState, 0, 0, ApplyFlag.Once | ApplyFlag.Equipment);
-                        if (ecApp != GlamourerApiEc.Success)
-                            _log.Warning($"[GlamourPreviewWindow] ApplyState(target->self) failed: {ecApp}");
-                    }
-                    else
-                    {
-                        _log.Warning($"[GlamourPreviewWindow] GetState(target={targetObj.ObjectIndex}, EntityId={_targetEntityId}) failed: {ecTgt}");
-                    }
-                }
-            }
-            else
-            {
-                // CurrentGear: restore snapshot if we mutated earlier.
-                if (_selfSnapshot != null)
-                {
-                    var ec = new ApplyState(_pi).Invoke(_selfSnapshot, 0, 0, ApplyFlag.Once | ApplyFlag.Equipment);
-                    if (ec != GlamourerApiEc.Success)
-                        _log.Warning($"[GlamourPreviewWindow] ApplyState(restore) failed: {ec}");
-                }
+                _framework.RunOnFrameworkThread(() => _renderer.SetSource(
+                    targetObj.Address, ResolveWarmupItemId(),
+                    () => _objectTable.SearchByEntityId(_sourceEntityId)?.Address ?? nint.Zero));
             }
         }
-        catch (Exception ex)
-        {
-            _log.Warning($"[GlamourPreviewWindow] ApplyModeState error: {ex.Message}");
-        }
-
-        // ponytail: no immediate CharaView refresh here — it would copy pre-apply gear, since
-        // ApplyState lands in the model a frame or two later. Let Tick re-copy from LocalPlayer
-        // until the post-apply model is in (target apply mutates more → longer window).
-        _renderer.RequestRecopy(_mode == PreviewMode.TargetGlam ? 15 : 5);
-    }
-
-    private void RefreshCharaViewFromLocalPlayer()
-    {
-        var lp = _objectTable.LocalPlayer;
-        if (lp == null) return;
-        var agent = AgentTryon.Instance();
-        if (agent == null || !_renderer.IsInitialized) return;
-        agent->CharaView.ModelData.CopyFromCharacter((Character*)lp.Address);
     }
 
     private void RestoreSnapshotIfAny()
