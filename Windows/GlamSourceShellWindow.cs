@@ -72,6 +72,13 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
     private string? _activeRecentName;
     // ponytail: last entity handed to the preview (0 = self); guards the per-frame dispatch.
     private uint _previewEntityId;
+    // ponytail: debounce for TargetManager.Target null-flicker while cursor moves over plugin window.
+    private uint _lastLiveTarget;
+    private int _targetNullFrames;
+    private const int TargetNullGraceFrames = 20;
+    // ponytail: ignore live target for the first N frames after open — else random hardtarget bleeds in.
+    private int _openGraceFrames;
+    private const int OpenGraceFrames = 30;
     // ponytail: live DrawData snapshot of the hovered Recent character while it is visible.
     private IReadOnlyList<EquipmentSlot>? _hoverSnapshot;
     // ponytail: true iff we currently have LocalPlayer's glam mutated for a Recent preview
@@ -135,6 +142,17 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
     {
         _pendingTab = (int)id;
         IsOpen = true;
+    }
+
+    public override void OnOpen()
+    {
+        // ponytail: first frame after open shows self, not whatever the game is targeting.
+        // User must explicitly re-target (or click Recent) to switch away.
+        _lastLiveTarget = 0;
+        _targetNullFrames = 0;
+        _previewEntityId = 0;
+        _snapshot = Array.Empty<EquipmentSlot>();
+        _openGraceFrames = OpenGraceFrames;
     }
 
     public override void PreDraw()
@@ -389,16 +407,16 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
     private void DrawCharacterTab()
     {
         // Refresh live snapshot every frame unless pinned or Recent-override active.
+        // ponytail: only overwrite _snapshot when we actually have a target; null-flicker keeps the last one.
         if (!_pinned && _recentOverride == null)
         {
             var target = Plugin.TargetManager?.Target;
-            IReadOnlyList<EquipmentSlot>? live = null;
             if (target != null)
             {
-                live = _glamour.TryGetVisibleGlamour(target.ObjectIndex) ?? _glamour.GetTargetEquipment();
+                var live = _glamour.TryGetVisibleGlamour(target.ObjectIndex) ?? _glamour.GetTargetEquipment();
                 MaybePushRecentForTarget(target, live);
+                _snapshot = live ?? _snapshot;
             }
-            _snapshot = live ?? Array.Empty<EquipmentSlot>();
         }
         if (_hoverSnapshot != null)
             _snapshot = _hoverSnapshot;
@@ -455,11 +473,39 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
 
         // Preview = live target (or none). Recent click drives CharaView directly via
         // SetCharaViewItemSlot in ApplyRecentGlamOverride, so overlay must stay cleared then.
+        // ponytail: debounce target null-flicker (mouse-over plugin loses hardtarget briefly).
+        // Only accept a null target after N consecutive frames; non-null wins instantly.
         uint desired;
         if (_recentOverride != null || _pinned)
+        {
             desired = 0;
+            _targetNullFrames = 0;
+        }
+        else if (_openGraceFrames > 0)
+        {
+            _openGraceFrames--;
+            desired = 0;
+        }
         else
-            desired = Plugin.TargetManager?.Target?.EntityId ?? 0;
+        {
+            var live = Plugin.TargetManager?.Target?.EntityId ?? 0;
+            if (live != 0)
+            {
+                desired = live;
+                _lastLiveTarget = live;
+                _targetNullFrames = 0;
+            }
+            else if (_lastLiveTarget != 0 && _targetNullFrames < TargetNullGraceFrames)
+            {
+                _targetNullFrames++;
+                desired = _lastLiveTarget;
+            }
+            else
+            {
+                desired = 0;
+                _lastLiveTarget = 0;
+            }
+        }
         if (desired != _previewEntityId)
         {
             _previewEntityId = desired;

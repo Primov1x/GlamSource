@@ -29,6 +29,17 @@ public sealed class LuminaItemSourceService : IItemSourceService
     private readonly Dictionary<uint, List<(FieldOpType Type, FieldOpCofferType CofferType)>> _itemToFieldOpCofferMap = new();
     private readonly Dictionary<uint, List<uint>> _itemToDungeonDropMap = new();
 
+    // ponytail: achievement/gathering built from base Lumina sheets, no CSV needed
+    private readonly Dictionary<uint, List<uint>> _itemToAchievementMap = new();
+    private readonly HashSet<uint> _gatheringItemIds = new();
+
+    // ponytail: pure-CSV Supplemental sources
+    private readonly HashSet<uint> _storeItemIds = new();
+    private readonly Dictionary<uint, List<uint>> _itemToRetainerTaskMap = new();
+    private readonly Dictionary<uint, List<uint>> _itemToAirshipPointMap = new();
+    private readonly Dictionary<uint, List<uint>> _itemToSubmarineExplorationMap = new();
+    private readonly Dictionary<uint, List<(uint Stage, uint ClassJobId)>> _itemToRelicMap = new();
+
     public LuminaItemSourceService(GameData gameData)
     {
         _gameData = gameData ?? throw new ArgumentNullException(nameof(gameData));
@@ -45,6 +56,21 @@ public sealed class LuminaItemSourceService : IItemSourceService
         BuildDungeonBossChestCache();
         BuildDungeonDropCache();
         BuildFieldOpCofferCache();
+        // ponytail: any Build* may throw MismatchedColumnHashException in mock when
+        // DalaMock's Lumina.Excel lags behind live sqpack. Skip drifted sheet, keep others.
+        SafeBuild(BuildAchievementCache);
+        SafeBuild(BuildGatheringItemCache);
+        SafeBuild(BuildStoreItemCache);
+        SafeBuild(BuildRetainerVentureCache);
+        SafeBuild(BuildAirshipDropCache);
+        SafeBuild(BuildSubmarineDropCache);
+        SafeBuild(BuildRelicWeaponCache);
+    }
+
+    private static void SafeBuild(System.Action build)
+    {
+        try { build(); }
+        catch (Lumina.Excel.Exceptions.MismatchedColumnHashException) { }
     }
 
     public IReadOnlyList<ItemSource> GetSources(uint itemId)
@@ -179,6 +205,51 @@ public sealed class LuminaItemSourceService : IItemSourceService
             sources.Add(new ItemSource(ItemSourceType.Coffer, $"Field Op Coffer: {desc}"));
         }
 
+        // 12. Achievement reward
+        if (_itemToAchievementMap.TryGetValue(itemId, out var achIds))
+        {
+            var achSheet = _gameData.GetExcelSheet<Achievement>();
+            var names = string.Join(", ", achIds.Select(id => achSheet?.GetRow(id).Name.ExtractText() ?? $"{id}"));
+            sources.Add(new ItemSource(ItemSourceType.Achievement, $"Achievement: {names}"));
+        }
+
+        // 13. Gathering
+        if (_gatheringItemIds.Contains(itemId))
+        {
+            sources.Add(new ItemSource(ItemSourceType.Gathering, "Gathering"));
+        }
+
+        // 14. MogStation
+        if (_storeItemIds.Contains(itemId))
+        {
+            sources.Add(new ItemSource(ItemSourceType.MogStation, "Mog Station"));
+        }
+
+        // 15. Retainer Venture
+        if (_itemToRetainerTaskMap.ContainsKey(itemId))
+        {
+            sources.Add(new ItemSource(ItemSourceType.Retainer, "Retainer Venture"));
+        }
+
+        // 16. Airship Voyage
+        if (_itemToAirshipPointMap.ContainsKey(itemId))
+        {
+            sources.Add(new ItemSource(ItemSourceType.Airship, "Airship Voyage"));
+        }
+
+        // 17. Submarine Voyage
+        if (_itemToSubmarineExplorationMap.ContainsKey(itemId))
+        {
+            sources.Add(new ItemSource(ItemSourceType.Submarine, "Submarine Voyage"));
+        }
+
+        // 18. Relic weapon step
+        if (_itemToRelicMap.TryGetValue(itemId, out var relicEntries))
+        {
+            var desc = string.Join("; ", relicEntries.Select(e => $"stage {e.Stage} job {e.ClassJobId}"));
+            sources.Add(new ItemSource(ItemSourceType.Relic, $"Relic: {desc}"));
+        }
+
         var result = sources.AsReadOnly();
         _cache[itemId] = result;
         return result;
@@ -294,6 +365,113 @@ public sealed class LuminaItemSourceService : IItemSourceService
             var entry = (coffer.Type, coffer.CofferType);
             if (!_itemToFieldOpCofferMap[coffer.ItemId].Contains(entry))
                 _itemToFieldOpCofferMap[coffer.ItemId].Add(entry);
+        }
+    }
+
+    private void BuildAchievementCache()
+    {
+        var sheet = _gameData.GetExcelSheet<Achievement>();
+        if (sheet == null) return;
+        foreach (var row in sheet)
+        {
+            var itemId = row.Item.RowId;
+            if (itemId == 0) continue;
+            if (!_itemToAchievementMap.TryGetValue(itemId, out var list))
+            {
+                list = new List<uint>();
+                _itemToAchievementMap[itemId] = list;
+            }
+            if (!list.Contains(row.RowId)) list.Add(row.RowId);
+        }
+    }
+
+    private void BuildGatheringItemCache()
+    {
+        var sheet = _gameData.GetExcelSheet<GatheringItem>();
+        if (sheet == null) return;
+        foreach (var row in sheet)
+        {
+            var itemId = (uint)row.Item.RowId;
+            if (itemId == 0) continue;
+            _gatheringItemIds.Add(itemId);
+        }
+    }
+
+    private void BuildStoreItemCache()
+    {
+        var items = CsvLoader.LoadResource<StoreItem>(
+            CsvLoader.StoreItemResourceName, includesHeaders: true, out _, out _, gameData: null);
+        foreach (var s in items)
+            if (s.ItemId != 0) _storeItemIds.Add(s.ItemId);
+    }
+
+    private void BuildRetainerVentureCache()
+    {
+        var items = CsvLoader.LoadResource<RetainerVentureItem>(
+            CsvLoader.RetainerVentureItemResourceName, includesHeaders: true, out _, out _, gameData: null);
+        foreach (var v in items)
+        {
+            if (v.ItemId == 0) continue;
+            if (!_itemToRetainerTaskMap.TryGetValue(v.ItemId, out var list))
+            {
+                list = new List<uint>();
+                _itemToRetainerTaskMap[v.ItemId] = list;
+            }
+            if (!list.Contains(v.RetainerTaskRandomId)) list.Add(v.RetainerTaskRandomId);
+        }
+    }
+
+    private void BuildAirshipDropCache()
+    {
+        var items = CsvLoader.LoadResource<AirshipDrop>(
+            CsvLoader.AirshipDropResourceName, includesHeaders: true, out _, out _, gameData: null);
+        foreach (var d in items)
+        {
+            if (d.ItemId == 0) continue;
+            if (!_itemToAirshipPointMap.TryGetValue(d.ItemId, out var list))
+            {
+                list = new List<uint>();
+                _itemToAirshipPointMap[d.ItemId] = list;
+            }
+            if (!list.Contains(d.AirshipExplorationPointId)) list.Add(d.AirshipExplorationPointId);
+        }
+    }
+
+    private void BuildSubmarineDropCache()
+    {
+        var items = CsvLoader.LoadResource<SubmarineDrop>(
+            CsvLoader.SubmarineDropResourceName, includesHeaders: true, out _, out _, gameData: null);
+        foreach (var d in items)
+        {
+            if (d.ItemId == 0) continue;
+            if (!_itemToSubmarineExplorationMap.TryGetValue(d.ItemId, out var list))
+            {
+                list = new List<uint>();
+                _itemToSubmarineExplorationMap[d.ItemId] = list;
+            }
+            if (!list.Contains(d.SubmarineExplorationId)) list.Add(d.SubmarineExplorationId);
+        }
+    }
+
+    private void BuildRelicWeaponCache()
+    {
+        var items = CsvLoader.LoadResource<RelicWeapon>(
+            CsvLoader.RelicWeaponResourceName, includesHeaders: true, out _, out _, gameData: null);
+        foreach (var r in items)
+        {
+            void Add(uint itemId)
+            {
+                if (itemId == 0) return;
+                if (!_itemToRelicMap.TryGetValue(itemId, out var list))
+                {
+                    list = new List<(uint, uint)>();
+                    _itemToRelicMap[itemId] = list;
+                }
+                var entry = (r.Stage, r.ClassJobId);
+                if (!list.Contains(entry)) list.Add(entry);
+            }
+            Add(r.ItemId);
+            Add(r.OffhandItemId);
         }
     }
 }

@@ -116,7 +116,10 @@ public sealed class ItemDetailService : IItemDetailService
 
         BuildCaches();
         BuildDutyDropCache();
-        BuildGatheringCache();
+        // ponytail: gathering cache reads GatheringPoint/TerritoryType/Map — column-hash mismatch
+        // when DalaMock's Lumina.Excel lags behind live sqpack. Skip on drift, no source data lost.
+        try { BuildGatheringCache(); }
+        catch (Lumina.Excel.Exceptions.MismatchedColumnHashException) { }
     }
 
     public GameData GameData => _gameData;

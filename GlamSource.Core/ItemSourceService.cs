@@ -18,6 +18,10 @@ public enum ItemSourceType
     Mob,
     Coffer,
     Gathering,
+    Retainer,
+    Airship,
+    Submarine,
+    Relic,
     Other
 }
 
