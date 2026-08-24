@@ -41,13 +41,31 @@ public sealed unsafe class PreviewRenderer : IDisposable
     // ponytail: equipment overlay snapshot — body stays self; each Tick this callback returns the
     // resolved EquipmentSlots (ItemId+stains) to write via canonical SetItemSlotData. null = no overlay.
     private Func<IReadOnlyList<EquipmentSlot>?>? _equipmentSnapshot;
+    // ponytail: hover-switch flicker guard. ShellWindow flips desired 0 for a frame between two
+    // hovers; clearing the overlay immediately drops us back to self-gear until the next snapshot
+    // arrives. Grace holds the old snapshot N frames; a new non-null snapshot cancels grace.
+    private int _snapshotClearGrace;
+    private const int SnapshotClearGraceFrames = 5;
 
     /// <summary>Suspend/resume per-frame CopyFromCharacter. Set true while direct slot writes own the view.</summary>
     public void SuspendCharacterCopy(bool suspend) => _suspendCharacterCopy = suspend;
 
     /// <summary>Register a snapshot callback invoked each Tick. Returns EquipmentSlots to overlay on the self body,
     /// or null for pure self view. Framework thread.</summary>
-    public void SetEquipmentSnapshot(Func<IReadOnlyList<EquipmentSlot>?>? provider) => _equipmentSnapshot = provider;
+    public void SetEquipmentSnapshot(Func<IReadOnlyList<EquipmentSlot>?>? provider)
+    {
+        if (provider == null)
+        {
+            // defer clear: hold old snapshot for N frames so hover-switch through 0 doesn't flash self-gear
+            if (_equipmentSnapshot != null) _snapshotClearGrace = SnapshotClearGraceFrames;
+            else _equipmentSnapshot = null;
+        }
+        else
+        {
+            _snapshotClearGrace = 0;
+            _equipmentSnapshot = provider;
+        }
+    }
 
     /// <summary>Write a pre-packed model value into CharaViewModelData._equipmentModelIds[slotIndex]
     /// (10 entries @ 0x20). <paramref name="modelValue"/> is the raw Item.ModelMain 8-byte sheet
@@ -222,6 +240,9 @@ public sealed unsafe class PreviewRenderer : IDisposable
         var agent = AgentTryon.Instance();
         if (agent == null) return;
 
+        // ponytail: grace countdown — hold snapshot for N frames after null-set, absorb hover-switch 0-blip
+        if (_snapshotClearGrace > 0 && --_snapshotClearGrace == 0) _equipmentSnapshot = null;
+
         // ponytail: snapshot check first — overlay active means Copy would fight canonical writes.
         IReadOnlyList<EquipmentSlot>? overlay = null;
         if (_equipmentSnapshot != null)
@@ -253,7 +274,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
                 if (itemId == 0) continue;
                 agent->CharaView.SetItemSlotData((byte)slotId, itemId, slot.Stain0, slot.Stain1, 0, false);
             }
-            _log.Debug($"[PreviewRenderer] overlay tick — {overlay!.Count} slots written via SetItemSlotData");
+            if ((_counter % 60) == 0) _log.Info($"[PreviewRenderer] overlay tick — {overlay!.Count} slots written via SetItemSlotData");
         }
         else if (!_suspendCharacterCopy && _sourceProvider != null)
         {

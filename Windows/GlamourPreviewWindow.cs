@@ -135,19 +135,19 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
 
         if (entityId == 0)
         {
-            _log.Debug("[PreviewWindow] ShowCharacterInPreview(0) — clearing overlay");
+            _log.Info("[PreviewWindow] ShowCharacterInPreview(0) — clearing overlay");
             _framework.RunOnFrameworkThread(() => _renderer.SetEquipmentSnapshot(null));
             return;
         }
 
         uint id = entityId;
-        _log.Debug($"[PreviewWindow] ShowCharacterInPreview({id:X}) — installing overlay snapshot");
+        _log.Info($"[PreviewWindow] ShowCharacterInPreview({id:X}) — installing overlay snapshot");
         Func<IReadOnlyList<EquipmentSlot>?> snapshot = () =>
         {
             var obj = _objectTable.SearchByEntityId(id);
-            if (obj == null) { _log.Verbose($"[PreviewWindow] snapshot: entity {id:X} not in ObjectTable"); return null; }
+            if (obj == null) { _log.Info($"[PreviewWindow] snapshot: entity {id:X} not in ObjectTable"); return null; }
             var list = _glamour.TryGetVisibleGlamour(obj.ObjectIndex);
-            _log.Verbose($"[PreviewWindow] snapshot: entity {id:X} idx={obj.ObjectIndex} → {(list?.Count.ToString() ?? "null")} slots");
+            _log.Info($"[PreviewWindow] snapshot: entity {id:X} idx={obj.ObjectIndex} → {(list?.Count.ToString() ?? "null")} slots");
             return list;
         };
         _framework.RunOnFrameworkThread(() => _renderer.SetEquipmentSnapshot(snapshot));

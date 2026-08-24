@@ -453,11 +453,12 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
 
         ImGui.PopStyleVar(2);
 
-        // Preview = self body + equipment of: hovered player, else live target.
-        // While a Recent snapshot is active (or pinned) the stored/pinned state owns the view,
-        // so the overlay is cleared and the Recent direct slot writes drive the CharaView.
-        var desired = _hoverTargetEntityId;
-        if (desired == 0 && _recentOverride == null && !_pinned)
+        // Preview = live target (or none). Recent click drives CharaView directly via
+        // SetCharaViewItemSlot in ApplyRecentGlamOverride, so overlay must stay cleared then.
+        uint desired;
+        if (_recentOverride != null || _pinned)
+            desired = 0;
+        else
             desired = Plugin.TargetManager?.Target?.EntityId ?? 0;
         if (desired != _previewEntityId)
         {
@@ -686,40 +687,23 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
             return;
         }
 
-        var anyHovered = false;
         for (var i = 0; i < recents.Count; i++)
         {
             var r = recents[i];
             var label = string.IsNullOrEmpty(r.World) ? r.Name : $"{r.Name}\n{r.World}";
             if (ImGui.Selectable($"{label}##recent_{i}", false, ImGuiSelectableFlags.None, new Vector2(0, ImGui.GetFontSize() * 2.0f)))
             {
+                // ponytail: click-only. Kill any hover-driven overlay so the click owns the view.
+                ClearRecentHover();
                 _recentOverride = BuildSnapshotFromIds(r.ItemIds);
                 _snapshot = _recentOverride;
                 _pinned = false;
                 _activeRecentName = r.Name;
-                // Drive AgentTryon (Fitting-Room agent) via TryOn — CharaView renders the
-                // agent's own EquipItems. No LocalPlayer mutation, no Glamourer.
-                // Restore hooks: Clear Recent, tab switch, Dispose.
                 ApplyRecentGlamOverride(_recentOverride);
             }
             if (ImGui.IsItemHovered())
-            {
-                anyHovered = true;
-                var pc = FindVisiblePlayer(r.Name);
-                _hoverTargetEntityId = pc?.EntityId ?? 0u;
-                if (pc != null)
-                {
-                    // ponytail: refreshed every hovered frame, same cost as the live target scan already done per frame.
-                    _hoverSnapshot = _glamour.TryGetVisibleGlamour(pc.ObjectIndex);
-                }
-                ImGui.SetTooltip(pc != null
-                    ? "Click: view stored snapshot\nHover: live glam (currently visible)"
-                    : "Click: view stored snapshot\n(not visible — no live data)");
-            }
+                ImGui.SetTooltip("Click: view stored snapshot");
         }
-
-        if (!anyHovered)
-            ClearRecentHover();
     }
 
     // ponytail: linear ObjectTable scan, only while hovering; fine at <200 visible objects, names are zone-unique.
@@ -780,20 +764,19 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
             try
             {
                 var renderer = PreviewWindow.Renderer;
+                // ponytail: keep body from LocalPlayer, items via SetItemSlotData below.
+                // SuspendCharacterCopy true so CopyFromCharacter doesn't fight our writes.
                 renderer.SuspendCharacterCopy(true);
                 foreach (var slot in snapshot)
                 {
-                    if (MapToModelSlot(slot.Slot) is not (var isWeapon, var index)) continue;
+                    var slotId = MapToCharaViewItemSlot(slot.Slot);
+                    if (slotId < 0) continue;
                     var itemId = slot.GlamourItemId ?? slot.ActualItemId;
                     if (itemId == 0) continue;
-                    var model = ReadItemModelValue(itemId, isWeapon && index == 1);
-                    if (model == 0) continue;
-                    if (isWeapon)
-                        renderer.SetCharaViewWeaponSlot((byte)index, model, slot.Stain0, slot.Stain1);
-                    else
-                        renderer.SetCharaViewEquipmentSlot((byte)index, model, slot.Stain0, slot.Stain1);
+                    // ponytail: CharaView.SetItemSlotData fills _items[slotId] which is what
+                    // Render/Update actually read. Pure instance API — no Fitting Room addon opens.
+                    renderer.SetCharaViewItemSlot((byte)slotId, itemId, slot.Stain0, slot.Stain1);
                 }
-                renderer.RequestRecopy(5);
                 _recentGlamApplied = true;
             }
             catch (Exception ex)
@@ -915,35 +898,25 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         }
     }
 
-    // ponytail: CharaViewModelData domains — _equipmentModelIds (10 entries) + _weaponModelIds
-    // (3 entries). NOT verified in-game yet — if gear renders in the wrong place (or MH/OH
-    // swapped), adjust the values here. null = unmapped (waist has no ModelData slot), caller skips.
-    private static (bool isWeapon, int index)? MapToModelSlot(EquipmentSlotType s) => s switch
+    // ponytail: CharaView._items slot ordering — 14 slots, 0..12 used, 13 unused (Soul).
+    // NOT verified in-game yet; if gear appears in wrong slot, swap here first.
+    // -1 = unmapped, caller skips.
+    private static int MapToCharaViewItemSlot(EquipmentSlotType s) => s switch
     {
-        EquipmentSlotType.MainHand => (true, 0),
-        EquipmentSlotType.OffHand => (true, 1),
-        EquipmentSlotType.Head => (false, 0),
-        EquipmentSlotType.Body => (false, 1),
-        EquipmentSlotType.Hands => (false, 2),
-        EquipmentSlotType.Legs => (false, 3),
-        EquipmentSlotType.Feet => (false, 4),
-        EquipmentSlotType.Earrings => (false, 5),
-        EquipmentSlotType.Necklace => (false, 6),
-        EquipmentSlotType.Bracelets => (false, 7),
-        EquipmentSlotType.RingRight => (false, 8),
-        EquipmentSlotType.RingLeft => (false, 9),
-        _ => null,
+        EquipmentSlotType.MainHand => 0,
+        EquipmentSlotType.OffHand => 1,
+        EquipmentSlotType.Head => 2,
+        EquipmentSlotType.Body => 3,
+        EquipmentSlotType.Hands => 4,
+        EquipmentSlotType.Legs => 6,
+        EquipmentSlotType.Feet => 7,
+        EquipmentSlotType.Earrings => 8,
+        EquipmentSlotType.Necklace => 9,
+        EquipmentSlotType.Bracelets => 10,
+        EquipmentSlotType.RingRight => 11,
+        EquipmentSlotType.RingLeft => 12,
+        _ => -1,
     };
-
-    // ponytail: raw 8-byte model value (Id | Type<<16 | Variant<<32) from the generated sheet
-    // property; ModelSub for the off-hand weapon, ModelMain for everything else. 0 = unknown row.
-    private ulong ReadItemModelValue(uint itemId, bool offHandWeapon)
-    {
-        var sheet = _data.GetExcelSheet<Item>();
-        return sheet != null && sheet.TryGetRow(itemId, out var row)
-            ? (offHandWeapon ? row.ModelSub : row.ModelMain)
-            : 0;
-    }
 
     private static ApiEquipSlot MapToApiSlot(EquipmentSlotType s) => s switch
     {
