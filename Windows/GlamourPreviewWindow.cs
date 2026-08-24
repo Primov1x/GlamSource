@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Windowing;
@@ -124,7 +125,9 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
         return 0;
     }
 
-    // ponytail: body stays self; only the equipment overlay source changes. 0 = no overlay (self gear).
+    // ponytail: body stays self; only the equipment overlay snapshot changes. 0 = no overlay (self gear).
+    // Snapshot resolves target's DrawData to EquipmentSlots each frame; Renderer writes them via
+    // canonical SetItemSlotData (into _items, what the render pipeline actually reads).
     public void ShowCharacterInPreview(uint entityId)
     {
         if (!_renderer.IsInitialized)
@@ -132,13 +135,22 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
 
         if (entityId == 0)
         {
-            _framework.RunOnFrameworkThread(() => _renderer.SetEquipmentSource(null));
+            _log.Debug("[PreviewWindow] ShowCharacterInPreview(0) — clearing overlay");
+            _framework.RunOnFrameworkThread(() => _renderer.SetEquipmentSnapshot(null));
             return;
         }
 
         uint id = entityId;
-        var provider = () => _objectTable.SearchByEntityId(id)?.Address ?? nint.Zero;
-        _framework.RunOnFrameworkThread(() => _renderer.SetEquipmentSource(provider));
+        _log.Debug($"[PreviewWindow] ShowCharacterInPreview({id:X}) — installing overlay snapshot");
+        Func<IReadOnlyList<EquipmentSlot>?> snapshot = () =>
+        {
+            var obj = _objectTable.SearchByEntityId(id);
+            if (obj == null) { _log.Verbose($"[PreviewWindow] snapshot: entity {id:X} not in ObjectTable"); return null; }
+            var list = _glamour.TryGetVisibleGlamour(obj.ObjectIndex);
+            _log.Verbose($"[PreviewWindow] snapshot: entity {id:X} idx={obj.ObjectIndex} → {(list?.Count.ToString() ?? "null")} slots");
+            return list;
+        };
+        _framework.RunOnFrameworkThread(() => _renderer.SetEquipmentSnapshot(snapshot));
     }
 
     // ponytail: delta orbit for the shell's inline preview; mirrors HandleDrag's dispatch.

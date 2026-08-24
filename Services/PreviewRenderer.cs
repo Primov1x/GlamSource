@@ -5,6 +5,8 @@ using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Kernel;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Render;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
+using System.Collections.Generic;
+using GlamSource.Core;
 
 namespace GlamSource.Services;
 
@@ -36,15 +38,16 @@ public sealed unsafe class PreviewRenderer : IDisposable
     // ItemId from the live source's DrawData each frame until AgentTryon activates.
     private bool _retryWarmup;
     private nint _warmupSource;
-    // ponytail: equipment overlay source — body stays self; only 10 equipment + 3 weapon ModelIds
-    // come from this live character's DrawData. Character* would go stale, a func won't.
-    private Func<nint>? _equipmentProvider;
+    // ponytail: equipment overlay snapshot — body stays self; each Tick this callback returns the
+    // resolved EquipmentSlots (ItemId+stains) to write via canonical SetItemSlotData. null = no overlay.
+    private Func<IReadOnlyList<EquipmentSlot>?>? _equipmentSnapshot;
 
     /// <summary>Suspend/resume per-frame CopyFromCharacter. Set true while direct slot writes own the view.</summary>
     public void SuspendCharacterCopy(bool suspend) => _suspendCharacterCopy = suspend;
 
-    /// <summary>Set the live character whose equipment/weapon ModelIds overlay the self body, or null for pure self. Framework thread.</summary>
-    public void SetEquipmentSource(Func<nint>? provider) => _equipmentProvider = provider;
+    /// <summary>Register a snapshot callback invoked each Tick. Returns EquipmentSlots to overlay on the self body,
+    /// or null for pure self view. Framework thread.</summary>
+    public void SetEquipmentSnapshot(Func<IReadOnlyList<EquipmentSlot>?>? provider) => _equipmentSnapshot = provider;
 
     /// <summary>Write a pre-packed model value into CharaViewModelData._equipmentModelIds[slotIndex]
     /// (10 entries @ 0x20). <paramref name="modelValue"/> is the raw Item.ModelMain 8-byte sheet
@@ -83,6 +86,20 @@ public sealed unsafe class PreviewRenderer : IDisposable
             | ((ulong)stain1 << 56);
     }
 
+    /// <summary>Fill CharaView._items[slotId] via the canonical instance API. Render pipeline
+    /// reads from _items, not from ModelData._equipmentModelIds, so this is what actually shows.
+    /// Does NOT open the Fitting Room addon — that requires AgentTryon.TryOn(openerAddonId,...).
+    /// slotId: 0=MainHand, 1=OffHand, 2=Head, 3=Body, 4=Hands, 5=Waist, 6=Legs, 7=Feet,
+    /// 8=Earrings, 9=Necklace, 10=Bracelets, 11=RingRight, 12=RingLeft (14 slots total).
+    /// Framework thread.</summary>
+    public void SetCharaViewItemSlot(byte slotId, uint itemId, byte stain0, byte stain1, uint glamourItemId = 0)
+    {
+        if (!_initialized) return;
+        var agent = AgentTryon.Instance();
+        if (agent == null) return;
+        agent->CharaView.SetItemSlotData(slotId, itemId, stain0, stain1, glamourItemId, false);
+    }
+
     /// <summary>Write a raw 8-byte runtime model value into CharaViewModelData._equipmentModelIds[slotIndex]. Framework thread.</summary>
     public void SetCharaViewEquipmentSlotRaw(byte slotIndex, ulong value)
     {
@@ -102,6 +119,24 @@ public sealed unsafe class PreviewRenderer : IDisposable
         var basePtr = (ulong*)Unsafe.AsPointer(ref agent->CharaView.ModelData);
         basePtr[14 + slotIndex] = value;
     }
+
+    // ponytail: mirrors GlamSourceShellWindow.MapToCharaViewItemSlot; duplicated to keep Renderer standalone.
+    private static int MapEquipmentSlotToCharaView(EquipmentSlotType s) => s switch
+    {
+        EquipmentSlotType.MainHand => 0,
+        EquipmentSlotType.OffHand => 1,
+        EquipmentSlotType.Head => 2,
+        EquipmentSlotType.Body => 3,
+        EquipmentSlotType.Hands => 4,
+        EquipmentSlotType.Legs => 6,
+        EquipmentSlotType.Feet => 7,
+        EquipmentSlotType.Earrings => 8,
+        EquipmentSlotType.Necklace => 9,
+        EquipmentSlotType.Bracelets => 10,
+        EquipmentSlotType.RingRight => 11,
+        EquipmentSlotType.RingLeft => 12,
+        _ => -1,
+    };
 
     public PreviewRenderer(IFramework framework, IPluginLog log)
     {
@@ -187,9 +222,18 @@ public sealed unsafe class PreviewRenderer : IDisposable
         var agent = AgentTryon.Instance();
         if (agent == null) return;
 
+        // ponytail: snapshot check first — overlay active means Copy would fight canonical writes.
+        IReadOnlyList<EquipmentSlot>? overlay = null;
+        if (_equipmentSnapshot != null)
+        {
+            try { overlay = _equipmentSnapshot(); } catch { overlay = null; }
+        }
+        var overlayActive = overlay != null && overlay.Count > 0;
+
         // ponytail: recopy every tick while a source is set, so live Glamourer edits propagate
-        // immediately. _pendingRecopyFrames stays for callers that want to force extra ticks after ApplyState.
-        if (_sourceProvider != null && !_suspendCharacterCopy)
+        // immediately. Suspend on overlayActive OR explicit suspend — overlay writes into _items,
+        // CopyFromCharacter clobbers them otherwise.
+        if (_sourceProvider != null && !_suspendCharacterCopy && !overlayActive)
         {
             var addr = _sourceProvider();
             if (addr != nint.Zero)
@@ -197,21 +241,34 @@ public sealed unsafe class PreviewRenderer : IDisposable
             if (_pendingRecopyFrames > 0) _pendingRecopyFrames--;
         }
 
-        // ponytail: equipment overlay — body stays self, only the 10+3 ModelIds come from the overlay
-        // source's DrawData. Whole 8-byte copies: both sides are the same runtime structs
-        // (EquipmentModelId / WeaponModelId), so no field repacking.
-        if (_equipmentProvider != null)
+        // ponytail: overlay path — canonical SetItemSlotData writes fill _items (what render reads).
+        // Body already came from self via prior CopyFromCharacter frames; only equipment slots swap.
+        if (overlayActive)
         {
-            var addr = _equipmentProvider();
+            foreach (var slot in overlay!)
+            {
+                var slotId = MapEquipmentSlotToCharaView(slot.Slot);
+                if (slotId < 0) continue;
+                var itemId = slot.GlamourItemId ?? slot.ActualItemId;
+                if (itemId == 0) continue;
+                agent->CharaView.SetItemSlotData((byte)slotId, itemId, slot.Stain0, slot.Stain1, 0, false);
+            }
+            _log.Debug($"[PreviewRenderer] overlay tick — {overlay!.Count} slots written via SetItemSlotData");
+        }
+        else if (!_suspendCharacterCopy && _sourceProvider != null)
+        {
+            // ponytail: no overlay + no explicit suspend → keep body dressed with self equipment
+            // via raw ModelId writes (fallback for the "no target" case).
+            var addr = _sourceProvider();
             if (addr != nint.Zero)
             {
-                var src = (Character*)addr;
-                if (src->DrawData.OwnerObject != null)
+                var cand = (Character*)addr;
+                if (cand->DrawData.OwnerObject != null)
                 {
                     for (var i = 0; i < 10; i++)
-                        SetCharaViewEquipmentSlotRaw((byte)i, *(ulong*)Unsafe.AsPointer(ref src->DrawData.Equipment((DrawDataContainer.EquipmentSlot)i)));
+                        SetCharaViewEquipmentSlotRaw((byte)i, *(ulong*)Unsafe.AsPointer(ref cand->DrawData.Equipment((DrawDataContainer.EquipmentSlot)i)));
                     for (var i = 0; i < 3; i++)
-                        SetCharaViewWeaponSlotRaw((byte)i, *(ulong*)Unsafe.AsPointer(ref src->DrawData.Weapon((DrawDataContainer.WeaponSlot)i).ModelId));
+                        SetCharaViewWeaponSlotRaw((byte)i, *(ulong*)Unsafe.AsPointer(ref cand->DrawData.Weapon((DrawDataContainer.WeaponSlot)i).ModelId));
                 }
             }
         }
@@ -311,7 +368,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
             _counter = 1;
             _zoom = 1.0f;
             _sourceProvider = null;
-            _equipmentProvider = null;
+            _equipmentSnapshot = null;
             _pendingRecopyFrames = 0;
             _retryWarmup = false;
             _warmupSource = nint.Zero;
