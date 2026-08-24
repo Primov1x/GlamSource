@@ -406,15 +406,25 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
     // =====================================================================
     private void DrawCharacterTab()
     {
+        // ponytail: a fresh hardtarget overrides a stuck Recent selection.
+        var currentTarget = Plugin.TargetManager?.Target;
+        var currentTargetId = currentTarget?.EntityId ?? 0;
+        if (currentTargetId != 0 && currentTargetId != _lastLiveTarget && _recentOverride != null)
+        {
+            _recentOverride = null;
+            _activeRecentName = null;
+            ClearRecentHover();
+            ClearRecentGlamOverride();
+        }
+
         // Refresh live snapshot every frame unless pinned or Recent-override active.
         // ponytail: only overwrite _snapshot when we actually have a target; null-flicker keeps the last one.
         if (!_pinned && _recentOverride == null)
         {
-            var target = Plugin.TargetManager?.Target;
-            if (target != null)
+            if (currentTarget != null)
             {
-                var live = _glamour.TryGetVisibleGlamour(target.ObjectIndex) ?? _glamour.GetTargetEquipment();
-                MaybePushRecentForTarget(target, live);
+                var live = _glamour.TryGetVisibleGlamour(currentTarget.ObjectIndex) ?? _glamour.GetTargetEquipment();
+                MaybePushRecentForTarget(currentTarget, live);
                 _snapshot = live ?? _snapshot;
             }
         }
