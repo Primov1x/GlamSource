@@ -165,10 +165,9 @@ public class Plugin : IAsyncDalamudPlugin
 
         Log.Information($"===A cool log message from {PluginInterface.Manifest.Name}===");
 
+        // ponytail: test-harness auto-opens; real plugin stays closed until user opens it.
         if (GlamourServiceOverride != null)
             shellWindow.IsOpen = true;
-        else
-            shellWindow.SwitchToTab((GlamSourceShellWindow.TabId)Configuration.SelectedTab);
     }
 
     public Task LoadAsync(CancellationToken cancellationToken) => Task.CompletedTask;
