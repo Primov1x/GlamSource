@@ -125,32 +125,27 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
         return 0;
     }
 
-    // ponytail: body stays self; only the equipment overlay snapshot changes. 0 = no overlay (self gear).
-    // Snapshot resolves target's DrawData to EquipmentSlots each frame; Renderer writes them via
-    // canonical SetItemSlotData (into _items, what the render pipeline actually reads).
-    public void ShowCharacterInPreview(uint entityId)
+    // ponytail: body stays self; equipment overlay is a Shell-owned provider. One owner per Tick:
+    // Shell resolves recent/pinned/target/self and hands us the callback; Renderer writes via canonical
+    // SetItemSlotData into _items (what render pipeline actually reads — CopyFromCharacter only touches
+    // ModelData @0x48 and can't fill _items @0xF8 → warmup-item + zeros bug without an explicit overlay).
+    public void SetSnapshotProvider(Func<IReadOnlyList<EquipmentSlot>?>? provider)
     {
         if (!_renderer.IsInitialized)
             EnsureInitializedForSelf();
+        _framework.RunOnFrameworkThread(() => _renderer.SetEquipmentSnapshot(provider));
+    }
 
-        if (entityId == 0)
-        {
-            _log.Info("[PreviewWindow] ShowCharacterInPreview(0) — clearing overlay");
-            _framework.RunOnFrameworkThread(() => _renderer.SetEquipmentSnapshot(null));
-            return;
-        }
-
+    // ponytail: legacy entry — kept as a thin wrapper so external callsites (Plugin.cs etc.) still resolve.
+    public void ShowCharacterInPreview(uint entityId)
+    {
+        if (entityId == 0) { SetSnapshotProvider(null); return; }
         uint id = entityId;
-        _log.Info($"[PreviewWindow] ShowCharacterInPreview({id:X}) — installing overlay snapshot");
-        Func<IReadOnlyList<EquipmentSlot>?> snapshot = () =>
+        SetSnapshotProvider(() =>
         {
             var obj = _objectTable.SearchByEntityId(id);
-            if (obj == null) { _log.Info($"[PreviewWindow] snapshot: entity {id:X} not in ObjectTable"); return null; }
-            var list = _glamour.TryGetVisibleGlamour(obj.ObjectIndex);
-            _log.Info($"[PreviewWindow] snapshot: entity {id:X} idx={obj.ObjectIndex} → {(list?.Count.ToString() ?? "null")} slots");
-            return list;
-        };
-        _framework.RunOnFrameworkThread(() => _renderer.SetEquipmentSnapshot(snapshot));
+            return obj == null ? null : _glamour.TryGetVisibleGlamour(obj.ObjectIndex);
+        });
     }
 
     // ponytail: delta orbit for the shell's inline preview; mirrors HandleDrag's dispatch.

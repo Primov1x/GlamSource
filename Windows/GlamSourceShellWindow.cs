@@ -81,9 +81,13 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
     private const int OpenGraceFrames = 30;
     // ponytail: live DrawData snapshot of the hovered Recent character while it is visible.
     private IReadOnlyList<EquipmentSlot>? _hoverSnapshot;
-    // ponytail: true iff we currently have LocalPlayer's glam mutated for a Recent preview
-    // — used to know when to trigger PreviewWindow.RestoreSelf().
-    private bool _recentGlamApplied;
+    // ponytail: which snapshot source Renderer currently uses; guards provider re-install on state change.
+    private enum ProviderKind { None, Recent, Pinned, Target, Self }
+    private ProviderKind _lastProviderKind = ProviderKind.None;
+    private ProviderKind CurrentProviderKind() =>
+        _recentOverride != null ? ProviderKind.Recent :
+        _pinned ? ProviderKind.Pinned :
+        _previewEntityId != 0 ? ProviderKind.Target : ProviderKind.Self;
 
     private static readonly EquipmentSlotType[] TopRow =
         { EquipmentSlotType.MainHand, EquipmentSlotType.OffHand };
@@ -128,9 +132,6 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
 
     public void Dispose()
     {
-        // Resume per-frame character copy if a Recent preview is still active.
-        if (_recentGlamApplied)
-            ClearRecentGlamOverride();
         if (_frameworkHooked)
         {
             _framework.Update -= OnFrameworkDrainTryOn;
@@ -200,9 +201,6 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         {
             if (_configuration.SelectedTab != (int)id)
             {
-                // ponytail: leaving Character tab while a Recent-glam is applied to self → restore.
-                if (_configuration.SelectedTab == (int)TabId.Character && _recentGlamApplied)
-                    ClearRecentGlamOverride();
                 _configuration.SelectedTab = (int)id;
                 _configuration.Save();
             }
@@ -414,7 +412,6 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
             _recentOverride = null;
             _activeRecentName = null;
             ClearRecentHover();
-            ClearRecentGlamOverride();
         }
 
         // Refresh live snapshot every frame unless pinned or Recent-override active.
@@ -516,10 +513,35 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
                 _lastLiveTarget = 0;
             }
         }
-        if (desired != _previewEntityId)
+        // ponytail: unified snapshot dispatch. Provider installed every state change; Renderer overlay
+        // is the ONLY writer to CharaView._items (what render pipeline reads). Priority: recent > pinned > target > self.
+        if (desired != _previewEntityId || _lastProviderKind != CurrentProviderKind())
         {
             _previewEntityId = desired;
-            PreviewWindow?.ShowCharacterInPreview(desired);
+            _lastProviderKind = CurrentProviderKind();
+            if (_recentOverride != null)
+            {
+                var snap = _recentOverride;
+                PreviewWindow?.SetSnapshotProvider(() => snap);
+            }
+            else if (_pinned)
+            {
+                var snap = _snapshot;
+                PreviewWindow?.SetSnapshotProvider(() => snap);
+            }
+            else if (desired != 0)
+            {
+                PreviewWindow?.ShowCharacterInPreview(desired);
+            }
+            else
+            {
+                // ponytail: self-view — ObjectTable[0] is LocalPlayer; resolve every tick, no caching.
+                PreviewWindow?.SetSnapshotProvider(() =>
+                {
+                    var lp = _objectTable[0];
+                    return lp == null ? null : _glamour.TryGetVisibleGlamour(lp.ObjectIndex);
+                });
+            }
         }
     }
 
@@ -544,7 +566,6 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
                 _recentOverride = null;
                 _activeRecentName = null;
                 ClearRecentHover();
-                ClearRecentGlamOverride();
             }
             ImGui.SameLine();
             ImGui.TextDisabled("Viewing recent snapshot");
@@ -607,7 +628,9 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         _lastRecentKey = key;
 
         var itemIds = live.Select(s => s.GlamourItemId ?? s.ActualItemId).ToList();
-        _configuration.PushRecent(name, world, pc.GameObjectId, itemIds);
+        var stain0s = live.Select(s => s.Stain0).ToList();
+        var stain1s = live.Select(s => s.Stain1).ToList();
+        _configuration.PushRecent(name, world, pc.GameObjectId, itemIds, stain0s, stain1s);
     }
 
     private void DrawSlotColumn(EquipmentSlotType[] slots)
@@ -751,11 +774,10 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
             {
                 // ponytail: click-only. Kill any hover-driven overlay so the click owns the view.
                 ClearRecentHover();
-                _recentOverride = BuildSnapshotFromIds(r.ItemIds);
+                _recentOverride = BuildSnapshotFromIds(r.ItemIds, r.Stain0s, r.Stain1s);
                 _snapshot = _recentOverride;
                 _pinned = false;
                 _activeRecentName = r.Name;
-                ApplyRecentGlamOverride(_recentOverride);
             }
             if (ImGui.IsItemHovered())
                 ImGui.SetTooltip("Click: view stored snapshot");
@@ -782,8 +804,9 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         _hoverSnapshot = null;
     }
 
-    // ponytail: minimal synthetic snapshot — just IDs from Recent; names resolved from Item sheet.
-    private IReadOnlyList<EquipmentSlot> BuildSnapshotFromIds(IReadOnlyList<uint> ids)
+    // ponytail: minimal synthetic snapshot — IDs + stains from Recent; names resolved from Item sheet.
+    // Stain lists may be shorter (configs saved before stain persistence) — missing index falls back to 0.
+    private IReadOnlyList<EquipmentSlot> BuildSnapshotFromIds(IReadOnlyList<uint> ids, IReadOnlyList<byte> stain0s, IReadOnlyList<byte> stain1s)
     {
         var order = new List<EquipmentSlotType>();
         order.AddRange(TopRow); order.AddRange(LeftCol); order.AddRange(RightCol);
@@ -794,7 +817,9 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         {
             var id = ids[i];
             var name = id > 0 && itemSheet != null && itemSheet.TryGetRow(id, out var row) ? row.Name.ExtractText() : $"#{id}";
-            result.Add(new EquipmentSlot(order[i], id, name, null, null));
+            result.Add(new EquipmentSlot(order[i], id, name, null, null,
+                Stain0: i < stain0s.Count ? stain0s[i] : (byte)0,
+                Stain1: i < stain1s.Count ? stain1s[i] : (byte)0));
         }
         return result;
     }
@@ -809,52 +834,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         catch { return false; }
     }
 
-    // ponytail: write pre-packed model values straight into CharaView.ModelData — the old path
-    // went through CharaView.SetItemSlotData, which poked the agent and opened the game's Fitting
-    // Room addon (stuck uncloseable). Direct memory writes keep the agent inert, so no addon.
-    private void ApplyRecentGlamOverride(IReadOnlyList<EquipmentSlot> snapshot)
-    {
-        if (PreviewWindow == null) return;
-        _framework.RunOnFrameworkThread(() =>
-        {
-            try
-            {
-                var renderer = PreviewWindow.Renderer;
-                // ponytail: keep body from LocalPlayer, items via SetItemSlotData below.
-                // SuspendCharacterCopy true so CopyFromCharacter doesn't fight our writes.
-                renderer.SuspendCharacterCopy(true);
-                foreach (var slot in snapshot)
-                {
-                    var slotId = MapToCharaViewItemSlot(slot.Slot);
-                    if (slotId < 0) continue;
-                    var itemId = slot.GlamourItemId ?? slot.ActualItemId;
-                    if (itemId == 0) continue;
-                    // ponytail: CharaView.SetItemSlotData fills _items[slotId] which is what
-                    // Render/Update actually read. Pure instance API — no Fitting Room addon opens.
-                    renderer.SetCharaViewItemSlot((byte)slotId, itemId, slot.Stain0, slot.Stain1);
-                }
-                _recentGlamApplied = true;
-            }
-            catch (Exception ex)
-            {
-                _log.Warning($"[GlamSource] ApplyRecentGlamOverride error: {ex.Message}");
-            }
-        });
-    }
-
-    private void ClearRecentGlamOverride()
-    {
-        if (!_recentGlamApplied) return;
-        _recentGlamApplied = false;
-        if (PreviewWindow == null) return;
-        // ponytail: resume LocalPlayer-copy so the CharaView goes back to mirroring the user.
-        // The direct slot writes stay in the CharaView until overwritten; that's fine —
-        // CopyFromCharacter overwrites the render source each tick.
-        PreviewWindow.Renderer.SuspendCharacterCopy(false);
-        PreviewWindow.Renderer.RequestRecopy(5);
-    }
-
-    private void ApplyTargetGlamourToSelf()
+private void ApplyTargetGlamourToSelf()
     {
         try
         {
@@ -873,8 +853,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
                 var itemId = slot.GlamourItemId ?? slot.ActualItemId;
                 if (itemId == 0) continue;
 
-                byte stain0 = 0, stain1 = 0;
-                var ret = setItem.Invoke(0, apiSlot, itemId, new List<byte> { stain0, stain1 }, 0, ApplyFlag.Once);
+                var ret = setItem.Invoke(0, apiSlot, itemId, new List<byte> { slot.Stain0, slot.Stain1 }, 0, ApplyFlag.Once);
                 if (ret == GlamourerApiEc.Success) applied++;
                 else { failed++; _log.Warning($"[GlamSource] SetItem {apiSlot} id={itemId} -> {ret}"); }
             }
