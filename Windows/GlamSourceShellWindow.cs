@@ -646,9 +646,6 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
 
         var name = pc.Name.TextValue;
         var world = pc.HomeWorld.ValueNullable?.Name.ExtractText() ?? "";
-        var key = $"{name}@{world}";
-        if (key == _lastRecentKey) return;
-        _lastRecentKey = key;
 
         // ponytail: MUST match BuildSnapshotFromIds order (TopRow + LeftCol + RightCol) —
         // otherwise stains land on wrong slots after reload.
@@ -664,6 +661,13 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
             stain0s.Add(s?.Stain0 ?? 0);
             stain1s.Add(s?.Stain1 ?? 0);
         }
+
+        // ponytail: key includes glam content, not just who — otherwise a dye/item change
+        // on an already-seen target never re-pushes and Recent keeps the stale snapshot.
+        var key = $"{name}@{world}|{string.Join(',', itemIds)}|{string.Join(',', stain0s)}|{string.Join(',', stain1s)}";
+        if (key == _lastRecentKey) return;
+        _lastRecentKey = key;
+
         _configuration.PushRecent(name, world, pc.GameObjectId, itemIds, stain0s, stain1s);
     }
 

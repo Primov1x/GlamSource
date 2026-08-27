@@ -179,24 +179,40 @@ public class Plugin : IAsyncDalamudPlugin
 
     public async ValueTask DisposeAsync()
     {
-        PluginInterface.UiBuilder.Draw -= WindowSystem.Draw;
-        PluginInterface.UiBuilder.OpenConfigUi -= OpenConfigUi;
-        PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUi;
-        Framework.Update -= OnFrameworkUpdate;
+        // ponytail: temp diagnostic — logs never appeared from Dispose() calls below during
+        // unload, so wrap the whole body to find where it dies/throws silently.
+        _log.Info("[Plugin] DisposeAsync() entered");
+        try
+        {
+            PluginInterface.UiBuilder.Draw -= WindowSystem.Draw;
+            PluginInterface.UiBuilder.OpenConfigUi -= OpenConfigUi;
+            PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUi;
+            Framework.Update -= OnFrameworkUpdate;
 
-        WindowSystem.RemoveAllWindows();
+            WindowSystem.RemoveAllWindows();
+            _log.Info("[Plugin] DisposeAsync() windows removed, disposing services");
 
-        shellWindow.Dispose();
-        previewWindow.Dispose();
-        previewRenderer.Dispose();
-        itemDetailWindow.Dispose();
-        contextMenuService.Dispose();
-        _universalisService?.Dispose();
-        CraftingCostService?.Dispose();
-        GatherService.Dispose();
-        debugApiService.Dispose();
+            shellWindow.Dispose();
+            _log.Info("[Plugin] DisposeAsync() shellWindow disposed");
+            previewWindow.Dispose();
+            _log.Info("[Plugin] DisposeAsync() previewWindow disposed");
+            previewRenderer.Dispose();
+            _log.Info("[Plugin] DisposeAsync() previewRenderer disposed");
+            itemDetailWindow.Dispose();
+            contextMenuService.Dispose();
+            _universalisService?.Dispose();
+            CraftingCostService?.Dispose();
+            GatherService.Dispose();
+            debugApiService.Dispose();
 
-        CommandManager.RemoveHandler(CommandName);
+            CommandManager.RemoveHandler(CommandName);
+            _log.Info("[Plugin] DisposeAsync() completed");
+        }
+        catch (Exception ex)
+        {
+            _log.Error(ex, "[Plugin] DisposeAsync() threw");
+            throw;
+        }
 
         await Task.CompletedTask;
     }

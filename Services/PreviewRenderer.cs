@@ -373,18 +373,13 @@ public sealed unsafe class PreviewRenderer : IDisposable
     /// <summary>Release CharaView. Must be called on Framework thread.</summary>
     public void Release()
     {
-        if (!_initialized) return;
+        _log.Info("[PreviewRenderer] Release() called");
+        if (!_initialized) { _log.Info("[PreviewRenderer] Release() no-op, not initialized"); return; }
         try
         {
             var agent = AgentTryon.Instance();
             if (agent != null)
-            {
                 agent->CharaView.Release();
-                // ponytail: our warmup call (AgentTryon.TryOn) leaves the real Tryon agent primed with
-                // the last-previewed item — the vanilla Fitting Room then opens showing that leftover
-                // state. Reset to empty (0) so it doesn't bleed into the game's own Fitting Room.
-                AgentTryon.TryOn(0, 0, 0, 0, 0, false);
-            }
         }
         catch (Exception ex)
         {
@@ -392,6 +387,16 @@ public sealed unsafe class PreviewRenderer : IDisposable
         }
         finally
         {
+            // ponytail: reset unconditionally, even if CharaView.Release() above threw — our warmup
+            // call (AgentTryon.TryOn) leaves the real Tryon agent primed with the last-previewed item,
+            // and the vanilla Fitting Room then opens showing that leftover state on next activation.
+            try
+            {
+                var agent = AgentTryon.Instance();
+                if (agent != null) { AgentTryon.TryOn(0, 0, 0, 0, 0, false); _log.Info("[PreviewRenderer] TryOn reset done"); }
+                else _log.Info("[PreviewRenderer] TryOn reset skipped, agent null");
+            }
+            catch (Exception ex) { _log.Warning($"[PreviewRenderer] TryOn reset failed: {ex.Message}"); }
             _initialized = false;
             _counter = 1;
             _zoom = 1.0f;
@@ -405,6 +410,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
 
     public void Dispose()
     {
+        _log.Info($"[PreviewRenderer] Dispose() called, _initialized={_initialized}");
         if (!_initialized) return;
         // Dispose can be called off-frame; hop to Framework thread for the Release.
         try { _framework.RunOnFrameworkThread(Release).Wait(); }

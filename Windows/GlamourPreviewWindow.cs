@@ -394,24 +394,35 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
     {
         var snap = _selfSnapshot;
         _selfSnapshot = null;
+        _log.Info($"[GlamourPreviewWindow] RestoreSnapshotIfAny called, hasSnapshot={snap != null}");
         if (snap == null) return;
         if (!IsGlamourerInstalled()) return;
 
-        _framework.RunOnFrameworkThread(() =>
+        // ponytail: was fire-and-forget (no .Wait()) — on plugin unload the caller (Dispose)
+        // returned before this ran, so the restore silently never happened. Block like
+        // PreviewRenderer.Release() does for the same reason.
+        try
         {
-            try
+            _framework.RunOnFrameworkThread(() =>
             {
-                var ec = new ApplyState(_pi).Invoke(snap, 0, 0, ApplyFlag.Once | ApplyFlag.Equipment);
-                if (ec != GlamourerApiEc.Success)
-                    _log.Warning($"[GlamourPreviewWindow] Restore on close failed: {ec}");
-                else
-                    _log.Info("[GlamourPreviewWindow] Restored own glamour.");
-            }
-            catch (Exception ex)
-            {
-                _log.Warning($"[GlamourPreviewWindow] Restore on close error: {ex.Message}");
-            }
-        });
+                try
+                {
+                    var ec = new ApplyState(_pi).Invoke(snap, 0, 0, ApplyFlag.Once | ApplyFlag.Equipment);
+                    if (ec != GlamourerApiEc.Success)
+                        _log.Warning($"[GlamourPreviewWindow] Restore on close failed: {ec}");
+                    else
+                        _log.Info("[GlamourPreviewWindow] Restored own glamour.");
+                }
+                catch (Exception ex)
+                {
+                    _log.Warning($"[GlamourPreviewWindow] Restore on close error: {ex.Message}");
+                }
+            }).Wait();
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"[GlamourPreviewWindow] RestoreSnapshotIfAny Wait failed: {ex.Message}");
+        }
     }
 
     // ponytail: capture LocalPlayer glamour once, so the shell can mutate self via SetItem
@@ -489,6 +500,7 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
 
     public void Dispose()
     {
+        _log.Info($"[GlamourPreviewWindow] Dispose() called, hasSnapshot={_selfSnapshot != null}");
         // ponytail: always restore before tearing down — otherwise LocalPlayer stays glamoured
         // if the plugin is disposed while a Recent preview is active.
         RestoreSnapshotIfAny();
