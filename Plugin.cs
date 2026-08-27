@@ -64,6 +64,7 @@ public class Plugin : IAsyncDalamudPlugin
     public readonly VNavmeshIpc VNavmeshIpc;
     public readonly TeleporterIpc TeleporterIpc;
     public readonly SimpleGatherService GatherService;
+    private readonly DebugApiService debugApiService;
 
     public Plugin(
         IDalamudPluginInterface pluginInterface,
@@ -150,6 +151,10 @@ public class Plugin : IAsyncDalamudPlugin
         WindowSystem.AddWindow(previewWindow);
         shellWindow.PreviewWindow = previewWindow;
 
+        debugApiService = new DebugApiService(shellWindow, Log);
+        debugApiService.SetEnabled(Configuration.DebugApiEnabled);
+        shellWindow.OnDebugApiToggle = enabled => debugApiService.SetEnabled(enabled);
+
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
             HelpMessage = "Offnet das GlamSource Fenster"
@@ -189,6 +194,7 @@ public class Plugin : IAsyncDalamudPlugin
         _universalisService?.Dispose();
         CraftingCostService?.Dispose();
         GatherService.Dispose();
+        debugApiService.Dispose();
 
         CommandManager.RemoveHandler(CommandName);
 

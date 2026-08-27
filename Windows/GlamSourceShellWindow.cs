@@ -48,6 +48,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
 
     // Optional 3D preview window handle (wired by Plugin after ctor).
     public GlamourPreviewWindow? PreviewWindow { get; set; }
+    public Action<bool>? OnDebugApiToggle { get; set; }
 
     // ---------- Lookup tab state (from MainWindow) ----------
     private string _lookupText = "";
@@ -74,6 +75,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
     private uint _previewEntityId;
     // ponytail: debounce for TargetManager.Target null-flicker while cursor moves over plugin window.
     private uint _lastLiveTarget;
+    private int _lastRecentDrawLogSec;
     private int _targetNullFrames;
     private const int TargetNullGraceFrames = 20;
     // ponytail: ignore live target for the first N frames after open — else random hardtarget bleeds in.
@@ -81,6 +83,11 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
     private const int OpenGraceFrames = 30;
     // ponytail: live DrawData snapshot of the hovered Recent character while it is visible.
     private IReadOnlyList<EquipmentSlot>? _hoverSnapshot;
+
+    // ponytail: read-only accessors for DebugApiService. No setters exposed on purpose.
+    public IReadOnlyList<EquipmentSlot> DebugSnapshot => _recentOverride ?? _snapshot;
+    public string? DebugActiveRecentName => _activeRecentName;
+    public bool DebugIsRecentOverrideActive => _recentOverride != null;
     // ponytail: which snapshot source Renderer currently uses; guards provider re-install on state change.
     private enum ProviderKind { None, Recent, Pinned, Target, Self }
     private ProviderKind _lastProviderKind = ProviderKind.None;
@@ -413,6 +420,9 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
             _activeRecentName = null;
             ClearRecentHover();
         }
+        // ponytail: track live target even when override active — otherwise every frame
+        // sees "new" hardtarget and wipes the just-clicked Recent.
+        if (currentTargetId != 0) _lastLiveTarget = currentTargetId;
 
         // Refresh live snapshot every frame unless pinned or Recent-override active.
         // ponytail: only overwrite _snapshot when we actually have a target; null-flicker keeps the last one.
@@ -436,7 +446,8 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
 
         var fontSize = ImGui.GetFontSize();
         var recentW = fontSize * 8f;
-        var slotW = fontSize * 3.3f;
+        // ponytail: matches DrawSlotColumn's iconEdge (2.2x) + small margin.
+        var slotW = fontSize * 2.6f;
         var avail = ImGui.GetContentRegionAvail();
         var centerW = MathF.Max(fontSize * 12f, avail.X - (slotW * 2f) - recentW - fontSize * 0.5f);
 
@@ -521,8 +532,9 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
             _lastProviderKind = CurrentProviderKind();
             if (_recentOverride != null)
             {
-                var snap = _recentOverride;
-                PreviewWindow?.SetSnapshotProvider(() => snap);
+                // ponytail: closure reads _recentOverride live so subsequent Recent clicks
+                // pick up new snapshot without needing dispatch re-fire.
+                PreviewWindow?.SetSnapshotProvider(() => _recentOverride);
             }
             else if (_pinned)
             {
@@ -627,15 +639,27 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         if (key == _lastRecentKey) return;
         _lastRecentKey = key;
 
-        var itemIds = live.Select(s => s.GlamourItemId ?? s.ActualItemId).ToList();
-        var stain0s = live.Select(s => s.Stain0).ToList();
-        var stain1s = live.Select(s => s.Stain1).ToList();
+        // ponytail: MUST match BuildSnapshotFromIds order (TopRow + LeftCol + RightCol) —
+        // otherwise stains land on wrong slots after reload.
+        var order = new List<EquipmentSlotType>();
+        order.AddRange(TopRow); order.AddRange(LeftCol); order.AddRange(RightCol);
+        var itemIds = new List<uint>(order.Count);
+        var stain0s = new List<byte>(order.Count);
+        var stain1s = new List<byte>(order.Count);
+        foreach (var st in order)
+        {
+            var s = live.FirstOrDefault(x => x.Slot == st);
+            itemIds.Add(s == null ? 0u : (s.GlamourItemId ?? s.ActualItemId));
+            stain0s.Add(s?.Stain0 ?? 0);
+            stain1s.Add(s?.Stain1 ?? 0);
+        }
         _configuration.PushRecent(name, world, pc.GameObjectId, itemIds, stain0s, stain1s);
     }
 
     private void DrawSlotColumn(EquipmentSlotType[] slots)
     {
-        var iconEdge = ImGui.GetFontSize() * 2.8f;
+        // ponytail: viewer is static, icons don't need to be this large — compacted from 2.8x.
+        var iconEdge = ImGui.GetFontSize() * 2.2f;
         var iconVec = new Vector2(iconEdge, iconEdge);
         foreach (var st in slots)
         {
@@ -646,7 +670,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
 
     private void DrawSlotRow(EquipmentSlotType[] slots)
     {
-        var iconEdge = ImGui.GetFontSize() * 2.8f;
+        var iconEdge = ImGui.GetFontSize() * 2.2f;
         var iconVec = new Vector2(iconEdge, iconEdge);
         for (var i = 0; i < slots.Length; i++)
         {
@@ -706,6 +730,9 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         // ponytail: character aspect ~0.6 wide/tall; fit whichever axis is tighter.
         var size = w / h > 0.6f ? new Vector2(h * 0.6f, h) : new Vector2(w, w / 0.6f);
 
+        // ponytail: center horizontally in the child instead of hugging the left edge.
+        var centerX = MathF.Max(0f, (avail.X - size.X) * 0.5f);
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + centerX);
         var cursor = ImGui.GetCursorScreenPos();
         ImGui.Image(new ImTextureID(handle), size);
         ImGui.SetCursorScreenPos(cursor);
@@ -766,11 +793,17 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
             return;
         }
 
+        int? removeIdx = null;
+        var xW = ImGui.CalcTextSize("×").X + ImGui.GetStyle().FramePadding.X * 2f;
         for (var i = 0; i < recents.Count; i++)
         {
             var r = recents[i];
             var label = string.IsNullOrEmpty(r.World) ? r.Name : $"{r.Name}\n{r.World}";
-            if (ImGui.Selectable($"{label}##recent_{i}", false, ImGuiSelectableFlags.None, new Vector2(0, ImGui.GetFontSize() * 2.0f)))
+            var rowH = ImGui.GetFontSize() * 2.0f;
+            // ponytail: enforce min-width so zero content-region doesn't zero-out the click area.
+            var selW = MathF.Max(40f, ImGui.GetContentRegionAvail().X - xW - ImGui.GetStyle().ItemSpacing.X);
+            if ((System.Environment.TickCount / 1000) != _lastRecentDrawLogSec) { _lastRecentDrawLogSec = System.Environment.TickCount / 1000; _log.Info($"[RecentDraw] i={i} selW={selW} rowH={rowH} avail={ImGui.GetContentRegionAvail().X}"); }
+            if (ImGui.Selectable($"{label}##recent_{i}", false, ImGuiSelectableFlags.None, new Vector2(selW, rowH)))
             {
                 // ponytail: click-only. Kill any hover-driven overlay so the click owns the view.
                 ClearRecentHover();
@@ -778,9 +811,30 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
                 _snapshot = _recentOverride;
                 _pinned = false;
                 _activeRecentName = r.Name;
+                _log.Info($"[RecentClick] {r.Name} — {_recentOverride.Count} slots, first id={_recentOverride[0].ActualItemId}");
+                // ponytail: force provider re-install so subsequent Recent clicks push new snapshot
+                // even when dispatch guard sees no state change.
+                var snap = _recentOverride;
+                PreviewWindow?.SetSnapshotProvider(() => snap);
             }
             if (ImGui.IsItemHovered())
                 ImGui.SetTooltip("Click: view stored snapshot");
+            ImGui.SameLine();
+            if (ImGui.SmallButton($"×##recent_del_{i}"))
+                removeIdx = i;
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Remove from Recent");
+        }
+        if (removeIdx is int idx)
+        {
+            var removed = recents[idx];
+            _configuration.RecentTargets.RemoveAt(idx);
+            _configuration.Save();
+            if (_activeRecentName == removed.Name)
+            {
+                _recentOverride = null;
+                _activeRecentName = null;
+            }
         }
     }
 
@@ -999,6 +1053,14 @@ private void ApplyTargetGlamourToSelf()
         {
             _configuration.ShowCraftingSavings = showCraftingSavings;
             _configuration.Save();
+        }
+
+        var debugApiEnabled = _configuration.DebugApiEnabled;
+        if (ImGui.Checkbox("Debug API (read-only, localhost:23423)", ref debugApiEnabled))
+        {
+            _configuration.DebugApiEnabled = debugApiEnabled;
+            _configuration.Save();
+            OnDebugApiToggle?.Invoke(debugApiEnabled);
         }
 
         ImGui.Spacing();

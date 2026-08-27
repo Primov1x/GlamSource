@@ -271,7 +271,8 @@ public sealed unsafe class PreviewRenderer : IDisposable
                 var slotId = MapEquipmentSlotToCharaView(slot.Slot);
                 if (slotId < 0) continue;
                 var itemId = slot.GlamourItemId ?? slot.ActualItemId;
-                if (itemId == 0) continue;
+                // ponytail: empty slot MUST be written as 0 — otherwise the previous overlay's item
+                // sticks in _items when the next Recent doesn't cover that slot.
                 agent->CharaView.SetItemSlotData((byte)slotId, itemId, slot.Stain0, slot.Stain1, 0, false);
             }
             if ((_counter % 60) == 0) _log.Info($"[PreviewRenderer] overlay tick — {overlay!.Count} slots written via SetItemSlotData");
