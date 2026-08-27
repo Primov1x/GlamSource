@@ -387,16 +387,10 @@ public sealed unsafe class PreviewRenderer : IDisposable
         }
         finally
         {
-            // ponytail: reset unconditionally, even if CharaView.Release() above threw — our warmup
-            // call (AgentTryon.TryOn) leaves the real Tryon agent primed with the last-previewed item,
-            // and the vanilla Fitting Room then opens showing that leftover state on next activation.
-            try
-            {
-                var agent = AgentTryon.Instance();
-                if (agent != null) { AgentTryon.TryOn(0, 0, 0, 0, 0, false); _log.Info("[PreviewRenderer] TryOn reset done"); }
-                else _log.Info("[PreviewRenderer] TryOn reset skipped, agent null");
-            }
-            catch (Exception ex) { _log.Warning($"[PreviewRenderer] TryOn reset failed: {ex.Message}"); }
+            // ponytail: AgentTryon.TryOn(...) itself opens the Fitting Room addon regardless of the
+            // trailing bool — confirmed via log: clean CharaView.Release() above, then this call still
+            // popped the addon on plugin unload. Removed; CharaView.Release() alone is enough cleanup,
+            // and the primed item state is irrelevant next time the player opens Fitting Room for real.
             _initialized = false;
             _counter = 1;
             _zoom = 1.0f;
