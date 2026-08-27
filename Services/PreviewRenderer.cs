@@ -378,7 +378,13 @@ public sealed unsafe class PreviewRenderer : IDisposable
         {
             var agent = AgentTryon.Instance();
             if (agent != null)
+            {
                 agent->CharaView.Release();
+                // ponytail: our warmup call (AgentTryon.TryOn) leaves the real Tryon agent primed with
+                // the last-previewed item — the vanilla Fitting Room then opens showing that leftover
+                // state. Reset to empty (0) so it doesn't bleed into the game's own Fitting Room.
+                AgentTryon.TryOn(0, 0, 0, 0, 0, false);
+            }
         }
         catch (Exception ex)
         {

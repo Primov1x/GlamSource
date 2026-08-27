@@ -526,24 +526,34 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         }
         // ponytail: unified snapshot dispatch. Provider installed every state change; Renderer overlay
         // is the ONLY writer to CharaView._items (what render pipeline reads). Priority: recent > pinned > target > self.
+        var priorProviderKind = _lastProviderKind;
         if (desired != _previewEntityId || _lastProviderKind != CurrentProviderKind())
         {
             _previewEntityId = desired;
-            _lastProviderKind = CurrentProviderKind();
             if (_recentOverride != null)
             {
                 // ponytail: closure reads _recentOverride live so subsequent Recent clicks
                 // pick up new snapshot without needing dispatch re-fire.
                 PreviewWindow?.SetSnapshotProvider(() => _recentOverride);
+                _lastProviderKind = ProviderKind.Recent;
             }
             else if (_pinned)
             {
                 var snap = _snapshot;
                 PreviewWindow?.SetSnapshotProvider(() => snap);
+                _lastProviderKind = ProviderKind.Pinned;
             }
             else if (desired != 0)
             {
                 PreviewWindow?.ShowCharacterInPreview(desired);
+                _lastProviderKind = ProviderKind.Target;
+            }
+            else if (priorProviderKind == ProviderKind.Target)
+            {
+                // ponytail: target vanished (dead/out of range) — keep the last snapshot on screen
+                // instead of falling back to self. Don't touch SetSnapshotProvider; old provider stays installed.
+                // _previewEntityId stays 0/desired so we re-evaluate every frame until a new target appears.
+                // _lastProviderKind stays Target (not reset to Self) so a second consecutive loss still holds.
             }
             else
             {
@@ -553,6 +563,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
                     var lp = _objectTable[0];
                     return lp == null ? null : _glamour.TryGetVisibleGlamour(lp.ObjectIndex);
                 });
+                _lastProviderKind = ProviderKind.Self;
             }
         }
     }
