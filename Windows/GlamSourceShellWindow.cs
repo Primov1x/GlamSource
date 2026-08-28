@@ -758,7 +758,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
             var wheel = ImGui.GetIO().MouseWheel;
             if (wheel != 0f)
             {
-                var newZoom = renderer.Zoom + wheel * 0.1f;
+                var newZoom = renderer.Zoom + wheel * 0.2f;
                 _framework.RunOnFrameworkThread(() => renderer.SetZoom(newZoom));
             }
         }

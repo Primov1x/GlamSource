@@ -350,7 +350,7 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
             var wheel = ImGui.GetIO().MouseWheel;
             if (wheel != 0f)
             {
-                var newZoom = _renderer.Zoom + wheel * 0.1f;
+                var newZoom = _renderer.Zoom + wheel * 0.2f;
                 _framework.RunOnFrameworkThread(() => _renderer.SetZoom(newZoom));
             }
         }
