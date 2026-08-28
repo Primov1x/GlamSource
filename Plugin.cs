@@ -239,8 +239,15 @@ public class Plugin : IAsyncDalamudPlugin
 
         _lastRecentKey = key;
         var itemIds = new System.Collections.Generic.List<uint>(slots.Count);
-        foreach (var s in slots) itemIds.Add(s.GlamourItemId ?? s.ActualItemId);
-        Configuration.PushRecent(name, world, pc.GameObjectId, itemIds);
+        var stain0s = new System.Collections.Generic.List<byte>(slots.Count);
+        var stain1s = new System.Collections.Generic.List<byte>(slots.Count);
+        foreach (var s in slots)
+        {
+            itemIds.Add(s.GlamourItemId ?? s.ActualItemId);
+            stain0s.Add(s.Stain0);
+            stain1s.Add(s.Stain1);
+        }
+        Configuration.PushRecent(name, world, pc.GameObjectId, itemIds, stain0s, stain1s);
     }
 
     private void OnCommand(string command, string args)
