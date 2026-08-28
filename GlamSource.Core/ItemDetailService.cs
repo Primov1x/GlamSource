@@ -156,7 +156,9 @@ public sealed class ItemDetailService : IItemDetailService
         var results = new List<ItemSourceDetail>();
 
         // 1. Crafted â€” from Recipe sheet (grouped by material set)
-        if (_recipeByResult.TryGetValue(itemId, out var recipes))
+        // ponytail: HQ items live at NQ RowId + 1_000_000; Recipe.ItemResult only ever points at the NQ id.
+        var recipeLookupId = itemId >= 1_000_000 ? itemId - 1_000_000 : itemId;
+        if (_recipeByResult.TryGetValue(recipeLookupId, out var recipes))
         {
             var materialGroups = recipes.GroupBy(r => GetMaterialKey(r));
             foreach (var group in materialGroups)

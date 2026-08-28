@@ -697,7 +697,11 @@ public class ItemDetailWindow : Window, IDisposable
                     ImGui.SameLine();
                     if (ImGui.SmallButton($"Open Crafting Log##craft_{sourceIdx}"))
                     {
-                        TryOpenCraftingLog(_showingItemId ?? 0);
+                        // ponytail: HQ items sit at NQ RowId + 1_000_000; the vanilla recipe log only knows the NQ id.
+                        var craftItemId = _showingItemId ?? 0;
+                        if (craftItemId >= 1_000_000)
+                            craftItemId -= 1_000_000;
+                        TryOpenCraftingLog(craftItemId);
                     }
                 }
                 if (src.NpcName != null && (src.ZoneName != null || src.MapX.HasValue))
@@ -1067,8 +1071,8 @@ if (_textureProvider != null && cost.IconId > 0)
 
     private bool ShouldShowGatherButton(uint itemId)
     {
-        // ponytail: SimpleGatherService checks its own preconditions in StartGathering.
-        return itemId > 0 && itemId < 500000;
+        if (itemId == 0 || _plugin == null) return false;
+        return _plugin.GatheringLocationService.GetLocations(itemId).Count > 0;
     }
 
     private void DrawFallbackSources(uint itemId)
