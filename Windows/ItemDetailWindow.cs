@@ -666,7 +666,8 @@ public class ItemDetailWindow : Window, IDisposable
                       || (src.NpcName != null && (src.ZoneName != null || src.MapX.HasValue))
                       || (src.QuestName != null)
                       || (src.CfcRowId.HasValue && src.CfcName != null)
-                      || (src.SourceItemId.HasValue && src.SourceItemId.Value > 0);
+                      || (src.SourceItemId.HasValue && src.SourceItemId.Value > 0)
+                      || src.ShopUrl != null;
 
         using (new SourceCardScope(srcStyle.Item1))
         {
@@ -729,6 +730,7 @@ public class ItemDetailWindow : Window, IDisposable
 
                 DrawDutyFinderRow(src, sourceIdx);
                 DrawQuestRow(src, sourceIdx);
+                DrawMogstationRow(src, sourceIdx);
             }
         }
         ImGui.Spacing();
@@ -1000,6 +1002,16 @@ if (_textureProvider != null && cost.IconId > 0)
         }
     }
 
+    private void DrawMogstationRow(ItemSourceDetail src, int sourceIdx)
+    {
+        if (src.Type != ItemSourceType.MogStation || src.ShopUrl == null)
+            return;
+        if (ImGui.SmallButton($"Open Mog Station##mogstation_{sourceIdx}"))
+        {
+            OpenShopUrl(src.ShopUrl);
+        }
+    }
+
     private void DrawVendorCard(List<ItemSourceDetail> vendors, int groupIdx, uint itemIconId)
     {
         var first = vendors[0];
@@ -1220,6 +1232,18 @@ if (_textureProvider != null && cost.IconId > 0)
         catch (Exception ex)
         {
             Plugin.Log.Error(ex, "[WIKI] Failed to open wiki for {Name}", itemName);
+        }
+    }
+
+    private static void OpenShopUrl(string url)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            Plugin.Log.Error(ex, "[MOGSTATION] Failed to open shop URL {Url}", url);
         }
     }
 

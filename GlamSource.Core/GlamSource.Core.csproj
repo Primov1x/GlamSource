@@ -16,6 +16,9 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="LuminaSupplemental\MogstationItems.csv" />
+  </ItemGroup>
+  <ItemGroup>
     <Reference Include="Lumina">
       <HintPath>$(DalamudLibPath)Lumina.dll</HintPath>
     </Reference>

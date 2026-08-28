@@ -45,6 +45,7 @@ public record ItemSourceDetail(
     string? BossName,
     uint? QuestForUnlock,
     IReadOnlyList<uint>? CfcRowIds,
+    string? ShopUrl = null,
     uint? SourceItemId = null);
 
 public interface IItemDetailService
@@ -106,6 +107,9 @@ public sealed class ItemDetailService : IItemDetailService
     private readonly Dictionary<uint, uint> _pvpItemToSeason = new();
     private readonly HashSet<uint> _pvpVendorItems = new();
     private uint _currentPvpSeasonId;
+
+    // ponytail: ItemId -> Mogstation shop URL, from static scrape of Gamer Escape's Mog Station category (LuminaSupplemental/MogstationItems.csv)
+    private readonly Dictionary<uint, string> _mogstationItems = new();
 
     // Name-only fallback for NPCs with no location data
     private readonly Dictionary<uint, string> _shopNpcNameOnly = new();
@@ -204,7 +208,7 @@ public sealed class ItemDetailService : IItemDetailService
         results.AddRange(specialShopSources);
 
         // 4. Duty Drop from LuminaSupplemental (DungeonDrop + BossDrop + BossChest)
-        if (results.Count == 0 && _itemToDutyMap.TryGetValue(itemId, out var dutyCfcIds))
+        if (!results.Any(s => s.Type == ItemSourceType.Dungeon || s.Type == ItemSourceType.Trial || s.Type == ItemSourceType.Raid) && _itemToDutyMap.TryGetValue(itemId, out var dutyCfcIds))
         {
             var cfcSheet = _gameData.GetExcelSheet<ContentFinderCondition>();
             var cfcNames = new List<(string name, string dutyType, ItemSourceType sourceType, uint rowId)>();
@@ -240,7 +244,7 @@ public sealed class ItemDetailService : IItemDetailService
         }
 
         // 4b. CostItem â†’ Totem boss name from "Totem Gear (X)" shop name
-        if (results.Count == 0 && _totemCostToBoss.TryGetValue(itemId, out var totemInfo))
+        if (!results.Any(s => s.Type == ItemSourceType.Dungeon || s.Type == ItemSourceType.Trial) && _totemCostToBoss.TryGetValue(itemId, out var totemInfo))
         {
             var dutyType = totemInfo.cfcRowId.HasValue ? GetDutyType(totemInfo.cfcRowId.Value) : "Trial";
             var sourceType = dutyType == "Trial" ? ItemSourceType.Trial : ItemSourceType.Dungeon;
@@ -253,7 +257,7 @@ public sealed class ItemDetailService : IItemDetailService
         }
 
         // 4c. Exchange token â†’ Savage/Trial shop classification
-        if (results.Count == 0 && _exchangeCostToShopCfcs.TryGetValue(itemId, out var exchangeInfo))
+        if (!results.Any(s => s.Type == ItemSourceType.Raid || s.Type == ItemSourceType.Trial) && _exchangeCostToShopCfcs.TryGetValue(itemId, out var exchangeInfo))
         {
             var (exchangeType, shopName, cfcRowIds) = exchangeInfo;
             var displayType = exchangeType == "Savage" ? "Raid" : "Trial";
@@ -333,7 +337,7 @@ public sealed class ItemDetailService : IItemDetailService
         }
 
         // 5b. Fate drops
-        if (results.Count == 0 && _itemToFateMap.TryGetValue(itemId, out var fateIds))
+        if (!results.Any(s => s.Type == ItemSourceType.Fate) && _itemToFateMap.TryGetValue(itemId, out var fateIds))
         {
             var fateSheet = _gameData.GetExcelSheet<Fate>();
             foreach (var fateId in fateIds)
@@ -352,7 +356,7 @@ public sealed class ItemDetailService : IItemDetailService
         }
 
         // 5c. Mob drops
-        if (results.Count == 0 && _itemToMobMap.TryGetValue(itemId, out var mobIds))
+        if (!results.Any(s => s.Type == ItemSourceType.Mob) && _itemToMobMap.TryGetValue(itemId, out var mobIds))
         {
             var npcSheet = _gameData.GetExcelSheet<BNpcName>();
             foreach (var npcId in mobIds)
@@ -371,7 +375,7 @@ public sealed class ItemDetailService : IItemDetailService
         }
 
         // 5d. House Vendor â€” parent ID is the item, ENpcResidentId is the NPC
-        if (results.Count == 0 && _shopToNpcIds.TryGetValue(itemId, out var hvNpcs) && hvNpcs.Count > 0)
+        if (!results.Any(s => s.Type == ItemSourceType.Vendor) && _shopToNpcIds.TryGetValue(itemId, out var hvNpcs) && hvNpcs.Count > 0)
         {
             var npcName = _npcNameCache.GetValueOrDefault(hvNpcs[0]);
             results.Add(new ItemSourceDetail(
@@ -399,7 +403,7 @@ public sealed class ItemDetailService : IItemDetailService
                 results.Add(new ItemSourceDetail(
                     ItemSourceType.Other, desc,
                     null, null, null, null, null, null,
-                    null, null, null, null, null, null, null, null, null, supp.SourceItemId));
+                    null, null, null, null, null, null, null, null, null, SourceItemId: supp.SourceItemId));
             }
         }
 
@@ -440,7 +444,7 @@ public sealed class ItemDetailService : IItemDetailService
         }
 
         // 7. PvP – SpecialShop (tome currencies), PvPSeries tier rewards
-        if (results.Count == 0)
+        if (!results.Any(s => s.Type == ItemSourceType.PvP))
         {
             if (_pvpVendorItems.Contains(itemId))
             {
@@ -462,7 +466,7 @@ public sealed class ItemDetailService : IItemDetailService
         }
 
         // 7b. Gathering sources
-        if (results.Count == 0 && _itemToGatheringCache.TryGetValue(itemId, out var gatheringNodes))
+        if (!results.Any(s => s.Type == ItemSourceType.Gathering) && _itemToGatheringCache.TryGetValue(itemId, out var gatheringNodes))
         {
             foreach (var g in gatheringNodes)
             {
@@ -486,7 +490,17 @@ public sealed class ItemDetailService : IItemDetailService
             }
         }
 
-        // 8. Generic fallback â€” nothing found
+        // 8. Mogstation â€” always shown additively alongside any other detected sources
+        if (_mogstationItems.TryGetValue(itemId, out var shopUrl))
+        {
+            results.Add(new ItemSourceDetail(
+                ItemSourceType.MogStation,
+                "Available for purchase on the Mog Station.",
+                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                ShopUrl: shopUrl));
+        }
+
+        // 9. Generic fallback â€” nothing found
         if (results.Count == 0)
         {
             results.Add(new ItemSourceDetail(
@@ -752,6 +766,94 @@ public sealed class ItemDetailService : IItemDetailService
 
         if (enpcBaseSheet == null || levelSheet == null || mapSheet == null)
             return;
+
+        // Stage 0: direct EventHandlerType.SpecialShop match on ENpcData (see ItemVendorLocation
+        // reference plugin). Level/LGB stages below miss NPCs whose only shop link is an
+        // EventHandler entry with no physical placement (e.g. quest/cutscene-triggered shops).
+        // ponytail: additive only, never overwrites an entry the existing stages already found.
+        var specialShopSheet = _gameData.GetExcelSheet<SpecialShop>();
+        if (specialShopSheet != null)
+        {
+            const uint SpecialShopEventHandlerType = 0x001B;
+            foreach (var npcBase in enpcBaseSheet)
+            {
+                var npcId = npcBase.RowId;
+                if (!_npcNameCache.TryGetValue(npcId, out var npcName) || string.IsNullOrEmpty(npcName))
+                    continue;
+
+                foreach (var dataRef in npcBase.ENpcData)
+                {
+                    var data = dataRef.RowId;
+                    if ((data >> 16) != SpecialShopEventHandlerType)
+                        continue;
+
+                    var shopId = data;
+                    if (!specialShopSheet.HasRow(shopId))
+                        continue;
+                    if (_shopNpcLookup.ContainsKey(shopId) || _shopNpcNameOnly.ContainsKey(shopId))
+                        continue;
+
+                    _shopNpcNameOnly[shopId] = npcName;
+                }
+            }
+
+            // Stage 0b: CustomTalk-gated SpecialShop (see ItemVendorLocation reference plugin).
+            // Some NPCs (e.g. Calamity Salvager) link their shop through a CustomTalk dialogue
+            // script instead of a direct ENpcData entry - the SpecialShop id sits behind
+            // CustomTalk.SpecialLinks -> CustomTalkNestHandlers, or raw in the talk script args.
+            // ponytail: additive only, never overwrites an entry an earlier stage already found.
+            const uint CustomTalkEventHandlerType = 0x000B;
+            var customTalkSheet = _gameData.GetExcelSheet<CustomTalk>();
+            var customTalkNestHandlers = _gameData.GetSubrowExcelSheet<CustomTalkNestHandlers>();
+            if (customTalkSheet != null && customTalkNestHandlers != null)
+            {
+                foreach (var npcBase in enpcBaseSheet)
+                {
+                    var npcId = npcBase.RowId;
+                    if (!_npcNameCache.TryGetValue(npcId, out var npcName) || string.IsNullOrEmpty(npcName))
+                        continue;
+
+                    foreach (var dataRef in npcBase.ENpcData)
+                    {
+                        var data = dataRef.RowId;
+                        if ((data >> 16) != CustomTalkEventHandlerType)
+                            continue;
+
+                        var customTalk = customTalkSheet.GetRowOrDefault(data);
+                        if (!customTalk.HasValue)
+                            continue;
+
+                        void TryAddSpecialShop(uint candidateId)
+                        {
+                            if ((candidateId >> 16) != SpecialShopEventHandlerType)
+                                return;
+                            if (!specialShopSheet.HasRow(candidateId))
+                                return;
+                            if (_shopNpcLookup.ContainsKey(candidateId) || _shopNpcNameOnly.ContainsKey(candidateId))
+                                return;
+
+                            _shopNpcNameOnly[candidateId] = npcName;
+                        }
+
+                        var nestRowId = customTalk.Value.SpecialLinks.RowId;
+                        if (nestRowId != 0)
+                        {
+                            for (ushort index = 0; index <= 30; index++)
+                            {
+                                var nestHandler = customTalkNestHandlers.GetSubrowOrDefault(nestRowId, index);
+                                if (!nestHandler.HasValue)
+                                    break;
+
+                                TryAddSpecialShop(nestHandler.Value.NestHandler.RowId);
+                            }
+                        }
+
+                        foreach (var script in customTalk.Value.Script)
+                            TryAddSpecialShop((uint)script.ScriptArg);
+                    }
+                }
+            }
+        }
 
         // Level lookup: ENpcBase.RowId â†’ (MapId, Map, X, Z)
         var npcLevelLookup = new Dictionary<uint, (uint mapId, Map map, float x, float z)>();
@@ -1133,6 +1235,33 @@ public sealed class ItemDetailService : IItemDetailService
         BuildFieldOpCofferCache();
         BuildAchievementCache();
         BuildPvpItemCache();
+        BuildMogstationCache();
+    }
+
+    // ponytail: MogstationItems.csv is our own static scrape, not a LuminaSupplemental package
+    // resource, so it can't go through CsvLoader.LoadResource<T> â€” read it as our own embedded
+    // resource instead.
+    private void BuildMogstationCache()
+    {
+        var assembly = typeof(ItemDetailService).Assembly;
+        using var stream = assembly.GetManifestResourceStream(
+            "GlamSource.Core.LuminaSupplemental.MogstationItems.csv");
+        if (stream == null)
+            return;
+
+        using var reader = new StreamReader(stream);
+        reader.ReadLine(); // header
+        string? line;
+        while ((line = reader.ReadLine()) != null)
+        {
+            var parts = line.Split(',', 3);
+            if (parts.Length < 3)
+                continue;
+            if (!uint.TryParse(parts[0], out var itemId))
+                continue;
+
+            _mogstationItems[itemId] = parts[2];
+        }
     }
 
     private void BuildPvpItemCache()
