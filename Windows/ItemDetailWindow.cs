@@ -1424,6 +1424,15 @@ if (_textureProvider != null && cost.IconId > 0)
                 ? $"{levelStr} ({string.Join(", ", jobs)})"
                 : (levelStr ?? jobStr ?? "Crafted");
             ImGui.Text(title);
+            ImGui.SameLine();
+            if (ImGui.SmallButton($"Open Crafting Log##craft_{groupIdx}"))
+            {
+                // ponytail: HQ items sit at NQ RowId + 1_000_000; the vanilla recipe log only knows the NQ id.
+                var craftItemId = _showingItemId ?? 0;
+                if (craftItemId >= 1_000_000)
+                    craftItemId -= 1_000_000;
+                TryOpenCraftingLog(craftItemId);
+            }
 
             // ponytail: batch button dropped — SimpleGatherService is single-item; per-material
             // Gather buttons cover it. Add batch queue when actually needed.
