@@ -242,6 +242,16 @@ public sealed class ModelExportService
 
         var meshes = MdlGeometry.DecodeLod0(mdl);
         LastTrace.Add($"chara part {partFolder}: {meshes.Count} meshes");
+
+        // ponytail: two passes — some chara-part submeshes (e.g. face "etc_a/b/c": eyebrows/lash/
+        // decal detail layers) have no diffuse texture AND no colorset, only norm+mask (the game
+        // derives their look from the mask via a shader we don't replicate). Solid-filling those
+        // with the flat skin tint renders them as opaque blobs over the eyes/mouth — visibly wrong,
+        // confirmed by a screenshot showing exactly that. Once ANY submesh in this part has a real
+        // texture/colorset (e.g. the face's "fac" material), skip the sourceless ones instead of
+        // opaque-filling them. If NOTHING in the part has a real source (e.g. hair, which has no
+        // diffuse/colorset at all), keep the flat fallback — no hair is worse than flat-color hair.
+        var pending = new List<(GltfMeshInput Mesh, bool HadRealSource)>();
         foreach (var m in meshes)
         {
             if (m.SubmeshesKept < m.SubmeshesTotal)
@@ -254,6 +264,7 @@ public sealed class ModelExportService
             }
             var texIndex = -1;
             float[]? tint = fallbackTint;
+            var hadRealSource = false;
             if (m.MaterialIndex >= 0 && m.MaterialIndex < mdl.Materials.Length)
             {
                 var mtrlName = mdl.Materials[m.MaterialIndex];
@@ -279,13 +290,25 @@ public sealed class ModelExportService
                 // NOT visually applying in the viewer, so don't also rely on it here.
                 var (t, colorSetTint, normalTex) = ResolveMaterialByPath(mtrlPath, tint, pngs, materialCache);
                 texIndex = t;
+                hadRealSource = texIndex >= 0 || colorSetTint != null;
                 if (texIndex >= 0) tint = null;
                 else tint = colorSetTint ?? fallbackTint;
                 LastTrace.Add($"  {partFolder} mtrl={mtrlPath} tex={texIndex} normal={normalTex} finalTint={(tint == null ? "null" : $"{tint[0]:F2},{tint[1]:F2},{tint[2]:F2}")}");
-                meshInputs.Add(new GltfMeshInput(m, texIndex, tint, normalTex));
+                pending.Add((new GltfMeshInput(m, texIndex, tint, normalTex), hadRealSource));
                 continue;
             }
-            meshInputs.Add(new GltfMeshInput(m, texIndex, tint));
+            pending.Add((new GltfMeshInput(m, texIndex, tint), hadRealSource));
+        }
+
+        var anyRealSource = pending.Exists(p => p.HadRealSource);
+        foreach (var p in pending)
+        {
+            if (!p.HadRealSource && anyRealSource)
+            {
+                LastTrace.Add($"  {partFolder}: dropped sourceless decal submesh (other submeshes have real texture/colorset)");
+                continue;
+            }
+            meshInputs.Add(p.Mesh);
         }
     }
 
