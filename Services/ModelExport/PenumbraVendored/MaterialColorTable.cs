@@ -13,13 +13,15 @@
 // 32 halfs / 64 bytes), which Lumina silently truncates/misreads. This handles both.
 //
 // The A/B-ramp + id-texture sampling in BakeDiffuse mirrors the shader logic reverse-engineered
-// by the FFXIV modding community and reproduced in PassiveModding/MeddleTools' Blender addon
-// (node_setup/node_mappings.py: PackedColorTableRampLookup, getOddEvenRows) — verified against
-// that source, not guessed:
+// by the FFXIV modding community (xivmodding.com's Material Colorsets (Dawntrail) page) and
+// reproduced in PassiveModding/MeddleTools' Blender addon (node_setup/node_mappings.py:
+// PackedColorTableRampLookup, getOddEvenRows) for the ramp-A/ramp-B split itself:
 //   - 32 rows split into two 16-row ramps: even indices -> "ramp A", odd indices -> "ramp B".
-//   - Each ramp's 16 stops sit at position i/16 (i = 0..15); id-texture Red (0-1) samples both
-//     ramps with linear interpolation between neighboring stops.
 //   - id-texture Green blends the two sampled colors: green=1 -> ramp A, green=0 -> ramp B.
+// The exact byte->row mapping (RowPosition) is NOT what either of those sources describes
+// directly — it was found by baking a real material and comparing side by side against an
+// in-game screenshot (see RowPosition's own doc comment): the byte is inverted (high byte =
+// near-black rows, not high-index rows) and split-range, not a plain byte/255*16.
 using System;
 
 namespace Penumbra.GameData.Files;
@@ -133,13 +135,15 @@ public static class MaterialColorTable
             var o = p * 4;
             // id textures are BC5 (2-channel) — Lumina's decoder packs the two channels into the
             // Green and Blue bytes of the output RGBA (Red is always 0), not Red/Green as the
-            // shader docs describe for the raw channel layout. Verified against real files: with
-            // Red/Green every material outside a lucky one baked to flat white; Blue/Green gives
-            // distinct, plausible colors for every material tested.
-            var red = idTexRgba[o + 2] / 255f;
+            // shader docs describe for the raw channel layout. Blue/Green gives distinct, plausible
+            // per-material colors where Red/Green never did (see file history for how that was
+            // verified). Green is the ramp-A/ramp-B blend directly (green=1 -> A, green=0 -> B, per
+            // xivmodding.com's Material Colorsets (Dawntrail) page).
+            var redByte = idTexRgba[o + 2];
             var green = idTexRgba[o + 1] / 255f;
-            var colorA = SampleRamp(rampA, red);
-            var colorB = SampleRamp(rampB, red);
+            var pos = RowPosition(redByte);
+            var colorA = SampleRamp(rampA, pos);
+            var colorB = SampleRamp(rampB, pos);
             outPixels[o + 0] = (byte)(Math.Clamp(colorB[0] + (colorA[0] - colorB[0]) * green, 0f, 1f) * 255);
             outPixels[o + 1] = (byte)(Math.Clamp(colorB[1] + (colorA[1] - colorB[1]) * green, 0f, 1f) * 255);
             outPixels[o + 2] = (byte)(Math.Clamp(colorB[2] + (colorA[2] - colorB[2]) * green, 0f, 1f) * 255);
@@ -148,10 +152,24 @@ public static class MaterialColorTable
         return outPixels;
     }
 
-    /// <summary>Linear-interpolate a 16-stop ramp (stops at i/16) at position t in [0,1].</summary>
-    private static float[] SampleRamp(float[][] ramp, float t)
+    /// <summary>Byte -> continuous ramp-pair position (0..15, 16 pairs). Two things the naive
+    /// byte/255*16 mapping got wrong, both verified against a real baked material compared side by
+    /// side with an in-game screenshot (a red/yellow bake where the real garment is black/orange):
+    /// (1) the byte value is INVERTED — high byte = LOW pair index (near-black rows), not high;
+    /// (2) xivmodding.com's Dawntrail colorset page documents the byte range as split, not
+    /// continuous: 0x00-0x77 selects pairs 1-8, 0x88-0xFF selects pairs 9-16, with a dead zone
+    /// between (0x78-0x87) that isn't meant to land on any pair cleanly.</summary>
+    private static float RowPosition(byte redByte)
     {
-        var pos = Math.Clamp(t, 0f, 1f) * 16f; // stop i sits at t = i/16
+        var b = (byte)(255 - redByte);
+        if (b <= 0x77) return b / 119f * 7f;
+        if (b >= 0x88) return 8f + (b - 136) / (255f - 136f) * 7f;
+        return 7.5f;
+    }
+
+    /// <summary>Interpolate a 16-stop ramp at a continuous pair position (0..15).</summary>
+    private static float[] SampleRamp(float[][] ramp, float pos)
+    {
         var i0 = Math.Clamp((int)MathF.Floor(pos), 0, 15);
         var i1 = Math.Clamp(i0 + 1, 0, 15);
         var frac = Math.Clamp(pos - i0, 0f, 1f);

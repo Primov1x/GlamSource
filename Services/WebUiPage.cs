@@ -293,10 +293,16 @@ async function startViewer(){
     camera.position.set(0,1.2,2.2);
     const controls=new OrbitControls(camera,renderer.domElement);
     controls.target.set(0,1.0,0);
-    scene.add(new THREE.AmbientLight(0xffffff,0.6));
-    const dir=new THREE.DirectionalLight(0xffffff,1.2);
-    dir.position.set(2,3,2);
-    scene.add(dir);
+    // ponytail: lower ambient + a stronger angled key light + a dim rim light so the normal map
+    // (knee/elbow/seam relief) actually reads as shading contrast instead of getting washed flat
+    // by even, shadowless light from every direction.
+    scene.add(new THREE.AmbientLight(0xffffff,0.35));
+    const key=new THREE.DirectionalLight(0xffffff,1.8);
+    key.position.set(2,3,2.5);
+    scene.add(key);
+    const rim=new THREE.DirectionalLight(0xaaccff,0.5);
+    rim.position.set(-2,1.5,-2);
+    scene.add(rim);
     window._glamViewer={THREE,GLTFLoader,scene,renderer,camera,controls,box,model:null};
     $('#pose-toggle').style.display='flex';
     $('#pose-idle').style.fontWeight='bold';
