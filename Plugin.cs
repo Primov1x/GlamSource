@@ -9,6 +9,7 @@ using GlamSource.Windows;
 
 using System;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -229,10 +230,31 @@ public class Plugin : IAsyncDalamudPlugin
     }
 
     private int _recentScanFrame;
+
+    // ponytail: Browsingway persists its own "Hidden" flag across game restarts — if a prior
+    // session left the overlay visible when the game closed, Browsingway shows it again on every
+    // launch regardless of GlamSource's own open/closed state. Force it hidden once, as soon as
+    // Browsingway itself has finished loading (retry for a few seconds since plugin load order
+    // isn't guaranteed).
+    private bool _bwHideDone;
+    private int _bwHideRetryFrames = 300; // ~5s at 60fps
     private string _lastRecentKey = "";
 
     private void OnFrameworkUpdate(IFramework fw)
     {
+        if (!_bwHideDone)
+        {
+            if (!Configuration.WebUiEnabled || !Configuration.WebUiAutoOverlay || --_bwHideRetryFrames <= 0)
+            {
+                _bwHideDone = true;
+            }
+            else if (PluginInterface.InstalledPlugins.Any(p => p.InternalName == "Browsingway" && p.IsLoaded))
+            {
+                CommandManager.ProcessCommand("/bw overlay glamsource hidden on");
+                _bwHideDone = true;
+            }
+        }
+
         // Throttle: every 30 frames (~0.5s at 60fps).
         if (++_recentScanFrame < 30) return;
         _recentScanFrame = 0;
