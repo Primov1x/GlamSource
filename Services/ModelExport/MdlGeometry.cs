@@ -75,10 +75,21 @@ public static class MdlGeometry
                 }
             }
 
-            outMesh.Indices = new ushort[mesh.IndexCount];
-            var idxBase = (int)(lod.IndexDataOffset + mesh.StartIndex * 2);
-            for (var i = 0; i < mesh.IndexCount; i++)
-                outMesh.Indices[i] = BitConverter.ToUInt16(data, idxBase + i * 2);
+            // ponytail: only unconditional submeshes (AttributeIndexMask == 0) — the others are
+            // optional variants (race-specific parts, hide-flags, alt decorations) gated on
+            // attributes we have no way to evaluate; showing them all overlapped/stretched wrong
+            // detail across the mesh (verified: a small 'emblem' submesh + conditional jacket
+            // panels rendering as a big wrong-colored patch on an otherwise-correct outfit).
+            var indices = new List<ushort>();
+            var idxBaseAll = (int)lod.IndexDataOffset;
+            for (var si = mesh.SubMeshIndex; si < mesh.SubMeshIndex + mesh.SubMeshCount; si++)
+            {
+                var sub = mdl.SubMeshes[si];
+                if (sub.AttributeIndexMask != 0) continue;
+                for (var i = 0; i < sub.IndexCount; i++)
+                    indices.Add(BitConverter.ToUInt16(data, idxBaseAll + (int)(sub.IndexOffset + i) * 2));
+            }
+            outMesh.Indices = indices.ToArray();
 
             result.Add(outMesh);
         }
