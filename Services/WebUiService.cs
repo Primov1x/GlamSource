@@ -318,7 +318,7 @@ public sealed class WebUiService : IDisposable
         if (method == "GET" && path == "/api/model3d/debug")
         {
             var (dbgSlots, dbgChara) = ResolveModelInputs();
-            _modelExport.BuildGlb(dbgSlots, dbgChara);
+            _modelExport.BuildGlb(dbgSlots, dbgChara, bypassCache: true);
             return Json(new { trace = _modelExport.LastTrace });
         }
 

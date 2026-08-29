@@ -51,7 +51,7 @@ public sealed class ModelExportService
 
     /// <summary>Build a GLB containing all equipment models for the given slots. Returns null when
     /// nothing could be resolved.</summary>
-    public byte[]? BuildGlb(IReadOnlyList<EquipmentSlot> slots, CharacterModelInfo? chara = null)
+    public byte[]? BuildGlb(IReadOnlyList<EquipmentSlot> slots, CharacterModelInfo? chara = null, bool bypassCache = false)
     {
         LastTrace.Clear();
         LastTrace.Add($"slots in: {slots.Count}, chara: {chara?.RaceCode ?? "none"}");
@@ -63,7 +63,7 @@ public sealed class ModelExportService
         if (items.Count == 0) return null;
 
         var key = string.Join(",", items.Select(x => $"{x.Slot}:{x.ItemId}:{x.Stain}")) + $"|{chara}";
-        if (_cache is { } c && c.Key == key) { LastTrace.Add("cache hit"); return c.Glb; }
+        if (!bypassCache && _cache is { } c && c.Key == key) { LastTrace.Add("cache hit"); return c.Glb; }
 
         var meshInputs = new List<GltfMeshInput>();
         var pngs = new List<byte[]>();
