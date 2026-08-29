@@ -739,10 +739,10 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
             return;
         }
 
-        if (ImGui.Checkbox("Draw Weapon", ref _weaponDrawn))
+        if (ImGui.Checkbox("Show Weapon/Tool", ref _weaponDrawn))
         {
             var drawn = _weaponDrawn;
-            _framework.RunOnFrameworkThread(() => renderer.ToggleDrawWeapon(drawn));
+            _framework.RunOnFrameworkThread(() => renderer.SetWeaponDrawn(drawn));
         }
 
         var avail = ImGui.GetContentRegionAvail();
@@ -810,7 +810,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
     }
 
     private Vector2? _previewDragLast;
-    private bool _weaponDrawn = true;
+    private bool _weaponDrawn;
 
     private void DrawRecentSidebar()
     {

@@ -295,6 +295,10 @@ public sealed unsafe class PreviewRenderer : IDisposable
             }
         }
 
+        // ponytail: re-applied every tick — CopyFromCharacter above mirrors the live character's
+        // ModelData wholesale, which stomps this flag back to "drawn" each frame otherwise.
+        agent->CharaView.ToggleDrawWeapon(_weaponDrawn);
+
         var ch = agent->CharaView.GetCharacter();
         if (ch == null) return;
 
@@ -333,7 +337,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
     /// <summary>Set camera distance. 1.0 = CharaView default distance. Must be called on the Framework thread.</summary>
     public void SetZoom(float zoom)
     {
-        var target = Math.Clamp(zoom, 0.5f, 3.0f);
+        var target = Math.Clamp(zoom, 0.5f, 6.0f);
         var current = _zoom;
         _zoom = target;
         if (!_initialized || target == current) return;
@@ -359,14 +363,11 @@ public sealed unsafe class PreviewRenderer : IDisposable
         agent->CharaView.SetCameraXAndY(deltaX, deltaY);
     }
 
-    /// <summary>Show/hide the mainhand weapon model in the preview. Framework thread.</summary>
-    public void ToggleDrawWeapon(bool drawn)
-    {
-        if (!_initialized) return;
-        var agent = AgentTryon.Instance();
-        if (agent == null) return;
-        agent->CharaView.ToggleDrawWeapon(drawn);
-    }
+    // ponytail: neutral preview default — no weapon/tool in hand until the user opts in.
+    private bool _weaponDrawn;
+
+    /// <summary>Show/hide the mainhand weapon model in the preview. Re-applied every Tick.</summary>
+    public void SetWeaponDrawn(bool drawn) => _weaponDrawn = drawn;
 
     public void Reset()
     {
