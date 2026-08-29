@@ -339,10 +339,13 @@ public sealed class ModelExportService
                 {
                     var idTex = _gameData.GetFile<TexFile>(idPath);
                     if (idTex != null)
-                        baked = Penumbra.GameData.Files.MaterialColorTable.BakeDiffuse(mtrlRaw.Data, idTex.ImageData, idTex.Header.Width, idTex.Header.Height);
+                        // ponytail: stain passed straight in — BakeDiffuse blends it in only on
+                        // rows the material's own dye table actually flags as dyeable (see its doc
+                        // comment), not the whole texture. A blanket multiply here previously wiped
+                        // out accent colors the game itself never recolors.
+                        baked = Penumbra.GameData.Files.MaterialColorTable.BakeDiffuse(mtrlRaw.Data, idTex.ImageData, idTex.Header.Width, idTex.Header.Height, tint);
                     if (baked != null)
                     {
-                        if (tint != null) baked = ApplyTint(baked, tint);
                         var png = PngEncoder.EncodeRgba(baked, idTex!.Header.Width, idTex.Header.Height);
                         texIndex = pngs.Count;
                         pngs.Add(png);

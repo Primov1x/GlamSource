@@ -42,8 +42,19 @@ public static class MaterialColorTable
 
     /// <summary>Locate and read the raw diffuse RGB (0-1, per row) of a material's color table.
     /// Returns null if the material has no table / couldn't be read.</summary>
-    public static float[][]? ReadRows(ReadOnlySpan<byte> data)
+    public static float[][]? ReadRows(ReadOnlySpan<byte> data) => ReadRowsAndDyeFlags(data, out _);
+
+    /// <summary>Like <see cref="ReadRows"/>, but also returns which rows have their diffuse color
+    /// actually affected by the player's chosen dye (Penumbra's advanced-dye editor shows this as
+    /// a per-row "D" toggle — most materials leave most rows NOT dyeable, e.g. accent colors that
+    /// must stay put regardless of dye). The dye-flag table (ColorDyeTableRow, 4 bytes/row) sits
+    /// immediately after the color table within the same dataSetSize block — verified: a real
+    /// material's dataSetSize (2176) was exactly DawntrailRows*DawntrailRowSize (2048) +
+    /// DawntrailRows*4 (128). null dyeable means the flags couldn't be read (legacy 16-row format,
+    /// or malformed) — caller should treat every row as dyeable in that case (old flat-tint behavior).</summary>
+    public static float[][]? ReadRowsAndDyeFlags(ReadOnlySpan<byte> data, out bool[]? dyeable)
     {
+        dyeable = null;
         try
         {
             var pos = 0;
@@ -95,6 +106,23 @@ public static class MaterialColorTable
                 if (float.IsNaN(cr)) cr = 0; if (float.IsNaN(cg)) cg = 0; if (float.IsNaN(cb)) cb = 0;
                 result[row] = new[] { Math.Clamp(cr, 0f, 1f), Math.Clamp(cg, 0f, 1f), Math.Clamp(cb, 0f, 1f) };
             }
+
+            // dye table: rows * 4 bytes, right after the color table, only defined for Dawntrail.
+            if (dimensionLogs == 0x53)
+            {
+                var dyeTableSize = rows * 4;
+                if (pos + tableSize + dyeTableSize <= data.Length && tableSize + dyeTableSize <= dataSetSize)
+                {
+                    var dyeTable = data.Slice(pos + tableSize, dyeTableSize);
+                    var dyeFlags = new bool[rows];
+                    for (var row = 0; row < rows; row++)
+                    {
+                        var rowData = BitConverter.ToUInt32(dyeTable.Slice(row * 4, 4));
+                        dyeFlags[row] = (rowData & 0x0001u) != 0; // ColorDyeTableRow.DiffuseColor, bit 0
+                    }
+                    dyeable = dyeFlags;
+                }
+            }
             return result;
         }
         catch
@@ -125,16 +153,29 @@ public static class MaterialColorTable
     /// <summary>Bake a real per-pixel diffuse texture from the material's color table using its id
     /// texture (Red = ramp position, Green = ramp-A/ramp-B blend) — see file header for the
     /// verified formula. idTexRgba must be already-decoded RGBA8 bytes, idWidth*idHeight*4 long.
+    /// When <paramref name="stainColor"/> is given, it's blended in ONLY where the underlying
+    /// color-table row is actually flagged dyeable (Penumbra's advanced-dye editor shows this per
+    /// row as a "D" toggle — most materials mark only some rows dyeable, e.g. accent/emblem colors
+    /// stay put regardless of the player's chosen dye). This was the real reason a "dyed black"
+    /// jacket kept showing its original red/orange design: we were multiplying the WHOLE texture
+    /// by the stain instead of only the rows the game actually recolors.
     /// Output is the same resolution, RGBA8, alpha forced opaque. Returns null if the material has
     /// no (Dawntrail-shaped) color table.</summary>
-    public static byte[]? BakeDiffuse(ReadOnlySpan<byte> mtrlData, ReadOnlySpan<byte> idTexRgba, int idWidth, int idHeight)
+    public static byte[]? BakeDiffuse(ReadOnlySpan<byte> mtrlData, ReadOnlySpan<byte> idTexRgba, int idWidth, int idHeight, float[]? stainColor = null)
     {
-        var rows = ReadRows(mtrlData);
+        var rows = ReadRowsAndDyeFlags(mtrlData, out var dyeable);
         if (rows == null || rows.Length != DawntrailRows) return null; // ramp split only defined for the 32-row format
 
         var rampA = new float[16][]; // even rows
         var rampB = new float[16][]; // odd rows
-        for (var i = 0; i < 16; i++) { rampA[i] = rows[i * 2]; rampB[i] = rows[i * 2 + 1]; }
+        var dyeA = new float[16];    // 1 if that ramp stop's row is dyeable, else 0
+        var dyeB = new float[16];
+        for (var i = 0; i < 16; i++)
+        {
+            rampA[i] = rows[i * 2]; rampB[i] = rows[i * 2 + 1];
+            dyeA[i] = dyeable != null && dyeable[i * 2] ? 1f : 0f;
+            dyeB[i] = dyeable != null && dyeable[i * 2 + 1] ? 1f : 0f;
+        }
 
         var outPixels = new byte[idWidth * idHeight * 4];
         for (var p = 0; p < idWidth * idHeight; p++)
@@ -147,25 +188,44 @@ public static class MaterialColorTable
             // distinct, plausible colors for every material tested.
             var red = idTexRgba[o + 2] / 255f;
             var green = idTexRgba[o + 1] / 255f;
-            var colorA = SampleRamp(rampA, red);
-            var colorB = SampleRamp(rampB, red);
-            outPixels[o + 0] = (byte)(Math.Clamp(colorB[0] + (colorA[0] - colorB[0]) * green, 0f, 1f) * 255);
-            outPixels[o + 1] = (byte)(Math.Clamp(colorB[1] + (colorA[1] - colorB[1]) * green, 0f, 1f) * 255);
-            outPixels[o + 2] = (byte)(Math.Clamp(colorB[2] + (colorA[2] - colorB[2]) * green, 0f, 1f) * 255);
+            var (i0, i1, frac) = RampPosition(red);
+            var colorA = LerpRow(rampA[i0], rampA[i1], frac);
+            var colorB = LerpRow(rampB[i0], rampB[i1], frac);
+            var r = Math.Clamp(colorB[0] + (colorA[0] - colorB[0]) * green, 0f, 1f);
+            var g = Math.Clamp(colorB[1] + (colorA[1] - colorB[1]) * green, 0f, 1f);
+            var b = Math.Clamp(colorB[2] + (colorA[2] - colorB[2]) * green, 0f, 1f);
+
+            if (stainColor is { Length: 3 })
+            {
+                // dye weight interpolated the same way as color — a pixel landing between a
+                // dyeable and non-dyeable row gets a partial blend, not a hard edge.
+                var dA = dyeA[i0] + (dyeA[i1] - dyeA[i0]) * frac;
+                var dB = dyeB[i0] + (dyeB[i1] - dyeB[i0]) * frac;
+                var dyeWeight = Math.Clamp(dB + (dA - dB) * green, 0f, 1f);
+                r += (stainColor[0] - r) * dyeWeight;
+                g += (stainColor[1] - g) * dyeWeight;
+                b += (stainColor[2] - b) * dyeWeight;
+            }
+
+            outPixels[o + 0] = (byte)(r * 255);
+            outPixels[o + 1] = (byte)(g * 255);
+            outPixels[o + 2] = (byte)(b * 255);
             outPixels[o + 3] = 255;
         }
         return outPixels;
     }
 
-    /// <summary>Linear-interpolate a 16-stop ramp (stops at i/16) at position t in [0,1].</summary>
-    private static float[] SampleRamp(float[][] ramp, float t)
+    /// <summary>Ramp position for a 16-stop ramp (stops at i/16) at t in [0,1] — the two
+    /// neighboring stop indices and the interpolation fraction between them.</summary>
+    private static (int I0, int I1, float Frac) RampPosition(float t)
     {
         var pos = Math.Clamp(t, 0f, 1f) * 16f; // stop i sits at t = i/16
         var i0 = Math.Clamp((int)MathF.Floor(pos), 0, 15);
         var i1 = Math.Clamp(i0 + 1, 0, 15);
         var frac = Math.Clamp(pos - i0, 0f, 1f);
-        var a = ramp[i0];
-        var b = ramp[i1];
-        return new[] { a[0] + (b[0] - a[0]) * frac, a[1] + (b[1] - a[1]) * frac, a[2] + (b[2] - a[2]) * frac };
+        return (i0, i1, frac);
     }
+
+    private static float[] LerpRow(float[] a, float[] b, float frac)
+        => new[] { a[0] + (b[0] - a[0]) * frac, a[1] + (b[1] - a[1]) * frac, a[2] + (b[2] - a[2]) * frac };
 }
