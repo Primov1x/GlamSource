@@ -448,6 +448,11 @@ public sealed class WebUiService : IDisposable
                 ModelExport.CustomizeColors? colors = null;
                 if (Plugin.ObjectTable.LocalPlayer is { } pc && pc.Customize is { Length: > 0 } c)
                 {
+                    // ponytail: previous access path (Human.CustomizeParameterCBuffer via
+                    // FFXIVClientStructs' ConstantBuffer flags-gated pointer) kept returning
+                    // implausible near-white/near-black values across two fixes (0.0.0.78, .81).
+                    // Replaced with Brio's exact working access pattern (see CustomizeColorsService)
+                    // — same underlying data, ungated direct double pointer chase.
                     try { colors = ModelExport.CustomizeColorsService.Capture(pc.Address); }
                     catch (Exception ex) { _log.Warning($"[WebUi] customize color capture failed: {ex.Message}"); }
                     var race = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.Race];
