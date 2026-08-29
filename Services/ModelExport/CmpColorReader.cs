@@ -44,6 +44,21 @@ public static class CmpColorReader
         return new CustomizeColors(skin, hair);
     }
 
+    // ponytail: highlight colors are tribe-independent, stored in the "common" block right after
+    // the eye-color block (word offset 1280, length 192, rounded up to the next 256-word boundary
+    // = 1536). Verified against real data: word 1536.. gives a plausible gray ramp then warm
+    // blonde tones, matching CustomizeIndex.HairColor2's swatch picker.
+    private const uint HighlightBlockStart = 1536;
+
+    /// <summary>Highlight color for CustomizeIndex.HairColor2's swatch index. Only meaningful when
+    /// CustomizeIndex.HasHighlights has its 0x80 bit set (negative = enabled, per Dalamud's enum
+    /// doc comment).</summary>
+    public static float[]? ReadHighlightColor(GameData gameData, byte highlightIdx)
+    {
+        if (!EnsureLoaded(gameData)) return null;
+        return ReadEntry(HighlightBlockStart, ExtendedDataLength, highlightIdx);
+    }
+
     private static float[]? ReadEntry(uint blockStart, int length, byte index)
     {
         if (index >= length) return null;

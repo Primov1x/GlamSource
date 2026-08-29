@@ -211,7 +211,7 @@ public sealed class ModelExportService
             var bodyId = _gameData.FileExists($"chara/human/{rc}/obj/body/b0001/model/{rc}b0001_top.mdl") ? "b0001" : "b0002";
             AddCharaPart($"chara/human/{rc}/obj/body/{bodyId}/model/{rc}{bodyId}_top.mdl", rc, $"body/{bodyId}", skinTint, meshInputs, pngs, materialCache, pose);
             AddCharaPart($"chara/human/{rc}/obj/face/f{chara.Face:D4}/model/{rc}f{chara.Face:D4}_fac.mdl", rc, $"face/f{chara.Face:D4}", skinTint, meshInputs, pngs, materialCache, pose);
-            AddCharaPart($"chara/human/{rc}/obj/hair/h{chara.Hair:D4}/model/{rc}h{chara.Hair:D4}_hir.mdl", rc, $"hair/h{chara.Hair:D4}", hairTint, meshInputs, pngs, materialCache, pose);
+            AddCharaPart($"chara/human/{rc}/obj/hair/h{chara.Hair:D4}/model/{rc}h{chara.Hair:D4}_hir.mdl", rc, $"hair/h{chara.Hair:D4}", hairTint, meshInputs, pngs, materialCache, pose, colors?.Highlight);
             if (chara.TailOrEars > 0)
             {
                 // tail (Miqo'te/Au Ra/Hrothgar) or ears (Viera) — whichever path exists
@@ -230,7 +230,8 @@ public sealed class ModelExportService
     /// <summary>Load one character base-model part (body/face/hair/tail/ears); silently skipped
     /// when the path doesn't exist for this race. Untextured meshes get the fallback tint.</summary>
     private void AddCharaPart(string mdlPath, string raceCode, string partFolder, float[] fallbackTint,
-        List<GltfMeshInput> meshInputs, List<byte[]> pngs, Dictionary<string, (int, float[]?, int)> materialCache, SkeletonPose? pose)
+        List<GltfMeshInput> meshInputs, List<byte[]> pngs, Dictionary<string, (int, float[]?, int)> materialCache, SkeletonPose? pose,
+        float[]? highlightTint = null)
     {
         if (!_gameData.FileExists(mdlPath)) { LastTrace.Add($"chara part missing: {mdlPath}"); return; }
         var raw = _gameData.GetFile(mdlPath);
@@ -288,7 +289,7 @@ public sealed class ModelExportService
                 // base.tex renders as dull blue-gray, not skin tone. Baked directly into the PNG
                 // pixels (see ResolveMaterialByPath) — glTF baseColorFactor multiply was confirmed
                 // NOT visually applying in the viewer, so don't also rely on it here.
-                var (t, colorSetTint, normalTex) = ResolveMaterialByPath(mtrlPath, tint, pngs, materialCache);
+                var (t, colorSetTint, normalTex) = ResolveMaterialByPath(mtrlPath, tint, pngs, materialCache, highlightTint);
                 texIndex = t;
                 hadRealSource = texIndex >= 0 || colorSetTint != null;
                 if (texIndex >= 0) tint = null;
@@ -321,9 +322,10 @@ public sealed class ModelExportService
     /// whatever in the load/render path was dropping it. Cache key includes the tint since the same
     /// material path can be requested with a different tint (different stain, different chara-part
     /// skin/hair tint).</summary>
-    private (int Tex, float[]? Tint, int NormalTex) ResolveMaterialByPath(string mtrlPath, float[]? tint, List<byte[]> pngs, Dictionary<string, (int, float[]?, int)> cache)
+    private (int Tex, float[]? Tint, int NormalTex) ResolveMaterialByPath(string mtrlPath, float[]? tint, List<byte[]> pngs, Dictionary<string, (int, float[]?, int)> cache, float[]? highlightTint = null)
     {
         var cacheKey = tint == null ? mtrlPath : $"{mtrlPath}|{tint[0]:F3},{tint[1]:F3},{tint[2]:F3}";
+        if (highlightTint != null) cacheKey += $"|hl{highlightTint[0]:F3},{highlightTint[1]:F3},{highlightTint[2]:F3}";
         if (cache.TryGetValue(cacheKey, out var cached)) return cached;
         (int, float[]?, int) result = (-1, null, -1);
         try
@@ -375,6 +377,31 @@ public sealed class ModelExportService
                         LastTrace.Add($"  colorset BAKED via {idPath} ({idTex.Header.Width}x{idTex.Header.Height})");
                     }
                 }
+                // hair.shpk has no colorset at all — it derives strand color from the mask texture
+                // via a shader we don't have a reference implementation for (checked Penumbra,
+                // Brio, Ktisis, TexTools — none composite it either, only the game itself does).
+                // Rough approximation: blend the customize main/highlight hair colors by the mask's
+                // green channel instead of a single flat fill, so highlighted strands read as a
+                // different tone from the base — better than a single flat blob, not a real decode.
+                if (baked == null && highlightTint != null)
+                {
+                    var maskPath = MaterialTexturePaths(mtrl).FirstOrDefault(p => p.EndsWith("_mask.tex"));
+                    if (maskPath != null && _gameData.FileExists(maskPath) && tint != null)
+                    {
+                        var maskTex = _gameData.GetFile<TexFile>(maskPath);
+                        if (maskTex != null)
+                        {
+                            baked = BakeHairMask(maskTex.ImageData, maskTex.Header.Width, maskTex.Header.Height, tint, highlightTint);
+                            if (baked != null)
+                            {
+                                var png = PngEncoder.EncodeRgba(baked, maskTex.Header.Width, maskTex.Header.Height);
+                                texIndex = pngs.Count;
+                                pngs.Add(png);
+                                LastTrace.Add($"  hair mask blend BAKED via {maskPath} ({maskTex.Header.Width}x{maskTex.Header.Height})");
+                            }
+                        }
+                    }
+                }
                 if (baked == null)
                 {
                     colorSetTint = Penumbra.GameData.Files.MaterialColorTable.AverageDiffuse(mtrlRaw.Data);
@@ -417,6 +444,28 @@ public sealed class ModelExportService
             result[i + 1] = (byte)(rgba[i + 1] * tint[1]);
             result[i + 2] = (byte)(rgba[i + 2] * tint[2]);
             result[i + 3] = rgba[i + 3];
+        }
+        return result;
+    }
+
+    /// <summary>Rough approximation of hair.shpk's strand coloring: hair.shpk has no colorset, only
+    /// a mask texture whose channel semantics we couldn't reverse-engineer (no reference formula
+    /// found in Penumbra, Brio, Ktisis, or TexTools — genuinely undocumented, unlike everything
+    /// else in this exporter, which always had SOME working reference to check against). This is a
+    /// known-approximate stand-in, not a decode: blends the customize main/highlight hair colors by
+    /// the mask's green channel, so highlighted strands read as a distinguishable tone from the base
+    /// instead of one flat blob. Output is the mask's resolution, RGBA8, alpha forced opaque.</summary>
+    private static byte[] BakeHairMask(byte[] maskRgba, int width, int height, float[] mainTint, float[] highlightTint)
+    {
+        var result = new byte[width * height * 4];
+        for (var p = 0; p < width * height; p++)
+        {
+            var o = p * 4;
+            var weight = maskRgba[o + 1] / 255f;
+            result[o + 0] = (byte)Math.Clamp((mainTint[0] + (highlightTint[0] - mainTint[0]) * weight) * 255f, 0f, 255f);
+            result[o + 1] = (byte)Math.Clamp((mainTint[1] + (highlightTint[1] - mainTint[1]) * weight) * 255f, 0f, 255f);
+            result[o + 2] = (byte)Math.Clamp((mainTint[2] + (highlightTint[2] - mainTint[2]) * weight) * 255f, 0f, 255f);
+            result[o + 3] = 255;
         }
         return result;
     }

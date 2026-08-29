@@ -474,6 +474,24 @@ public sealed class WebUiService : IDisposable
                         try { colors = ModelExport.CustomizeColorsService.Capture(pc.Address); }
                         catch (Exception ex) { _log.Warning($"[WebUi] customize color capture failed: {ex.Message}"); }
                     }
+                    // ponytail: highlight color for the hair-mask bake (see ModelExportService's
+                    // hair handling) — only meaningful when the player actually enabled highlights
+                    // (CustomizeIndex.HasHighlights' 0x80 bit; Dalamud's own doc comment: "negative
+                    // to enable"). Best-effort: colors stays usable even if this fails.
+                    if (colors != null)
+                    {
+                        try
+                        {
+                            var hasHighlights = (c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.HasHighlights] & 0x80) != 0;
+                            if (hasHighlights)
+                            {
+                                var highlightIdx = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.HairColor2];
+                                var highlight = ModelExport.CmpColorReader.ReadHighlightColor(_modelExportGameData, highlightIdx);
+                                if (highlight != null) colors = colors.Value with { Highlight = highlight };
+                            }
+                        }
+                        catch (Exception ex) { _log.Warning($"[WebUi] highlight color read failed: {ex.Message}"); }
+                    }
                     var face = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.FaceType];
                     var hair = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.HairStyle];
                     var tail = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.RaceFeatureType];
