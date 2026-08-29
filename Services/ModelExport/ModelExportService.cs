@@ -33,13 +33,13 @@ public sealed class ModelExportService
         LastTrace.Clear();
         LastTrace.Add($"slots in: {slots.Count}");
         var items = slots
-            .Select(s => (Slot: s.Slot, ItemId: s.GlamourItemId ?? s.ActualItemId))
+            .Select(s => (Slot: s.Slot, ItemId: s.GlamourItemId ?? s.ActualItemId, Stain: s.Stain0))
             .Where(x => x.ItemId > 0 && SlotInfo(x.Slot) != null)
             .ToList();
         LastTrace.Add($"usable items: {items.Count} [{string.Join(", ", items.Select(x => $"{x.Slot}:{x.ItemId}"))}]");
         if (items.Count == 0) return null;
 
-        var key = string.Join(",", items.Select(x => $"{x.Slot}:{x.ItemId}"));
+        var key = string.Join(",", items.Select(x => $"{x.Slot}:{x.ItemId}:{x.Stain}"));
         if (_cache is { } c && c.Key == key) { LastTrace.Add("cache hit"); return c.Glb; }
 
         var meshInputs = new List<GltfMeshInput>();
@@ -47,8 +47,17 @@ public sealed class ModelExportService
         var texIndexByPath = new Dictionary<string, int>();
 
         var itemSheet = _gameData.GetExcelSheet<Lumina.Excel.Sheets.Item>();
-        foreach (var (slot, itemId) in items)
+        var stainSheet = _gameData.GetExcelSheet<Lumina.Excel.Sheets.Stain>();
+        foreach (var (slot, itemId, stainId) in items)
         {
+            // ponytail: whole-mesh tint from the stain color — real dye only recolors specific
+            // colorset rows; good-enough approximation until colorset support lands.
+            float[]? tint = null;
+            if (stainId != 0 && stainSheet?.GetRowOrDefault(stainId) is { } stainRow)
+            {
+                var packed = stainRow.Color;
+                tint = new[] { (packed & 0xFF) / 255f, ((packed >> 8) & 0xFF) / 255f, ((packed >> 16) & 0xFF) / 255f };
+            }
             var row = itemSheet?.GetRowOrDefault(itemId % 1_000_000);
             if (row == null) { LastTrace.Add($"{slot}:{itemId} no item row"); continue; }
             var modelMain = row.Value.ModelMain;
@@ -88,7 +97,7 @@ public sealed class ModelExportService
                 var texIndex = -1;
                 if (m.MaterialIndex >= 0 && m.MaterialIndex < mdl.Materials.Length)
                     texIndex = ResolveDiffuseTexture(mdl.Materials[m.MaterialIndex], info, setId, materialId, pngs, texIndexByPath);
-                meshInputs.Add(new GltfMeshInput(m, texIndex));
+                meshInputs.Add(new GltfMeshInput(m, texIndex, tint));
             }
         }
 

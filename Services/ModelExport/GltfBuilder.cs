@@ -7,8 +7,9 @@ using System.Text.Json;
 
 namespace GlamSource.Services.ModelExport;
 
-/// <summary>One mesh plus the index of its PNG texture (into the textures list), or -1 for none.</summary>
-public sealed record GltfMeshInput(DecodedMesh Geometry, int TextureIndex);
+/// <summary>One mesh plus the index of its PNG texture (into the textures list), or -1 for none.
+/// Tint (RGB 0-1) multiplies the base color — rough whole-mesh dye approximation.</summary>
+public sealed record GltfMeshInput(DecodedMesh Geometry, int TextureIndex, float[]? Tint = null);
 
 // ponytail: hand-rolled GLB (glTF 2.0 binary) writer — the format is just JSON + one binary
 // buffer; a gltf library dependency would be bigger than this file.
@@ -25,31 +26,49 @@ public static class GltfBuilder
         var textures = new List<object>();
         var materials = new List<object>();
 
-        // one material per PNG + one shared untextured fallback
         for (var t = 0; t < pngTextures.Count; t++)
         {
             var view = AddView(bin, bufferViews, pngTextures[t], 0);
             images.Add(new { bufferView = view, mimeType = "image/png" });
             textures.Add(new { source = t });
-            materials.Add(new
-            {
-                pbrMetallicRoughness = new
-                {
-                    baseColorTexture = new { index = t },
-                    metallicFactor = 0.0,
-                    roughnessFactor = 0.9,
-                },
-                alphaMode = "MASK",
-                alphaCutoff = 0.5,
-                doubleSided = true,
-            });
         }
-        var fallbackMaterial = materials.Count;
-        materials.Add(new
+
+        // one material per (texture, tint) combo — dye multiplies base color
+        var materialByKey = new Dictionary<string, int>();
+        int MaterialFor(int texIndex, float[]? tint)
         {
-            pbrMetallicRoughness = new { baseColorFactor = new[] { 0.7, 0.7, 0.75, 1.0 }, metallicFactor = 0.0, roughnessFactor = 0.9 },
-            doubleSided = true,
-        });
+            var f = tint is { Length: 3 } ? new[] { (double)tint[0], tint[1], tint[2], 1.0 } : new[] { 1.0, 1.0, 1.0, 1.0 };
+            var key = $"{texIndex}:{f[0]:F3},{f[1]:F3},{f[2]:F3}";
+            if (materialByKey.TryGetValue(key, out var m)) return m;
+            m = materials.Count;
+            if (texIndex >= 0 && texIndex < pngTextures.Count)
+                materials.Add(new
+                {
+                    pbrMetallicRoughness = new
+                    {
+                        baseColorTexture = new { index = texIndex },
+                        baseColorFactor = f,
+                        metallicFactor = 0.0,
+                        roughnessFactor = 0.9,
+                    },
+                    alphaMode = "MASK",
+                    alphaCutoff = 0.5,
+                    doubleSided = true,
+                });
+            else
+                materials.Add(new
+                {
+                    pbrMetallicRoughness = new
+                    {
+                        baseColorFactor = tint is { Length: 3 } ? f : new[] { 0.7, 0.7, 0.75, 1.0 },
+                        metallicFactor = 0.0,
+                        roughnessFactor = 0.9,
+                    },
+                    doubleSided = true,
+                });
+            materialByKey[key] = m;
+            return m;
+        }
 
         foreach (var input in meshes)
         {
@@ -78,9 +97,7 @@ public static class GltfBuilder
                     {
                         attributes = attrs,
                         indices = idxAccessor,
-                        material = input.TextureIndex >= 0 && input.TextureIndex < pngTextures.Count
-                            ? input.TextureIndex
-                            : fallbackMaterial,
+                        material = MaterialFor(input.TextureIndex, input.Tint),
                     },
                 },
             });

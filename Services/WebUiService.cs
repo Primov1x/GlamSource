@@ -317,8 +317,7 @@ public sealed class WebUiService : IDisposable
 
         if (method == "GET" && path == "/api/model3d/debug")
         {
-            var slots = _shell.DebugSnapshot;
-            _modelExport.BuildGlb(slots);
+            _modelExport.BuildGlb(ResolveModelSlots());
             return Json(new { trace = _modelExport.LastTrace });
         }
 
@@ -328,8 +327,7 @@ public sealed class WebUiService : IDisposable
             // memory, no GPU, safe from any thread. Built from the current snapshot's items.
             try
             {
-                var slots = _shell.DebugSnapshot;
-                var glb = _modelExport.BuildGlb(slots);
+                var glb = _modelExport.BuildGlb(ResolveModelSlots());
                 return glb == null
                     ? ("404 Not Found", "application/octet-stream", Array.Empty<byte>())
                     : ("200 OK", "model/gltf-binary", glb);
@@ -387,6 +385,19 @@ public sealed class WebUiService : IDisposable
                 "POST /api/action/map?territory=&map=&x=&y=",
             },
         }, "404 Not Found");
+    }
+
+    // ponytail: viewer shows whoever the shell is showing; with no snapshot (nobody clicked yet),
+    // fall back to the player's own gear. Equipment read needs the Framework thread.
+    private System.Collections.Generic.IReadOnlyList<GlamSource.Core.EquipmentSlot> ResolveModelSlots()
+    {
+        var slots = _shell.DebugSnapshot;
+        if (slots.Count > 0) return slots;
+        try
+        {
+            return _framework.RunOnFrameworkThread(() => _glamour.GetSelfEquipment()).GetAwaiter().GetResult();
+        }
+        catch { return slots; }
     }
 
     private static (string, string, byte[]) Json(object payload, string status = "200 OK")
