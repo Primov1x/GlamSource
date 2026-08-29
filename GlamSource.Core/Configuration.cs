@@ -19,4 +19,7 @@ public class Configuration
 
     // ponytail: dev-only read-only state inspector (localhost HTTP), off by default.
     public bool DebugApiEnabled { get; set; } = false;
+
+    // ponytail: optional HTML alternative UI (localhost:23424), off by default.
+    public bool WebUiEnabled { get; set; } = false;
 }

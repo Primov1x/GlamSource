@@ -53,6 +53,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
     // Optional 3D preview window handle (wired by Plugin after ctor).
     public GlamourPreviewWindow? PreviewWindow { get; set; }
     public Action<bool>? OnDebugApiToggle { get; set; }
+    public Action<bool>? OnWebUiToggle { get; set; }
 
     // ---------- Lookup tab state (from MainWindow) ----------
     private string _lookupText = "";
@@ -1089,6 +1090,16 @@ private void ApplyTargetGlamourToSelf()
         }
         ImGui.SameLine();
         ImGuiComponents.HelpMarker("Read-only HTTP API on localhost:23423 for external tools.");
+
+        var webUiEnabled = _configuration.WebUiEnabled;
+        if (ImGui.Checkbox("Web UI", ref webUiEnabled))
+        {
+            _configuration.WebUiEnabled = webUiEnabled;
+            _configuration.Save();
+            OnWebUiToggle?.Invoke(webUiEnabled);
+        }
+        ImGui.SameLine();
+        ImGuiComponents.HelpMarker("HTML alternative UI on http://localhost:23424 — open in a browser or via Browsingway for an in-game overlay.");
 
         ImGui.Spacing();
         UiStyle.SectionHeader("Auto-Gathering");

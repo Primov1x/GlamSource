@@ -1041,7 +1041,7 @@ public class ItemDetailWindow : Window, IDisposable
     // ponytail: delegate to shared UiStyle so every window gets the accent-dot header.
     private static void SectionHeader(string title) => UiStyle.SectionHeader(title);
 
-    private static unsafe void TryOpenCraftingLog(uint itemId)
+    internal static unsafe void TryOpenCraftingLog(uint itemId)
     {
         try
         {
@@ -1124,7 +1124,7 @@ public class ItemDetailWindow : Window, IDisposable
         }
     }
 
-    private static unsafe void TryOpenDutyFinder(uint cfcRowId)
+    internal static unsafe void TryOpenDutyFinder(uint cfcRowId)
     {
         var agent = AgentContentsFinder.Instance();
         if (agent != null)

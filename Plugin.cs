@@ -65,6 +65,7 @@ public class Plugin : IAsyncDalamudPlugin
     public readonly TeleporterIpc TeleporterIpc;
     public readonly SimpleGatherService GatherService;
     private readonly DebugApiService debugApiService;
+    private readonly WebUiService webUiService;
 
     public Plugin(
         IDalamudPluginInterface pluginInterface,
@@ -154,6 +155,10 @@ public class Plugin : IAsyncDalamudPlugin
         debugApiService.SetEnabled(Configuration.DebugApiEnabled);
         shellWindow.OnDebugApiToggle = enabled => debugApiService.SetEnabled(enabled);
 
+        webUiService = new WebUiService(itemDetailService, GlamourServiceOverride ?? gameDataService, shellWindow, Framework, Log);
+        webUiService.SetEnabled(Configuration.WebUiEnabled);
+        shellWindow.OnWebUiToggle = enabled => webUiService.SetEnabled(enabled);
+
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
             HelpMessage = "Öffnet das GlamSource Fenster"
@@ -203,6 +208,7 @@ public class Plugin : IAsyncDalamudPlugin
             CraftingCostService?.Dispose();
             GatherService.Dispose();
             debugApiService.Dispose();
+            webUiService.Dispose();
 
             CommandManager.RemoveHandler(CommandName);
             _log.Info("[Plugin] DisposeAsync() completed");
