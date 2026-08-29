@@ -13,10 +13,18 @@ public sealed class DecodedMesh
     public float[] Uvs = [];         // xy per vertex (may be empty)
     public ushort[] Indices = [];
     public int MaterialIndex;
+
+    // ponytail: skinning inputs, 4 influences per vertex — enough for all classic (non-Dawntrail-
+    // extended 8-influence) meshes, which is everything we've tested. Empty when the mesh has no
+    // blend vertex elements (unskinned parts render rigid/bind-pose, same as before this existed).
+    public byte[] BlendIndices = [];  // 4 per vertex, local index into BoneTableIndex's table
+    public float[] BlendWeights = []; // 4 per vertex
+    public ushort BoneTableIndex;
+    public bool HasSkinning;
 }
 
-// ponytail: LOD0 only, positions/normals/uv0 only — no skinning (verts are stored in bind pose),
-// no color/tangent. Enough for a static glTF viewer; add channels when something needs them.
+// ponytail: LOD0 only, positions/normals/uv0/blend weights — no color/tangent. Enough for a static
+// or skinned glTF viewer; add channels when something needs them.
 public static class MdlGeometry
 {
     // Lumina.Models.Models.Vertex+VertexType values (verified via reflection against Lumina 7.6).
@@ -26,11 +34,14 @@ public static class MdlGeometry
     private const byte TByteFloat4 = 8;
     private const byte THalf2 = 13;
     private const byte THalf4 = 14;
-    // Dawntrail additions (xivModdingFramework naming); only hit for blend data we don't read.
+    // Dawntrail additions (xivModdingFramework naming); only hit for the extended 8-influence blend
+    // format we don't support yet — those meshes fall back to unskinned (HasSkinning stays false).
     private const byte TUShort2 = 16;
     private const byte TUShort4 = 17;
 
     private const byte UsagePosition = 0;
+    private const byte UsageBlendWeights = 1;
+    private const byte UsageBlendIndices = 2;
     private const byte UsageNormal = 3;
     private const byte UsageUv = 4;
 
@@ -50,29 +61,69 @@ public static class MdlGeometry
             {
                 Positions = new float[n * 3],
                 MaterialIndex = mesh.MaterialIndex,
+                BoneTableIndex = mesh.BoneTableIndex,
             };
+
+            byte[]? blendIdx = null;
+            float[]? blendWt = null;
 
             foreach (var el in decl.VertexElements)
             {
-                if (el.Usage != UsagePosition && el.Usage != UsageNormal && !(el.Usage == UsageUv && el.UsageIndex == 0))
-                    continue;
+                var isPos = el.Usage == UsagePosition;
+                var isNormal = el.Usage == UsageNormal;
+                var isUv0 = el.Usage == UsageUv && el.UsageIndex == 0;
+                var isBlendIdx = el.Usage == UsageBlendIndices;
+                var isBlendWt = el.Usage == UsageBlendWeights;
+                if (!isPos && !isNormal && !isUv0 && !isBlendIdx && !isBlendWt) continue;
+
                 var stride = mesh.VertexBufferStride(el.Stream);
                 var baseOffset = lod.VertexDataOffset + mesh.VertexBufferOffset(el.Stream) + el.Offset;
 
+                if (isBlendIdx)
+                {
+                    // raw bytes, never normalized — these are table indices, not a color/normal
+                    blendIdx = new byte[n * 4];
+                    for (var v = 0; v < n; v++)
+                    {
+                        var o = (int)(baseOffset + (uint)(v * stride));
+                        for (var c = 0; c < 4; c++) blendIdx[v * 4 + c] = data[o + c];
+                    }
+                    continue;
+                }
+                if (isBlendWt)
+                {
+                    // classic format only: 4 unsigned-normalized bytes (ByteFloat4) or 4 halfs.
+                    // Dawntrail's extended 8-influence format (UShort2/4 pairs) isn't handled —
+                    // those meshes just fall back to unskinned below.
+                    if (el.Type != TByteFloat4 && el.Type != THalf4) continue;
+                    blendWt = new float[n * 4];
+                    for (var v = 0; v < n; v++)
+                    {
+                        var o = (int)(baseOffset + (uint)(v * stride));
+                        for (var c = 0; c < 4; c++)
+                            blendWt[v * 4 + c] = el.Type == TByteFloat4 ? data[o + c] / 255f : (float)BitConverter.ToHalf(data, o + c * 2);
+                    }
+                    continue;
+                }
+
                 float[] target;
                 int comps;
-                switch (el.Usage)
-                {
-                    case UsagePosition: target = outMesh.Positions; comps = 3; break;
-                    case UsageNormal: outMesh.Normals = new float[n * 3]; target = outMesh.Normals; comps = 3; break;
-                    default: outMesh.Uvs = new float[n * 2]; target = outMesh.Uvs; comps = 2; break;
-                }
+                if (isPos) { target = outMesh.Positions; comps = 3; }
+                else if (isNormal) { outMesh.Normals = new float[n * 3]; target = outMesh.Normals; comps = 3; }
+                else { outMesh.Uvs = new float[n * 2]; target = outMesh.Uvs; comps = 2; }
 
                 for (var v = 0; v < n; v++)
                 {
                     var o = (int)(baseOffset + (uint)(v * stride));
                     ReadElement(data, o, el.Type, target.AsSpan(v * comps, comps));
                 }
+            }
+
+            if (blendIdx != null && blendWt != null)
+            {
+                outMesh.BlendIndices = blendIdx;
+                outMesh.BlendWeights = blendWt;
+                outMesh.HasSkinning = true;
             }
 
             // ponytail: only unconditional submeshes (AttributeIndexMask == 0) — the others are
@@ -117,7 +168,7 @@ public static class MdlGeometry
             case TUInt:
             case TUShort2:
             case TUShort4:
-                // blend indices/weights formats — never routed here (we only read pos/normal/uv),
+                // blend indices/weights formats — never routed here (handled separately above),
                 // but keep a defined behavior instead of throwing on odd files
                 dst.Clear();
                 break;

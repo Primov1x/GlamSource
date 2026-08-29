@@ -51,8 +51,9 @@ public sealed class ModelExportService
 
     /// <summary>Build a GLB containing all equipment models for the given slots. Returns null when
     /// nothing could be resolved.</summary>
-    public byte[]? BuildGlb(IReadOnlyList<EquipmentSlot> slots, CharacterModelInfo? chara = null, bool bypassCache = false)
+    public byte[]? BuildGlb(IReadOnlyList<EquipmentSlot> slots, CharacterModelInfo? chara = null, bool bypassCache = false, SkeletonPose? pose = null)
     {
+        bypassCache = bypassCache || pose != null; // live pose changes every capture — never cache it
         LastTrace.Clear();
         LastTrace.Add($"slots in: {slots.Count}, chara: {chara?.RaceCode ?? "none"}");
         var items = slots
@@ -134,6 +135,7 @@ public sealed class ModelExportService
             LastTrace.Add($"{slot}:{itemId} meshes decoded: {meshes.Count}");
             foreach (var m in meshes)
             {
+                if (pose != null) SkinApply.Apply(m, mdl.Bones, mdl.BoneTables, pose);
                 var texIndex = -1;
                 var effectiveTint = tint;
                 if (m.MaterialIndex >= 0 && m.MaterialIndex < mdl.Materials.Length)
@@ -169,14 +171,14 @@ public sealed class ModelExportService
             // ponytail: base body model id varies per race (Hyur etc = b0001, Viera male = b0002,
             // ...) — no full per-race table yet, just try the two ids confirmed to exist.
             var bodyId = _gameData.FileExists($"chara/human/{rc}/obj/body/b0001/model/{rc}b0001_top.mdl") ? "b0001" : "b0002";
-            AddCharaPart($"chara/human/{rc}/obj/body/{bodyId}/model/{rc}{bodyId}_top.mdl", rc, $"body/{bodyId}", skinTint, meshInputs, pngs, materialCache);
-            AddCharaPart($"chara/human/{rc}/obj/face/f{chara.Face:D4}/model/{rc}f{chara.Face:D4}_fac.mdl", rc, $"face/f{chara.Face:D4}", skinTint, meshInputs, pngs, materialCache);
-            AddCharaPart($"chara/human/{rc}/obj/hair/h{chara.Hair:D4}/model/{rc}h{chara.Hair:D4}_hir.mdl", rc, $"hair/h{chara.Hair:D4}", hairTint, meshInputs, pngs, materialCache);
+            AddCharaPart($"chara/human/{rc}/obj/body/{bodyId}/model/{rc}{bodyId}_top.mdl", rc, $"body/{bodyId}", skinTint, meshInputs, pngs, materialCache, pose);
+            AddCharaPart($"chara/human/{rc}/obj/face/f{chara.Face:D4}/model/{rc}f{chara.Face:D4}_fac.mdl", rc, $"face/f{chara.Face:D4}", skinTint, meshInputs, pngs, materialCache, pose);
+            AddCharaPart($"chara/human/{rc}/obj/hair/h{chara.Hair:D4}/model/{rc}h{chara.Hair:D4}_hir.mdl", rc, $"hair/h{chara.Hair:D4}", hairTint, meshInputs, pngs, materialCache, pose);
             if (chara.TailOrEars > 0)
             {
                 // tail (Miqo'te/Au Ra/Hrothgar) or ears (Viera) — whichever path exists
-                AddCharaPart($"chara/human/{rc}/obj/tail/t{chara.TailOrEars:D4}/model/{rc}t{chara.TailOrEars:D4}_til.mdl", rc, $"tail/t{chara.TailOrEars:D4}", hairTint, meshInputs, pngs, materialCache);
-                AddCharaPart($"chara/human/{rc}/obj/zear/z{chara.TailOrEars:D4}/model/{rc}z{chara.TailOrEars:D4}_zer.mdl", rc, $"zear/z{chara.TailOrEars:D4}", skinTint, meshInputs, pngs, materialCache);
+                AddCharaPart($"chara/human/{rc}/obj/tail/t{chara.TailOrEars:D4}/model/{rc}t{chara.TailOrEars:D4}_til.mdl", rc, $"tail/t{chara.TailOrEars:D4}", hairTint, meshInputs, pngs, materialCache, pose);
+                AddCharaPart($"chara/human/{rc}/obj/zear/z{chara.TailOrEars:D4}/model/{rc}z{chara.TailOrEars:D4}_zer.mdl", rc, $"zear/z{chara.TailOrEars:D4}", skinTint, meshInputs, pngs, materialCache, pose);
             }
         }
 
@@ -189,7 +191,7 @@ public sealed class ModelExportService
     /// <summary>Load one character base-model part (body/face/hair/tail/ears); silently skipped
     /// when the path doesn't exist for this race. Untextured meshes get the fallback tint.</summary>
     private void AddCharaPart(string mdlPath, string raceCode, string partFolder, float[] fallbackTint,
-        List<GltfMeshInput> meshInputs, List<byte[]> pngs, Dictionary<string, (int, float[]?)> materialCache)
+        List<GltfMeshInput> meshInputs, List<byte[]> pngs, Dictionary<string, (int, float[]?)> materialCache, SkeletonPose? pose)
     {
         if (!_gameData.FileExists(mdlPath)) { LastTrace.Add($"chara part missing: {mdlPath}"); return; }
         var raw = _gameData.GetFile(mdlPath);
@@ -203,6 +205,7 @@ public sealed class ModelExportService
         LastTrace.Add($"chara part {partFolder}: {meshes.Count} meshes");
         foreach (var m in meshes)
         {
+            if (pose != null) SkinApply.Apply(m, mdl.Bones, mdl.BoneTables, pose);
             var texIndex = -1;
             float[]? tint = fallbackTint;
             if (m.MaterialIndex >= 0 && m.MaterialIndex < mdl.Materials.Length)
