@@ -166,6 +166,11 @@ public class Plugin : IAsyncDalamudPlugin
         });
 
         PluginInterface.UiBuilder.Draw += WindowSystem.Draw;
+        // ponytail: web-UI 3D preview capture — deliberately NOT tied to any window's Draw(), so
+        // the web UI works with the ImGui window closed (the whole point of it). Still safe: this
+        // fires every frame in-line with Present, same as WindowSystem.Draw above — the one place
+        // D3D11 readback is allowed to happen. See PreviewRenderer.CaptureFrameForWeb.
+        PluginInterface.UiBuilder.Draw += () => previewRenderer.CaptureFrameForWeb(Configuration.WebUiLive3DPreview);
         PluginInterface.UiBuilder.OpenConfigUi += OpenConfigUi;
         PluginInterface.UiBuilder.OpenMainUi += ToggleMainUi;
 

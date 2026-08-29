@@ -403,10 +403,12 @@ public sealed unsafe class PreviewRenderer : IDisposable
     /// Draw(), never from here.</summary>
     public CapturedFrame? LatestWebFrame => _lastWebFrame;
 
-    /// <summary>Call once per Draw() while the web-UI 3D preview is enabled and this tab is visible —
-    /// same call context ImGui.Image already uses safely every frame. Throttled internally; cheap to
-    /// call every frame. Do NOT call this from Framework.RunOnFrameworkThread or any other thread —
-    /// the immediate D3D11 context must only be touched here, in-line with the game's own Present.</summary>
+    /// <summary>Call once per UiBuilder.Draw frame (Plugin.cs wires this, unconditionally — not tied
+    /// to any window's visibility, so the web UI keeps working with the ImGui window closed) — same
+    /// call context ImGui.Image already uses safely every frame. Throttled internally; cheap to call
+    /// every frame. Returns immediately (no-op) if CharaView was never initialized. Do NOT call this
+    /// from Framework.RunOnFrameworkThread or any other thread — the immediate D3D11 context must
+    /// only be touched here, in-line with the game's own Present.</summary>
     public void CaptureFrameForWeb(bool enabled)
     {
         if (!enabled) { _lastWebFrame = null; return; }
