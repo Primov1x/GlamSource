@@ -76,3 +76,10 @@ Replace all references to `SamplePlugin` in all the files and filenames with you
 Dalamud will load the JSON file (by default, `SamplePlugin/SamplePlugin.json`) next to your DLL and use it for metadata, including the description for your plugin in the Plugin Installer. Make sure to update this with information relevant to _your_ plugin!
 
 All participation in this repository is governed by our [Code of Conduct](https://dalamud.dev/code-of-conduct). If you used AI tooling at any point, review the [AI Usage Policy](https://dalamud.dev/plugin-publishing/ai-policy) and disclose your level of AI use. Entirely AI-generated submissions will be rejected, and undisclosed AI use may result in a ban.
+
+## Web UI (optional)
+
+Settings → "Web UI" starts an HTML alternative UI on `http://localhost:23424` (localhost only, off by default). Feature parity with the ImGui shell: item search, item detail with sources, character snapshot, plus in-game actions (crafting log, duty finder, map marker).
+
+- **Browser**: open `http://localhost:23424` on any monitor.
+- **In-game overlay**: install the Browsingway plugin and point an inlay at the same URL.
