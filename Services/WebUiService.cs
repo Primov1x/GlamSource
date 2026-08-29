@@ -198,7 +198,9 @@ public sealed class WebUiService : IDisposable
         var query = HttpUtility.ParseQueryString(qIdx >= 0 ? rawUrl[(qIdx + 1)..] : "");
 
         var (status, contentType, body) = Route(method, path, query);
-        var head = $"HTTP/1.1 {status}\r\nContent-Type: {contentType}\r\nContent-Length: {body.Length}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n";
+        // ponytail: no-store — Browsingway's CEF page is long-lived and any caching here means an
+        // update ships but the overlay silently keeps serving the old HTML/JS.
+        var head = $"HTTP/1.1 {status}\r\nContent-Type: {contentType}\r\nContent-Length: {body.Length}\r\nCache-Control: no-store\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n";
         stream.Write(Encoding.ASCII.GetBytes(head));
         stream.Write(body);
         stream.Flush();

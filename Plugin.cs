@@ -253,7 +253,7 @@ public class Plugin : IAsyncDalamudPlugin
                 // ponytail: Browsingway's overlay is a persistent CEF page — it does NOT reload just
                 // because the URL string is unchanged, so every GlamSource update otherwise sits
                 // stale in an already-open overlay until the user manually reloads it. Force one here.
-                CommandManager.ProcessCommand("/bw overlay glamsource reload");
+                CommandManager.ProcessCommand("/bw overlay glamsource reload toggle");
                 CommandManager.ProcessCommand("/bw overlay glamsource hidden on");
                 _bwHideDone = true;
             }
