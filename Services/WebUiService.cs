@@ -167,6 +167,10 @@ public sealed class WebUiService : IDisposable
             _ = Task.Run(() =>
             {
                 try { HandleClient(client); }
+                // ponytail: browsers/Browsingway routinely open a probe connection and never send a
+                // full request (keep-alive checks, speculative preconnects) — that's an IOException
+                // from the read timeout, not a real error. Only log genuine failures.
+                catch (IOException) { }
                 catch (Exception ex) { _log.Error($"[WebUi] request error: {ex.Message}"); }
                 finally { client.Dispose(); }
             }, token);
