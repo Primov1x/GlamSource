@@ -36,6 +36,15 @@ public static unsafe class CustomizeColorsService
         float[] Sqrt3(System.Numerics.Vector3 v) => new[] { MathF.Sqrt(MathF.Max(0, v.X)), MathF.Sqrt(MathF.Max(0, v.Y)), MathF.Sqrt(MathF.Max(0, v.Z)) };
         var skin = new[] { MathF.Sqrt(MathF.Max(0, p.SkinColor.X)), MathF.Sqrt(MathF.Max(0, p.SkinColor.Y)), MathF.Sqrt(MathF.Max(0, p.SkinColor.Z)) };
         var hair = Sqrt3(p.MainColor);
+
+        // ponytail: reported result was flat white skin/hair (ears, untextured face overlays) —
+        // a near-(1,1,1) or near-(0,0,0) read means the cbuffer wasn't actually populated yet (or
+        // we read it at the wrong moment/offset), not a real customize color. No real character
+        // has literally pure white or pure black skin/hair; reject and let the caller fall back
+        // to the flat approximation instead of trusting garbage.
+        bool IsDegenerate(float[] c) => (c[0] > 0.97f && c[1] > 0.97f && c[2] > 0.97f) || (c[0] < 0.02f && c[1] < 0.02f && c[2] < 0.02f);
+        if (IsDegenerate(skin) || IsDegenerate(hair)) return null;
+
         return new CustomizeColors(skin, hair);
     }
 }
