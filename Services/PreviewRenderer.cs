@@ -275,7 +275,6 @@ public sealed unsafe class PreviewRenderer : IDisposable
                 // sticks in _items when the next Recent doesn't cover that slot.
                 agent->CharaView.SetItemSlotData((byte)slotId, itemId, slot.Stain0, slot.Stain1, 0, false);
             }
-            if ((_counter % 60) == 0) _log.Info($"[PreviewRenderer] overlay tick — {overlay!.Count} slots written via SetItemSlotData");
         }
         else if (!_suspendCharacterCopy && _sourceProvider != null)
         {

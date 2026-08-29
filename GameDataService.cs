@@ -25,7 +25,6 @@ public unsafe class GameDataService : IGlamourService
     private readonly IItemSourceService _sourceService;
     private readonly IGameGui _gameGui;
     private Dictionary<EquipmentSlotType, List<Item>>? _itemsBySlot;
-    private bool _debugLogged;
     private readonly Dictionary<ulong, (IReadOnlyList<EquipmentSlot> data, ulong targetGameObjectId)> _examineCache = new();
 
     public GameDataService(IDataManager dataManager, ITargetManager targetManager, IObjectTable objectTable, IGameGui gameGui, IItemSourceService? sourceService = null)
@@ -292,13 +291,6 @@ public unsafe class GameDataService : IGlamourService
             var slotType = glamourSlot;
             var candidates = _itemsBySlot?.GetValueOrDefault(slotType);
             var matchedItem = FindItemByModelId(candidates, modelId, isWeapon: true, weaponModelMain: i == 0, weaponModelType: weaponData.Type, weaponModelVariant: (byte)weaponData.Variant);
-
-            if (!_debugLogged)
-            {
-                _debugLogged = true;
-                Plugin.Log.Information("[DEBUG] Weapon slot {Slot}: DrawData modelId={ModelId} type={Type} variant={Variant} => matched RowId={RowId} Name={Name}",
-                    i, modelId, weaponData.Type, weaponData.Variant, matchedItem?.RowId ?? 0, matchedItem != null && matchedItem.Value.RowId > 0 ? matchedItem.Value.Name.ToString() : "none");
-            }
 
             var itemRowId = matchedItem?.RowId ?? 0;
             var itemName = itemRowId > 0 ? (matchedItem?.Name.ToString() ?? "Unknown") : "Unknown";
