@@ -8,8 +8,9 @@ using System.Text.Json;
 namespace GlamSource.Services.ModelExport;
 
 /// <summary>One mesh plus the index of its PNG texture (into the textures list), or -1 for none.
-/// Tint (RGB 0-1) multiplies the base color — rough whole-mesh dye approximation.</summary>
-public sealed record GltfMeshInput(DecodedMesh Geometry, int TextureIndex, float[]? Tint = null);
+/// Tint (RGB 0-1) multiplies the base color — rough whole-mesh dye approximation. NormalTextureIndex
+/// is a decoded tangent-space normal map (see NormalMapDecoder), or -1 for none.</summary>
+public sealed record GltfMeshInput(DecodedMesh Geometry, int TextureIndex, float[]? Tint = null, int NormalTextureIndex = -1);
 
 // ponytail: hand-rolled GLB (glTF 2.0 binary) writer — the format is just JSON + one binary
 // buffer; a gltf library dependency would be bigger than this file.
@@ -33,12 +34,13 @@ public static class GltfBuilder
             textures.Add(new { source = t });
         }
 
-        // one material per (texture, tint) combo — dye multiplies base color
+        // one material per (texture, tint, normal texture) combo — dye multiplies base color
         var materialByKey = new Dictionary<string, int>();
-        int MaterialFor(int texIndex, float[]? tint)
+        int MaterialFor(int texIndex, float[]? tint, int normalTexIndex)
         {
             var f = tint is { Length: 3 } ? new[] { (double)tint[0], tint[1], tint[2], 1.0 } : new[] { 1.0, 1.0, 1.0, 1.0 };
-            var key = $"{texIndex}:{f[0]:F3},{f[1]:F3},{f[2]:F3}";
+            var hasNormal = normalTexIndex >= 0 && normalTexIndex < pngTextures.Count;
+            var key = $"{texIndex}:{f[0]:F3},{f[1]:F3},{f[2]:F3}:{(hasNormal ? normalTexIndex : -1)}";
             if (materialByKey.TryGetValue(key, out var m)) return m;
             m = materials.Count;
             if (texIndex >= 0 && texIndex < pngTextures.Count)
@@ -51,6 +53,7 @@ public static class GltfBuilder
                         metallicFactor = 0.0,
                         roughnessFactor = 0.9,
                     },
+                    normalTexture = hasNormal ? new { index = normalTexIndex } : null,
                     alphaMode = "MASK",
                     alphaCutoff = 0.5,
                     doubleSided = true,
@@ -97,7 +100,7 @@ public static class GltfBuilder
                     {
                         attributes = attrs,
                         indices = idxAccessor,
-                        material = MaterialFor(input.TextureIndex, input.Tint),
+                        material = MaterialFor(input.TextureIndex, input.Tint, input.NormalTextureIndex),
                     },
                 },
             });

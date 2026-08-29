@@ -59,10 +59,12 @@ public static class SkinApply
             if (wsum <= 0.0001f) continue; // no influence found — leave bind-pose vertex as-is
             skinnedPos /= wsum;
 
-            // sanity guard: a bad bind-pose/bone match can fling a vertex meters away (or NaN it) —
-            // character meshes are ~2m tall, so a shift beyond that is bad data, not a real pose.
-            // Fall back to the original bind-pose vertex instead of shipping exploded/invisible geometry.
-            if (!IsFinite(skinnedPos) || Vector3.DistanceSquared(skinnedPos, pos) > 25f) { rejected++; continue; }
+            // sanity guard: a bad bind-pose/bone match can fling a vertex away (or NaN it). Large
+            // limb rotations (a raised arm, long Viera ears) can legitimately move a vertex close
+            // to a meter from bind position, so this only catches outright-broken data, not normal
+            // pose motion. Was 5m — too loose to catch a reported exploded/stretched finger; 1m is
+            // still generous but should catch a genuinely degenerate transform.
+            if (!IsFinite(skinnedPos) || Vector3.DistanceSquared(skinnedPos, pos) > 1f) { rejected++; continue; }
 
             skinnedCount++;
             mesh.Positions[v * 3] = skinnedPos.X;

@@ -68,7 +68,7 @@ public sealed class ModelExportService
 
         var meshInputs = new List<GltfMeshInput>();
         var pngs = new List<byte[]>();
-        var materialCache = new Dictionary<string, (int, float[]?)>();
+        var materialCache = new Dictionary<string, (int, float[]?, int)>();
 
         var itemSheet = _gameData.GetExcelSheet<Lumina.Excel.Sheets.Item>();
         var stainSheet = _gameData.GetExcelSheet<Lumina.Excel.Sheets.Stain>();
@@ -164,11 +164,13 @@ public sealed class ModelExportService
                         : bodyRefMatch.Success
                             ? $"chara/human/c{bodyRefMatch.Groups[1].Value}/obj/body/b{bodyRefMatch.Groups[2].Value}/material/v0001{mtrlName}"
                             : $"chara/{info.Category}/{info.Prefix}{setId:D4}/material/v{materialId:D4}{mtrlName}";
-                    var (t, colorSetTint) = ResolveMaterialByPath(mtrlPath, pngs, materialCache);
+                    var (t, colorSetTint, normalTex) = ResolveMaterialByPath(mtrlPath, pngs, materialCache);
                     texIndex = t;
                     // stain always wins over colorset average when the item is actually dyed
                     if (texIndex < 0 && effectiveTint == null) effectiveTint = colorSetTint;
-                    LastTrace.Add($"{slot}:{itemId} mesh mtrl={mtrlPath} tex={texIndex} colorSetTint={(colorSetTint == null ? "null" : $"{colorSetTint[0]:F2},{colorSetTint[1]:F2},{colorSetTint[2]:F2}")} stain={(tint == null ? "null" : $"{tint[0]:F2},{tint[1]:F2},{tint[2]:F2}")}");
+                    LastTrace.Add($"{slot}:{itemId} mesh mtrl={mtrlPath} tex={texIndex} normal={normalTex} colorSetTint={(colorSetTint == null ? "null" : $"{colorSetTint[0]:F2},{colorSetTint[1]:F2},{colorSetTint[2]:F2}")} stain={(tint == null ? "null" : $"{tint[0]:F2},{tint[1]:F2},{tint[2]:F2}")}");
+                    meshInputs.Add(new GltfMeshInput(m, texIndex, effectiveTint, normalTex));
+                    continue;
                 }
                 meshInputs.Add(new GltfMeshInput(m, texIndex, effectiveTint));
             }
@@ -204,7 +206,7 @@ public sealed class ModelExportService
     /// <summary>Load one character base-model part (body/face/hair/tail/ears); silently skipped
     /// when the path doesn't exist for this race. Untextured meshes get the fallback tint.</summary>
     private void AddCharaPart(string mdlPath, string raceCode, string partFolder, float[] fallbackTint,
-        List<GltfMeshInput> meshInputs, List<byte[]> pngs, Dictionary<string, (int, float[]?)> materialCache, SkeletonPose? pose)
+        List<GltfMeshInput> meshInputs, List<byte[]> pngs, Dictionary<string, (int, float[]?, int)> materialCache, SkeletonPose? pose)
     {
         if (!_gameData.FileExists(mdlPath)) { LastTrace.Add($"chara part missing: {mdlPath}"); return; }
         var raw = _gameData.GetFile(mdlPath);
@@ -231,31 +233,40 @@ public sealed class ModelExportService
             if (m.MaterialIndex >= 0 && m.MaterialIndex < mdl.Materials.Length)
             {
                 var mtrlName = mdl.Materials[m.MaterialIndex];
+                // ponytail: some non-Hyur body models (e.g. Viera b0002) reference the shared
+                // Hyur skin material by name (skin_mask.tex etc. is generic across races) instead
+                // of their own race's folder — same misroute the equipment loop already handles,
+                // route those to c0101's body folder instead of 404ing under this race/part.
+                var bodyRefMatch = System.Text.RegularExpressions.Regex.Match(mtrlName, @"^/mt_c(\d{4})b(\d{4})_");
                 // ponytail: body/hair materials sit under a v0001 variant folder, face materials
                 // don't (verified against real files) — try with it first, fall back without.
                 var mtrlPathVariant = $"chara/human/{raceCode}/obj/{partFolder}/material/v0001{mtrlName}";
                 var mtrlPathFlat = $"chara/human/{raceCode}/obj/{partFolder}/material{mtrlName}";
-                var mtrlPath = mtrlName.StartsWith('/')
-                    ? (_gameData.FileExists(mtrlPathVariant) ? mtrlPathVariant : mtrlPathFlat)
-                    : mtrlName;
-                var (t, colorSetTint) = ResolveMaterialByPath(mtrlPath, pngs, materialCache);
+                var mtrlPath = bodyRefMatch.Success
+                    ? $"chara/human/c{bodyRefMatch.Groups[1].Value}/obj/body/b{bodyRefMatch.Groups[2].Value}/material/v0001{mtrlName}"
+                    : mtrlName.StartsWith('/')
+                        ? (_gameData.FileExists(mtrlPathVariant) ? mtrlPathVariant : mtrlPathFlat)
+                        : mtrlName;
+                var (t, colorSetTint, normalTex) = ResolveMaterialByPath(mtrlPath, pngs, materialCache);
                 texIndex = t;
                 // untextured -> colorset average if we found one, else flat fallback
                 if (texIndex < 0) tint = colorSetTint ?? fallbackTint;
+                // ponytail: skin/hair "_base"/"_hir" textures are a neutral grounding layer, not the
+                // final color — the game multiplies them by the character's actual skin/hair color
+                // (set via CustomizeParameter, which we don't have file access to). Always multiply
+                // by our flat approximation, even when a texture was found — a bare base.tex renders
+                // as dull blue-gray, not skin tone.
+                meshInputs.Add(new GltfMeshInput(m, texIndex, tint, normalTex));
+                continue;
             }
-            // ponytail: skin/hair "_base"/"_hir" textures are a neutral grounding layer, not the
-            // final color — the game multiplies them by the character's actual skin/hair color
-            // (set via CustomizeParameter, which we don't have file access to). Always multiply by
-            // our flat approximation, even when a texture was found — a bare base.tex renders as
-            // dull blue-gray, not skin tone.
             meshInputs.Add(new GltfMeshInput(m, texIndex, tint));
         }
     }
 
-    private (int Tex, float[]? Tint) ResolveMaterialByPath(string mtrlPath, List<byte[]> pngs, Dictionary<string, (int, float[]?)> cache)
+    private (int Tex, float[]? Tint, int NormalTex) ResolveMaterialByPath(string mtrlPath, List<byte[]> pngs, Dictionary<string, (int, float[]?, int)> cache)
     {
         if (cache.TryGetValue(mtrlPath, out var cached)) return cached;
-        (int, float[]?) result = (-1, null);
+        (int, float[]?, int) result = (-1, null, -1);
         try
         {
             if (!_gameData.FileExists(mtrlPath)) { LastTrace.Add($"  mtrl missing: {mtrlPath}"); cache[mtrlPath] = result; return result; }
@@ -264,13 +275,15 @@ public sealed class ModelExportService
             var mtrl = _gameData.GetFile<MtrlFile>(mtrlPath);
             var texPath = PickDiffuse(mtrl);
             LastTrace.Add($"  mtrl={mtrlPath} allTex=[{string.Join(", ", MaterialTexturePaths(mtrl))}] picked={texPath ?? "none"}");
+            var texIndex = -1;
+            float[]? colorSetTint = null;
             if (texPath != null && _gameData.FileExists(texPath))
             {
                 var tex = _gameData.GetFile<TexFile>(texPath);
                 if (tex != null)
                 {
                     var png = PngEncoder.EncodeRgba(tex.ImageData, tex.Header.Width, tex.Header.Height);
-                    result = (pngs.Count, null);
+                    texIndex = pngs.Count;
                     pngs.Add(png);
                 }
                 else LastTrace.Add($"  tex GetFile null: {texPath}");
@@ -279,7 +292,7 @@ public sealed class ModelExportService
             // material's color table, and WHICH row applies per-pixel comes from the id texture
             // (Red = ramp position, Green = A/B blend — see MaterialColorTable.BakeDiffuse). Bake
             // a real diffuse texture when we have an id map; a flat colorset average otherwise.
-            if (result.Item1 < 0 && mtrlRaw != null)
+            if (texIndex < 0 && mtrlRaw != null)
             {
                 var idPath = MaterialTexturePaths(mtrl).FirstOrDefault(p => p.EndsWith("_id.tex"));
                 byte[]? baked = null;
@@ -291,18 +304,36 @@ public sealed class ModelExportService
                     if (baked != null)
                     {
                         var png = PngEncoder.EncodeRgba(baked, idTex!.Header.Width, idTex.Header.Height);
-                        result = (pngs.Count, null);
+                        texIndex = pngs.Count;
                         pngs.Add(png);
                         LastTrace.Add($"  colorset BAKED via {idPath} ({idTex.Header.Width}x{idTex.Header.Height})");
                     }
                 }
                 if (baked == null)
                 {
-                    var tint = Penumbra.GameData.Files.MaterialColorTable.AverageDiffuse(mtrlRaw.Data);
-                    LastTrace.Add($"  colorset tint (no id map): {(tint == null ? "null" : $"{tint[0]:F2},{tint[1]:F2},{tint[2]:F2}")}");
-                    result = (-1, tint);
+                    colorSetTint = Penumbra.GameData.Files.MaterialColorTable.AverageDiffuse(mtrlRaw.Data);
+                    LastTrace.Add($"  colorset tint (no id map): {(colorSetTint == null ? "null" : $"{colorSetTint[0]:F2},{colorSetTint[1]:F2},{colorSetTint[2]:F2}")}");
                 }
             }
+
+            // normal map: BC5 (X/Y only, Z reconstructed) — see NormalMapDecoder. Suffix varies by
+            // asset family ("_n.tex" on some equipment, "_norm.tex" on chara parts/other gear).
+            var normalIndex = -1;
+            var normalPath = MaterialTexturePaths(mtrl).FirstOrDefault(p => p.EndsWith("_n.tex"))
+                ?? MaterialTexturePaths(mtrl).FirstOrDefault(p => p.EndsWith("_norm.tex"));
+            if (normalPath != null && _gameData.FileExists(normalPath))
+            {
+                var nTex = _gameData.GetFile<TexFile>(normalPath);
+                if (nTex != null)
+                {
+                    var decoded = NormalMapDecoder.DecodeFromBc5(nTex.ImageData, nTex.Header.Width, nTex.Header.Height);
+                    var png = PngEncoder.EncodeRgba(decoded, nTex.Header.Width, nTex.Header.Height);
+                    normalIndex = pngs.Count;
+                    pngs.Add(png);
+                }
+            }
+
+            result = (texIndex, colorSetTint, normalIndex);
         }
         catch (Exception ex) { LastTrace.Add($"  mtrl exception: {ex.Message}"); }
         cache[mtrlPath] = result;
