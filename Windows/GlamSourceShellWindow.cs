@@ -207,6 +207,19 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
     {
         using var _style = UiStyle.Push();
 
+        if (_configuration.WebUiEnabled && _configuration.WebUiAutoOverlay && IsBrowsingwayLoaded())
+        {
+            using (ImRaii.PushColor(ImGuiCol.Button, UiStyle.Accent))
+            using (ImRaii.PushColor(ImGuiCol.Text, new Vector4(0.05f, 0.05f, 0.06f, 1f)))
+            {
+                if (ImGui.Button("Open Web UI"))
+                    SetWebUiOverlay(true);
+            }
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Re-show the in-game web overlay — use this if it was hidden/closed.");
+            ImGui.Separator();
+        }
+
         if (ImGui.BeginTabBar("##GlamSourceShellTabs", ImGuiTabBarFlags.None))
         {
             DrawTab("Lookup",    TabId.Lookup,    DrawLookupTab);

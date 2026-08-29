@@ -73,8 +73,7 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
   <span class="brand">GlamSource</span>
   <span class="sub">web ui</span>
   <span class="spacer"></span>
-  <button id="btn-min" title="Minimize" onclick="toggleMin()">–</button>
-  <button title="Close" onclick="post('/api/action/overlay/hide')">×</button>
+  <button title="Hide (reopen from the GlamSource window)" onclick="post('/api/action/overlay/hide')">×</button>
 </div>
 <div id="app">
 <nav>
@@ -96,12 +95,6 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 </div>
 <script>
 const $=s=>document.querySelector(s);
-function toggleMin(){
-  const app=$('#app');
-  const min=app.style.display==='none';
-  app.style.display=min?'':'none';
-  $('#btn-min').textContent=min?'–':'+';
-}
 const icon=id=>{if(!id)return'';const f=String(Math.floor(id/1000)*1000).padStart(6,'0');const n=String(id).padStart(6,'0');return`https://xivapi.com/i/${f}/${n}.png`};
 const esc=t=>(t??'').toString().replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const img=(id,size)=>`<img src="${icon(id)}" width="${size}" height="${size}" loading="lazy" onerror="this.style.visibility='hidden'">`;
