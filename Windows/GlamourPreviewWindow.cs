@@ -34,7 +34,6 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
     private bool _frameworkHooked;
     private Vector2? _lastDragPos;
     private PreviewMode _mode = PreviewMode.CurrentGear;
-    private bool _weaponDrawn = true;
 
     // ponytail: cache target by EntityId, not ObjectIndex (ObjectIndex is flaky during game updates).
     private uint _targetEntityId = 0;
@@ -321,11 +320,6 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
         if (ImGui.SmallButton("Reload"))
             _framework.RunOnFrameworkThread(ApplyModeState);
         ImGui.SameLine();
-        if (ImGui.Checkbox("Draw Weapon", ref _weaponDrawn))
-        {
-            var drawn = _weaponDrawn;
-            _framework.RunOnFrameworkThread(() => _renderer.ToggleDrawWeapon(drawn));
-        }
         ImGui.TextDisabled("Drag image to rotate");
 
         var zoom = _renderer.Zoom;

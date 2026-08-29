@@ -739,6 +739,12 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
             return;
         }
 
+        if (ImGui.Checkbox("Draw Weapon", ref _weaponDrawn))
+        {
+            var drawn = _weaponDrawn;
+            _framework.RunOnFrameworkThread(() => renderer.ToggleDrawWeapon(drawn));
+        }
+
         var avail = ImGui.GetContentRegionAvail();
         var h = MathF.Max(ImGui.GetFontSize() * 12f, avail.Y - ImGui.GetFontSize() * 6f);
         var w = MathF.Max(ImGui.GetFontSize() * 8f, avail.X);
@@ -768,7 +774,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
                 _framework.RunOnFrameworkThread(() =>
                 {
                     renderer.SetZoom(newZoom);
-                    renderer.PanCamera(offsetX * wheel * 0.02f, offsetY * wheel * 0.02f);
+                    renderer.PanCamera(offsetX * wheel * 0.2f, offsetY * wheel * 0.2f);
                 });
             }
         }
@@ -804,6 +810,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
     }
 
     private Vector2? _previewDragLast;
+    private bool _weaponDrawn = true;
 
     private void DrawRecentSidebar()
     {
