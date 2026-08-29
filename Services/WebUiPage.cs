@@ -275,6 +275,12 @@ async function startViewer(){
     box.style.display='block';
     const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
     renderer.setSize(box.clientWidth,box.clientHeight);
+    // ponytail: lights at 2.0+2.0 with no tone mapping blew every mid-tone toward white/saturated
+    // — a near-black dyed material (baseColorFactor ~0.12) still rendered as bright vivid color.
+    // ACES + realistic light levels is the standard three.js fix for "everything looks washed out".
+    renderer.toneMapping=THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure=1.0;
+    renderer.outputColorSpace=THREE.SRGBColorSpace;
     box.appendChild(renderer.domElement);
     const scene=new THREE.Scene();
     scene.background=new THREE.Color(0x14161c);
@@ -282,8 +288,8 @@ async function startViewer(){
     camera.position.set(0,1.2,2.2);
     const controls=new OrbitControls(camera,renderer.domElement);
     controls.target.set(0,1.0,0);
-    scene.add(new THREE.AmbientLight(0xffffff,2.0));
-    const dir=new THREE.DirectionalLight(0xffffff,2.0);
+    scene.add(new THREE.AmbientLight(0xffffff,0.6));
+    const dir=new THREE.DirectionalLight(0xffffff,1.2);
     dir.position.set(2,3,2);
     scene.add(dir);
     window._glamViewer={THREE,GLTFLoader,scene,renderer,camera,controls,box,model:null};
