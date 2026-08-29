@@ -1334,20 +1334,6 @@ public class ItemDetailWindow : Window, IDisposable
             .Select(c => $"{c.ItemId}x{c.Count}"));
     }
 
-    private string GetCostTitle(ItemSourceDetail src)
-    {
-        if (src.Type != ItemSourceType.Vendor)
-            return src.Description;
-
-        if (src.Costs == null || src.Costs.Count == 0)
-            return src.Description;
-
-        return string.Join(", ", src.Costs
-            .Select(c => c.ItemId == 0
-                ? $"{FormatNumber(c.Count)} Gil"
-                : $"{FormatNumber(c.Count)} {c.Name}"));
-    }
-
     private void DrawCraftedCard(List<ItemSourceDetail> sources, int groupIdx, uint itemIconId)
     {
         var first = sources[0];
