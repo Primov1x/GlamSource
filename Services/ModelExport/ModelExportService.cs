@@ -200,6 +200,7 @@ public sealed class ModelExportService
         {
             if (_gameData.FileExists(mtrlPath))
             {
+                var mtrlRaw = _gameData.GetFile(mtrlPath);
                 var mtrl = _gameData.GetFile<MtrlFile>(mtrlPath);
                 var texPath = PickDiffuse(mtrl);
                 if (texPath != null && _gameData.FileExists(texPath))
@@ -212,34 +213,16 @@ public sealed class ModelExportService
                         pngs.Add(png);
                     }
                 }
-                if (result.Item1 < 0 && mtrl != null)
-                    result = (-1, TintFromColorSet(mtrl));
+                // Dawntrail-era gear commonly has no diffuse texture at all — color lives in the
+                // material's color table. Read from raw bytes (Lumina's own ColorSetInfo is a
+                // fixed pre-Dawntrail 512-byte buffer and misreads the current 32-row format).
+                if (result.Item1 < 0 && mtrlRaw != null)
+                    result = (-1, Penumbra.GameData.Files.MaterialColorTable.AverageDiffuse(mtrlRaw.Data));
             }
         }
         catch { /* untextured fallback */ }
         cache[mtrlPath] = result;
         return result;
-    }
-
-    /// <summary>Average diffuse color over the material's colorset rows — Dawntrail-era gear often
-    /// has no diffuse texture at all; its color lives in this table. Rough (per-pixel row mapping
-    /// via the id texture is ignored) but beats flat gray.</summary>
-    private static unsafe float[]? TintFromColorSet(MtrlFile mtrl)
-    {
-        var info = mtrl.ColorSetInfo;
-        float r = 0, g = 0, b = 0;
-        var n = 0;
-        for (var row = 0; row < 16; row++)
-        {
-            var cr = (float)BitConverter.UInt16BitsToHalf(info.Data[row * 16 + 0]);
-            var cg = (float)BitConverter.UInt16BitsToHalf(info.Data[row * 16 + 1]);
-            var cb = (float)BitConverter.UInt16BitsToHalf(info.Data[row * 16 + 2]);
-            if (float.IsNaN(cr) || float.IsNaN(cg) || float.IsNaN(cb)) continue;
-            if (cr + cg + cb < 0.02f) continue; // empty/black row
-            r += Math.Clamp(cr, 0f, 1f); g += Math.Clamp(cg, 0f, 1f); b += Math.Clamp(cb, 0f, 1f);
-            n++;
-        }
-        return n > 0 ? new[] { r / n, g / n, b / n } : null;
     }
 
     /// <summary>Pick the diffuse/base texture from a material's texture list — "_d.tex" preferred,
