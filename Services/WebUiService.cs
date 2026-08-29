@@ -317,19 +317,20 @@ public sealed class WebUiService : IDisposable
 
         if (method == "GET" && path == "/api/model3d/debug")
         {
-            var (dbgSlots, dbgChara) = ResolveModelInputs();
-            _modelExport.BuildGlb(dbgSlots, dbgChara, bypassCache: true);
-            return Json(new { trace = _modelExport.LastTrace });
+            var (dbgSlots, dbgChara, dbgPose) = ResolveModelInputs();
+            _modelExport.BuildGlb(dbgSlots, dbgChara, bypassCache: true, pose: dbgPose);
+            return Json(new { trace = _modelExport.LastTrace, live = dbgPose != null });
         }
 
         if (method == "GET" && path == "/api/model3d.glb")
         {
-            // ponytail: pure file parsing (Lumina + vendored Penumbra mdl parser) — no game
-            // memory, no GPU, safe from any thread. Built from the current snapshot's items.
+            // ponytail: mdl/mtrl/tex parsing is pure file I/O (Lumina + vendored Penumbra parser),
+            // safe from any thread — only the skeleton pose read (ResolveModelInputs) touches game
+            // memory, and that's already marshalled onto the framework thread.
             try
             {
-                var (glbSlots, glbChara) = ResolveModelInputs();
-                var glb = _modelExport.BuildGlb(glbSlots, glbChara);
+                var (glbSlots, glbChara, glbPose) = ResolveModelInputs();
+                var glb = _modelExport.BuildGlb(glbSlots, glbChara, pose: glbPose);
                 return glb == null
                     ? ("404 Not Found", "application/octet-stream", Array.Empty<byte>())
                     : ("200 OK", "model/gltf-binary", glb);
@@ -392,7 +393,7 @@ public sealed class WebUiService : IDisposable
     // ponytail: viewer shows whoever the shell is showing; with no snapshot (nobody clicked yet),
     // fall back to the player's own gear. Body/face/hair always come from the LOCAL player's
     // Customize — Recent snapshots don't store appearance (yet). Framework thread for both.
-    private (System.Collections.Generic.IReadOnlyList<GlamSource.Core.EquipmentSlot> Slots, ModelExport.CharacterModelInfo? Chara) ResolveModelInputs()
+    private (System.Collections.Generic.IReadOnlyList<GlamSource.Core.EquipmentSlot> Slots, ModelExport.CharacterModelInfo? Chara, ModelExport.SkeletonPose? Pose) ResolveModelInputs()
     {
         var slots = _shell.DebugSnapshot;
         try
@@ -401,6 +402,7 @@ public sealed class WebUiService : IDisposable
             {
                 var effective = slots.Count > 0 ? slots : _glamour.GetSelfEquipment();
                 ModelExport.CharacterModelInfo? chara = null;
+                ModelExport.SkeletonPose? pose = null;
                 if (Plugin.ObjectTable.LocalPlayer is { } pc && pc.Customize is { Length: > 0 } c)
                 {
                     var race = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.Race];
@@ -411,11 +413,16 @@ public sealed class WebUiService : IDisposable
                     var tail = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.RaceFeatureType];
                     chara = new ModelExport.CharacterModelInfo(
                         ModelExport.CharacterModelInfo.ResolveRaceCode(race, tribe, gender), face, hair, tail);
+                    // ponytail: whatever the character is doing RIGHT NOW — idle, weapon drawn,
+                    // sitting, mid-emote — read straight from the already-computed live skeleton.
+                    // No .pap/animation parsing; see SkeletonPoseService for why that's unneeded.
+                    try { pose = ModelExport.SkeletonPoseService.Capture(pc.Address); }
+                    catch (Exception ex) { _log.Warning($"[WebUi] skeleton pose capture failed: {ex.Message}"); }
                 }
-                return (effective, chara);
+                return (effective, chara, pose);
             }).GetAwaiter().GetResult();
         }
-        catch { return (slots, null); }
+        catch { return (slots, null, null); }
     }
 
     private static (string, string, byte[]) Json(object payload, string status = "200 OK")

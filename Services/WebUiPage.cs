@@ -102,6 +102,7 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 <section id="view-viewer" style="display:none">
   <div class="empty" id="viewerinfo"><span class="spinner"></span>Loading model…</div>
   <div id="viewer3d" style="width:100%;height:70vh;border:1px solid var(--border);border-radius:8px;overflow:hidden;display:none"></div>
+  <button id="btn-repose" onclick="reloadViewerModel()" style="display:none;margin-top:6px" title="Re-capture whatever pose the character is doing right now (idle, weapon drawn, sitting, ...)">🔄 Update pose</button>
 </section>
 
 </div>
@@ -259,7 +260,7 @@ async function loadSnapshot(){
 
 async function post(url){await fetch(url,{method:'POST'})}
 
-// --- glTF mesh viewer (static bind pose; equipment from current snapshot) ---
+// --- glTF mesh viewer (live skeleton pose baked server-side; equipment from current snapshot) ---
 // three.js from CDN; the whole scene is client-side WebGL — smooth camera, zero game load.
 let viewerStarted=false;
 async function startViewer(){
@@ -286,6 +287,7 @@ async function startViewer(){
     dir.position.set(2,3,2);
     scene.add(dir);
     window._glamViewer={THREE,GLTFLoader,scene,renderer,camera,controls,box,model:null};
+    $('#btn-repose').style.display='inline-block';
     await reloadViewerModel();
     (function animate(){requestAnimationFrame(animate);controls.update();renderer.render(scene,camera)})();
     new ResizeObserver(()=>{renderer.setSize(box.clientWidth,box.clientHeight);camera.aspect=box.clientWidth/box.clientHeight;camera.updateProjectionMatrix()}).observe(box);
