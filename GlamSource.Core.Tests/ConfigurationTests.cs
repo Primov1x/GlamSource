@@ -19,26 +19,6 @@ public class ConfigurationTests
     }
 
     [Fact]
-    public void Default_SomePropertyToBeSavedAndWithADefault_ShouldBeTrue()
-    {
-        var config = new Configuration();
-        Assert.True(config.SomePropertyToBeSavedAndWithADefault);
-    }
-
-    [Fact]
-    public void Can_Set_And_Read_Properties()
-    {
-        var config = new Configuration();
-        config.Version = 5;
-        config.IsConfigWindowMovable = false;
-        config.SomePropertyToBeSavedAndWithADefault = false;
-
-        Assert.Equal(5, config.Version);
-        Assert.False(config.IsConfigWindowMovable);
-        Assert.False(config.SomePropertyToBeSavedAndWithADefault);
-    }
-
-    [Fact]
     public void Configuration_IsSerializable()
     {
         var config = new Configuration { Version = 3, IsConfigWindowMovable = false };

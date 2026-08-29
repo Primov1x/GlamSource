@@ -5,7 +5,11 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Objects.Types;
+using Dalamud.Interface;
+using Dalamud.Interface.Components;
 using Dalamud.Interface.Textures;
+using Dalamud.Interface.Utility;
+using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
@@ -68,21 +72,18 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
     // ponytail: when non-null, Character tab renders this synthesized snapshot (from Recent click / hover).
     private IReadOnlyList<EquipmentSlot>? _recentOverride;
     // ponytail: entity id for hover-preview cleanup (0 = show self glam again).
-    private uint _hoverTargetEntityId;
     // ponytail: Name (not index) of the clicked Recent — survives Recent list mutations.
     private string? _activeRecentName;
     // ponytail: last entity handed to the preview (0 = self); guards the per-frame dispatch.
     private uint _previewEntityId;
     // ponytail: debounce for TargetManager.Target null-flicker while cursor moves over plugin window.
     private uint _lastLiveTarget;
-    private int _lastRecentDrawLogSec;
     private int _targetNullFrames;
     private const int TargetNullGraceFrames = 20;
     // ponytail: ignore live target for the first N frames after open — else random hardtarget bleeds in.
     private int _openGraceFrames;
     private const int OpenGraceFrames = 30;
     // ponytail: live DrawData snapshot of the hovered Recent character while it is visible.
-    private IReadOnlyList<EquipmentSlot>? _hoverSnapshot;
 
     // ponytail: read-only accessors for DebugApiService. No setters exposed on purpose.
     public IReadOnlyList<EquipmentSlot> DebugSnapshot => _recentOverride ?? _snapshot;
@@ -131,7 +132,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
 
         SizeConstraints = new WindowSizeConstraints
         {
-            MinimumSize = new Vector2(500, 480),
+            MinimumSize = ImGuiHelpers.ScaledVector2(500, 480),
             MaximumSize = new Vector2(float.MaxValue, float.MaxValue),
         };
         SizeCondition = ImGuiCond.FirstUseEver;
@@ -181,12 +182,6 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
     {
         using var _style = UiStyle.Push();
 
-        // Header: plugin identity + subtle version chip; keeps every tab anchored to the same brand.
-        ImGui.TextColored(UiStyle.Accent, "GlamSource");
-        UiStyle.MutedHint("glamour source resolver");
-        ImGui.Separator();
-        ImGui.Spacing();
-
         if (ImGui.BeginTabBar("##GlamSourceShellTabs", ImGuiTabBarFlags.None))
         {
             DrawTab("Lookup",    TabId.Lookup,    DrawLookupTab);
@@ -206,11 +201,6 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         }
         if (ImGui.BeginTabItem(label, flags))
         {
-            if (_configuration.SelectedTab != (int)id)
-            {
-                _configuration.SelectedTab = (int)id;
-                _configuration.Save();
-            }
             body();
             ImGui.EndTabItem();
         }
@@ -230,6 +220,25 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
             else
                 _lookupResults = null;
         }
+        if (!string.IsNullOrEmpty(_lookupText))
+        {
+            ImGui.SameLine();
+            using (ImRaii.PushId("lookup_clear"))
+            {
+                if (ImGuiComponents.IconButton(FontAwesomeIcon.Times))
+                {
+                    _lookupText = "";
+                    _lookupResults = null;
+                }
+            }
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Clear search");
+            if (_lookupResults != null)
+            {
+                ImGui.SameLine();
+                ImGui.TextColored(UiStyle.Muted, $"{_lookupResults.Count} results");
+            }
+        }
 
         if (_lookupResults is { Count: > 0 })
         {
@@ -240,12 +249,22 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
                 {
                     foreach (var (id, name) in _lookupResults)
                     {
-                        if (ImGui.Selectable($"{name}  ({id})##lookup_{id}"))
+                        var resultIconId = GetIconId(id);
+                        if (resultIconId > 0)
+                        {
+                            var tex = _textures.GetFromGameIcon(new GameIconLookup(resultIconId)).GetWrapOrEmpty();
+                            var edge = ImGui.GetFontSize() * 1.2f;
+                            ImGui.Image(tex.Handle, new Vector2(edge, edge));
+                            ImGui.SameLine();
+                        }
+                        if (ImGui.Selectable($"{name}##lookup_{id}"))
                         {
                             _detailWindow?.ShowItem(id);
                             _lookupText = "";
                             _lookupResults = null;
                         }
+                        if (ImGui.IsItemHovered())
+                            ImGui.SetTooltip($"Item ID {id} — click for details");
                     }
                 }
             }
@@ -253,6 +272,10 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         else if (!string.IsNullOrEmpty(_lookupText) && _lookupText.Length < 3)
         {
             ImGui.TextColored(UiStyle.Muted, "Type 3+ characters to search.");
+        }
+        else if (_lookupResults is { Count: 0 })
+        {
+            ImGui.TextColored(UiStyle.Muted, "No items found.");
         }
 
         ImGui.Spacing();
@@ -280,7 +303,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
 
         if (ImGui.BeginTable("EquipmentTable", 5, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg))
         {
-            ImGui.TableSetupColumn("Slot", ImGuiTableColumnFlags.WidthFixed, 120f);
+            ImGui.TableSetupColumn("Slot", ImGuiTableColumnFlags.WidthFixed, ImGui.GetFontSize() * 7f);
             ImGui.TableSetupColumn("Worn Item", ImGuiTableColumnFlags.WidthStretch);
             ImGui.TableSetupColumn("Glamour", ImGuiTableColumnFlags.WidthStretch);
             ImGui.TableSetupColumn("Source", ImGuiTableColumnFlags.WidthStretch);
@@ -296,12 +319,10 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
                 ImGui.TableSetColumnIndex(1);
                 if (slot.ActualItemId > 0)
                 {
-                    ImGui.PushStyleColor(ImGuiCol.Button, Vector4.Zero);
-                    ImGui.PushStyleColor(ImGuiCol.ButtonHovered, Vector4.Zero);
-                    ImGui.PushStyleColor(ImGuiCol.ButtonActive, Vector4.Zero);
-                    if (ImGui.Selectable($"{slot.ActualItemName} ({slot.ActualItemId})##worn_{idx}", false))
+                    if (ImGui.Selectable($"{slot.ActualItemName}##worn_{idx}", false))
                         _detailWindow?.Open(slot.ActualItemId, slot);
-                    ImGui.PopStyleColor(3);
+                    if (ImGui.IsItemHovered())
+                        ImGui.SetTooltip($"Item ID {slot.ActualItemId} — click for details");
                 }
                 else
                 {
@@ -311,13 +332,13 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
                 ImGui.TableSetColumnIndex(2);
                 if (slot.IsGlamoured && slot.GlamourItemId.HasValue)
                 {
-                    ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.3f, 0.8f, 0.3f, 1f));
-                    ImGui.PushStyleColor(ImGuiCol.Button, Vector4.Zero);
-                    ImGui.PushStyleColor(ImGuiCol.ButtonHovered, Vector4.Zero);
-                    ImGui.PushStyleColor(ImGuiCol.ButtonActive, Vector4.Zero);
-                    if (ImGui.Selectable($"{slot.GlamourItemName} ({slot.GlamourItemId})##glam_{idx}", false))
-                        _detailWindow?.Open(slot.GlamourItemId.Value, slot);
-                    ImGui.PopStyleColor(4);
+                    using (ImRaii.PushColor(ImGuiCol.Text, UiStyle.Success))
+                    {
+                        if (ImGui.Selectable($"{slot.GlamourItemName}##glam_{idx}", false))
+                            _detailWindow?.Open(slot.GlamourItemId.Value, slot);
+                    }
+                    if (ImGui.IsItemHovered())
+                        ImGui.SetTooltip($"Item ID {slot.GlamourItemId} — click for details");
                 }
                 else
                 {
@@ -367,7 +388,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
     {
         if (stainId == 0)
         {
-            ImGui.TextDisabled("Unbemalt");
+            ImGui.TextDisabled("Undyed");
             return;
         }
 
@@ -418,7 +439,6 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         {
             _recentOverride = null;
             _activeRecentName = null;
-            ClearRecentHover();
         }
         // ponytail: track live target even when override active — otherwise every frame
         // sees "new" hardtarget and wipes the just-clicked Recent.
@@ -435,9 +455,6 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
                 _snapshot = live ?? _snapshot;
             }
         }
-        if (_hoverSnapshot != null)
-            _snapshot = _hoverSnapshot;
-
         // Ensure the CharaView renderer is running as long as this tab is drawn.
         PreviewWindow?.EnsureInitializedForSelf();
 
@@ -451,7 +468,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         var avail = ImGui.GetContentRegionAvail();
         var centerW = MathF.Max(fontSize * 12f, avail.X - (slotW * 2f) - recentW - fontSize * 0.5f);
 
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(4, 4));
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(ImGui.GetFontSize() * 0.25f, ImGui.GetFontSize() * 0.25f));
         ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(fontSize * 0.3f, fontSize * 0.2f));
 
         // Left slot column
@@ -570,6 +587,8 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
 
     private void DrawCharacterToolbar()
     {
+        // ponytail: buttons in a stable row; free-form status texts live on one line below,
+        // so the toolbar width no longer jumps with every action.
         var label = _pinned ? "Unpin" : "Pin";
         if (ImGui.SmallButton(label))
         {
@@ -580,62 +599,51 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
                 _pinnedFor = $"snapshot ({_snapshot.Count} slots)";
             }
         }
-        ImGui.SameLine();
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip(_pinned ? "Release the pinned snapshot" : "Freeze the current snapshot");
 
         if (_recentOverride != null)
         {
+            ImGui.SameLine();
             if (ImGui.SmallButton("Clear Recent"))
             {
                 _recentOverride = null;
                 _activeRecentName = null;
-                ClearRecentHover();
             }
-            ImGui.SameLine();
-            ImGui.TextDisabled("Viewing recent snapshot");
-        }
-        else if (_pinned)
-        {
-            ImGui.TextDisabled($"Pinned — {_pinnedFor}");
-        }
-        else
-        {
-            ImGui.TextDisabled(Plugin.TargetManager?.Target != null ? "Live from target" : "Click somebody or pick from Recent");
         }
 
         var glamourerInstalled = IsGlamourerInstalled();
         var canApply = glamourerInstalled && _snapshot.Count > 0;
 
         ImGui.SameLine();
-        if (!canApply) ImGui.BeginDisabled();
-        if (ImGui.SmallButton("Apply to Self"))
-            ApplyTargetGlamourToSelf();
-        if (!canApply) ImGui.EndDisabled();
-        if (ImGui.IsItemHovered())
+        using (ImRaii.Disabled(!canApply))
+        {
+            if (ImGui.SmallButton("Apply to Self"))
+                ApplyTargetGlamourToSelf();
+        }
+        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
         {
             if (!glamourerInstalled) ImGui.SetTooltip("Requires Glamourer plugin");
             else ImGui.SetTooltip("Copy this snapshot (glamour where set, else actual) to your own character.\nWeapons are skipped.");
         }
 
-        if (!string.IsNullOrEmpty(_lastApplyStatus))
-        {
-            ImGui.SameLine();
-            ImGui.TextDisabled(_lastApplyStatus);
-        }
-
         ImGui.SameLine();
         var canPreview = _snapshot.Count > 0;
-        if (!canPreview) ImGui.BeginDisabled();
-        if (ImGui.SmallButton("Fitting Room"))
-            QueueTryOnPreview();
-        if (!canPreview) ImGui.EndDisabled();
-        if (ImGui.IsItemHovered())
+        using (ImRaii.Disabled(!canPreview))
+        {
+            if (ImGui.SmallButton("Fitting Room"))
+                QueueTryOnPreview();
+        }
+        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
             ImGui.SetTooltip("Queue each slot into the vanilla Fitting Room. Weapons skipped.");
 
-        if (!string.IsNullOrEmpty(_lastPreviewStatus))
-        {
-            ImGui.SameLine();
-            ImGui.TextDisabled(_lastPreviewStatus);
-        }
+        // single status line: mode + last action feedback
+        var mode = _recentOverride != null ? "Viewing recent snapshot"
+            : _pinned ? $"Pinned — {_pinnedFor}"
+            : Plugin.TargetManager?.Target != null ? "Live from target" : "Click somebody or pick from Recent";
+        var feedback = !string.IsNullOrEmpty(_lastApplyStatus) ? _lastApplyStatus
+            : !string.IsNullOrEmpty(_lastPreviewStatus) ? _lastPreviewStatus : null;
+        ImGui.TextDisabled(feedback != null ? $"{mode}  \u00b7  {feedback}" : mode);
     }
 
     // ponytail: only push if we have a real player target and its glam differs from what we last stored.
@@ -705,11 +713,18 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         if (iconId > 0)
         {
             var tex = _textures.GetFromGameIcon(new GameIconLookup(iconId)).GetWrapOrEmpty();
+            var iconPos = ImGui.GetCursorScreenPos();
             ImGui.Image(tex.Handle, iconVec);
             if (ImGui.IsItemClicked() && slot != null)
                 _detailWindow?.Open(itemId, slot);
             if (ImGui.IsItemHovered())
-                ImGui.SetTooltip($"{st}\n{slot?.GlamourItemName ?? slot?.ActualItemName ?? "(none)"}");
+            {
+                // hover affordance: accent border around the icon
+                ImGui.GetWindowDrawList().AddRect(iconPos,
+                    new Vector2(iconPos.X + iconVec.X, iconPos.Y + iconVec.Y),
+                    ImGui.ColorConvertFloat4ToU32(UiStyle.Accent));
+                ImGui.SetTooltip($"{st}\n{slot?.GlamourItemName ?? slot?.ActualItemName ?? "(none)"}\nClick to open");
+            }
         }
         else
         {
@@ -744,6 +759,8 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
             var drawn = _weaponDrawn;
             _framework.RunOnFrameworkThread(() => renderer.SetWeaponDrawn(drawn));
         }
+        ImGui.SameLine();
+        ImGuiComponents.HelpMarker("Drag: rotate · Right-drag: orbit · Wheel: zoom to cursor");
 
         var avail = ImGui.GetContentRegionAvail();
         var h = MathF.Max(ImGui.GetFontSize() * 12f, avail.Y - ImGui.GetFontSize() * 6f);
@@ -814,46 +831,43 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
 
     private void DrawRecentSidebar()
     {
-        ImGui.TextColored(UiStyle.Accent, "Recent");
-        ImGui.Separator();
+        UiStyle.SectionHeader("Recent");
 
         var recents = _configuration.RecentTargets;
         if (recents.Count == 0)
         {
             ImGui.TextDisabled("(none yet)");
-            ClearRecentHover();
             return;
         }
 
         int? removeIdx = null;
-        var xW = ImGui.CalcTextSize("×").X + ImGui.GetStyle().FramePadding.X * 2f;
+        var xW = ImGui.GetFrameHeight();
         for (var i = 0; i < recents.Count; i++)
         {
             var r = recents[i];
             var label = string.IsNullOrEmpty(r.World) ? r.Name : $"{r.Name}\n{r.World}";
             var rowH = ImGui.GetFontSize() * 2.0f;
             // ponytail: enforce min-width so zero content-region doesn't zero-out the click area.
-            var selW = MathF.Max(40f, ImGui.GetContentRegionAvail().X - xW - ImGui.GetStyle().ItemSpacing.X);
-            if ((System.Environment.TickCount / 1000) != _lastRecentDrawLogSec) { _lastRecentDrawLogSec = System.Environment.TickCount / 1000; _log.Info($"[RecentDraw] i={i} selW={selW} rowH={rowH} avail={ImGui.GetContentRegionAvail().X}"); }
+            var selW = MathF.Max(ImGui.GetFontSize() * 2.5f, ImGui.GetContentRegionAvail().X - xW - ImGui.GetStyle().ItemSpacing.X);
             if (ImGui.Selectable($"{label}##recent_{i}", false, ImGuiSelectableFlags.None, new Vector2(selW, rowH)))
             {
-                // ponytail: click-only. Kill any hover-driven overlay so the click owns the view.
-                ClearRecentHover();
                 _recentOverride = BuildSnapshotFromIds(r.ItemIds, r.Stain0s, r.Stain1s);
                 _snapshot = _recentOverride;
                 _pinned = false;
                 _activeRecentName = r.Name;
-                _log.Info($"[RecentClick] {r.Name} — {_recentOverride.Count} slots, first id={_recentOverride[0].ActualItemId}");
                 // ponytail: force provider re-install so subsequent Recent clicks push new snapshot
                 // even when dispatch guard sees no state change.
                 var snap = _recentOverride;
                 PreviewWindow?.SetSnapshotProvider(() => snap);
             }
             if (ImGui.IsItemHovered())
-                ImGui.SetTooltip("Click: view stored snapshot");
+                ImGui.SetTooltip("View stored snapshot");
             ImGui.SameLine();
-            if (ImGui.SmallButton($"×##recent_del_{i}"))
-                removeIdx = i;
+            using (ImRaii.PushId($"recent_del_{i}"))
+            {
+                if (ImGuiComponents.IconButton(FontAwesomeIcon.Times))
+                    removeIdx = i;
+            }
             if (ImGui.IsItemHovered())
                 ImGui.SetTooltip("Remove from Recent");
         }
@@ -868,26 +882,6 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
                 _activeRecentName = null;
             }
         }
-    }
-
-    // ponytail: linear ObjectTable scan, only while hovering; fine at <200 visible objects, names are zone-unique.
-    private Dalamud.Game.ClientState.Objects.SubKinds.IPlayerCharacter? FindVisiblePlayer(string name)
-    {
-        if (string.IsNullOrEmpty(name)) return null;
-        foreach (var obj in _objectTable)
-        {
-            if (obj is Dalamud.Game.ClientState.Objects.SubKinds.IPlayerCharacter pc &&
-                pc.Name.TextValue == name)
-                return pc;
-        }
-        return null;
-    }
-
-    private void ClearRecentHover()
-    {
-        if (_hoverTargetEntityId == 0 && _hoverSnapshot == null) return;
-        _hoverTargetEntityId = 0;
-        _hoverSnapshot = null;
     }
 
     // ponytail: minimal synthetic snapshot — IDs + stains from Recent; names resolved from Item sheet.
@@ -1066,12 +1060,7 @@ private void ApplyTargetGlamourToSelf()
     // =====================================================================
     private void DrawSettingsTab()
     {
-        var configValue = _configuration.SomePropertyToBeSavedAndWithADefault;
-        if (ImGui.Checkbox("Random Config Bool", ref configValue))
-        {
-            _configuration.SomePropertyToBeSavedAndWithADefault = configValue;
-            _configuration.Save();
-        }
+        UiStyle.SectionHeader("General");
 
         var movable = _configuration.IsConfigWindowMovable;
         if (ImGui.Checkbox("Movable Window", ref movable))
@@ -1079,6 +1068,8 @@ private void ApplyTargetGlamourToSelf()
             _configuration.IsConfigWindowMovable = movable;
             _configuration.Save();
         }
+        ImGui.SameLine();
+        ImGuiComponents.HelpMarker("Allow dragging this window by its body.");
 
         var showCraftingSavings = _configuration.ShowCraftingSavings;
         if (ImGui.Checkbox("Show Crafting Savings", ref showCraftingSavings))
@@ -1086,29 +1077,39 @@ private void ApplyTargetGlamourToSelf()
             _configuration.ShowCraftingSavings = showCraftingSavings;
             _configuration.Save();
         }
+        ImGui.SameLine();
+        ImGuiComponents.HelpMarker("Compare market price vs. crafting cost in the item detail window.");
 
         var debugApiEnabled = _configuration.DebugApiEnabled;
-        if (ImGui.Checkbox("Debug API (read-only, localhost:23423)", ref debugApiEnabled))
+        if (ImGui.Checkbox("Debug API", ref debugApiEnabled))
         {
             _configuration.DebugApiEnabled = debugApiEnabled;
             _configuration.Save();
             OnDebugApiToggle?.Invoke(debugApiEnabled);
         }
+        ImGui.SameLine();
+        ImGuiComponents.HelpMarker("Read-only HTTP API on localhost:23423 for external tools.");
 
         ImGui.Spacing();
         UiStyle.SectionHeader("Auto-Gathering");
 
+        ImGui.SetNextItemWidth(ImGui.GetFontSize() * 14f);
         DrawMountPicker();
 
+        ImGui.SetNextItemWidth(ImGui.GetFontSize() * 14f);
         var mountDist = _configuration.MountUpDistance;
-        if (ImGui.SliderFloat("Mount up when farther than (m)", ref mountDist, 0f, 100f))
+        if (ImGui.SliderFloat("##mountdist", ref mountDist, 0f, 100f, "%.0f m"))
         {
             _configuration.MountUpDistance = mountDist;
             _configuration.Save();
         }
+        ImGui.SameLine();
+        ImGui.TextUnformatted("Mount-up distance");
+        ImGui.SameLine();
+        ImGuiComponents.HelpMarker("Mount up when the gathering node is farther away than this.");
 
         ImGui.Spacing();
-        ImGui.TextUnformatted("Gearsets (live from game):");
+        UiStyle.SectionHeader("Gearsets");
 
         DrawGearsetCombo("Miner set",    16, _configuration.MinerSetName,    n => _configuration.MinerSetName = n);
         DrawGearsetCombo("Botanist set", 17, _configuration.BotanistSetName, n => _configuration.BotanistSetName = n);

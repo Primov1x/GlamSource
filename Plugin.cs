@@ -118,7 +118,6 @@ public class Plugin : IAsyncDalamudPlugin
             GatheringLocationService, VNavmeshIpc, TeleporterIpc, ObjectTable, ClientState, Condition, GameGui, Log, Framework,
             () => Configuration);
 
-        var goatImagePath = Path.Join(PluginInterface.AssemblyLocation.Directory?.FullName, "goat.png");
 
         var itemDetailService = new ItemDetailService(DataManager.GameData);
         var universalisHttpClient = new System.Net.Http.HttpClient();
@@ -157,7 +156,7 @@ public class Plugin : IAsyncDalamudPlugin
 
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Offnet das GlamSource Fenster"
+            HelpMessage = "Öffnet das GlamSource Fenster"
         });
 
         PluginInterface.UiBuilder.Draw += WindowSystem.Draw;
