@@ -32,6 +32,7 @@ public sealed class WebUiService : IDisposable
     private readonly IFramework _framework;
     private readonly IPluginLog _log;
     private readonly ModelExport.ModelExportService _modelExport;
+    private readonly Lumina.GameData _modelExportGameData;
     private readonly GlamourerColorIpc _glamourerColors;
     // ponytail: named pose snapshots (e.g. "idle", "weapon"), self-refreshed whenever the framework
     // thread happens to observe the character in that state — no user action needed. Concurrent
@@ -58,6 +59,7 @@ public sealed class WebUiService : IDisposable
         _framework = framework;
         _log = log;
         _modelExport = new ModelExport.ModelExportService(detail.GameData);
+        _modelExportGameData = detail.GameData;
         _glamourerColors = new GlamourerColorIpc(pi);
         // pluginConfigs/GlamSource.json -> sibling Browsingway.json
         var dir = pi.ConfigFile.DirectoryName;
@@ -450,21 +452,28 @@ public sealed class WebUiService : IDisposable
                 ModelExport.CustomizeColors? colors = null;
                 if (Plugin.ObjectTable.LocalPlayer is { } pc && pc.Customize is { Length: > 0 } c)
                 {
-                    // ponytail: our own memory read (Human.CustomizeParameterCBuffer, then Brio's
-                    // exact pointer-chase pattern) kept returning implausible near-white/near-black
-                    // values across two fixes (0.0.0.78, .81) — root cause never found. Glamourer's
-                    // own IPC returns state it already knows is correct (it renders it), so prefer
-                    // that when Glamourer is installed; fall back to our memory read otherwise.
-                    try { colors = _glamourerColors.GetColors(pc.ObjectIndex); }
-                    catch (Exception ex) { _log.Warning($"[WebUi] Glamourer IPC color read failed: {ex.Message}"); }
+                    var race = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.Race];
+                    var tribe = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.Tribe];
+                    var gender = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.Gender];
+                    var skinColorIdx = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.SkinColor];
+                    var hairColorIdx = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.HairColor];
+                    // ponytail: the game's own character-creation color table (human.cmp), indexed
+                    // by the live swatch selection — authoritative, no memory reverse-engineering.
+                    // Our own shader-buffer reads AND Glamourer's own IPC both kept returning the
+                    // exact same implausible near-white/near-black values (see CustomizeColors.cs),
+                    // so this replaces both as the primary source; they stay as last-resort fallback.
+                    try { colors = ModelExport.CmpColorReader.Read(_modelExportGameData, tribe, gender, skinColorIdx, hairColorIdx); }
+                    catch (Exception ex) { _log.Warning($"[WebUi] human.cmp color read failed: {ex.Message}"); }
+                    if (colors == null)
+                    {
+                        try { colors = _glamourerColors.GetColors(pc.ObjectIndex); }
+                        catch (Exception ex) { _log.Warning($"[WebUi] Glamourer IPC color read failed: {ex.Message}"); }
+                    }
                     if (colors == null)
                     {
                         try { colors = ModelExport.CustomizeColorsService.Capture(pc.Address); }
                         catch (Exception ex) { _log.Warning($"[WebUi] customize color capture failed: {ex.Message}"); }
                     }
-                    var race = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.Race];
-                    var tribe = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.Tribe];
-                    var gender = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.Gender];
                     var face = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.FaceType];
                     var hair = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.HairStyle];
                     var tail = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.RaceFeatureType];
