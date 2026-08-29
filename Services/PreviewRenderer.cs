@@ -390,19 +390,43 @@ public sealed unsafe class PreviewRenderer : IDisposable
         return (nint)tex->D3D11ShaderResourceView;
     }
 
-    /// <summary>Raw CPU-readback of the current CharaView frame, for the web-UI 3D preview
+/// <summary>Raw CPU-readback of the current CharaView frame, for the web-UI 3D preview
     /// (experimental, opt-in). BGRA byte order per pixel unless <see cref="IsBgra"/> is false.</summary>
     public readonly record struct CapturedFrame(int Width, int Height, int RowPitch, byte[] Pixels, bool IsBgra);
 
-    /// <summary>Copy the CharaView GPU texture to CPU. Must run on the Framework thread — the
-    /// D3D11 immediate context is not thread-safe. Returns null if not ready or the copy failed.</summary>
+    private CapturedFrame? _lastWebFrame;
+    private long _lastCaptureTickMs;
+    private const long CaptureThrottleMs = 90; // ~10-11 fps ceiling — matches the web UI's fast-poll rate
+
+    /// <summary>Last frame captured for the web-UI 3D preview, or null if never captured / feature off.
+    /// Thread-safe to read from anywhere (plain field read) — capture itself only ever runs from
+    /// Draw(), never from here.</summary>
+    public CapturedFrame? LatestWebFrame => _lastWebFrame;
+
+    /// <summary>Call once per Draw() while the web-UI 3D preview is enabled and this tab is visible —
+    /// same call context ImGui.Image already uses safely every frame. Throttled internally; cheap to
+    /// call every frame. Do NOT call this from Framework.RunOnFrameworkThread or any other thread —
+    /// the immediate D3D11 context must only be touched here, in-line with the game's own Present.</summary>
+    public void CaptureFrameForWeb(bool enabled)
+    {
+        if (!enabled) { _lastWebFrame = null; return; }
+        var now = Environment.TickCount64;
+        if (now - _lastCaptureTickMs < CaptureThrottleMs) return;
+        _lastCaptureTickMs = now;
+        _lastWebFrame = TryCapturePixels();
+    }
+
+    /// <summary>Copy the CharaView GPU texture to CPU. MUST be called only from Draw() (the same
+    /// in-line-with-Present context ImGui.Image already reads this SRV from) — never from
+    /// Framework.RunOnFrameworkThread or a background thread. Returns null if not ready or the copy
+    /// failed.</summary>
     /// <remarks>ponytail: pattern mirrors Dalamud's own TextureManager.GetRawImageAsync (internal,
     /// not exposed to plugins) — CopyResource into a STAGING texture, Map, read, Unmap. The SRV
     /// ComPtr below is adopted from a borrowed handle (GetTextureHandle owns nothing) and must
     /// NEVER be Dispose()'d — TerraFX's raw-pointer ComPtr ctor does not AddRef, so releasing it
     /// would drop a refcount CharaView still owns. Everything obtained via GetResource/As/GetDevice/
     /// GetImmediateContext DOES own a ref and must be disposed (all four `using`).</remarks>
-    public CapturedFrame? TryCapturePixels()
+    private CapturedFrame? TryCapturePixels()
     {
         var srvHandle = GetTextureHandle();
         if (srvHandle == 0) return null;

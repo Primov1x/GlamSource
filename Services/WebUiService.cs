@@ -263,12 +263,14 @@ public sealed class WebUiService : IDisposable
             if (!_configuration.WebUiLive3DPreview)
                 return ("404 Not Found", "application/octet-stream", Array.Empty<byte>());
 
-            // Framework-thread hop needed: D3D11 immediate context isn't thread-safe.
-            var frame = _framework.RunOnFrameworkThread(() =>
-            {
-                var renderer = _shell.PreviewWindow?.Renderer;
-                return renderer is { IsInitialized: true } ? renderer.TryCapturePixels() : null;
-            }).GetAwaiter().GetResult();
+            // ponytail: NEVER call D3D11 readback from here — the immediate context must only be
+            // touched in-line with Present (see PreviewRenderer.CaptureFrameForWeb, called from
+            // Draw()). This just reads the last frame it cached; plain field read, no GPU call,
+            // no Framework-thread hop. An earlier version called TryCapturePixels() via
+            // RunOnFrameworkThread from this HTTP worker thread and corrupted D3D11 state badly
+            // enough to crash the game (unrelated plugin's own D3D11 hook faulted downstream) — do
+            // not reintroduce that.
+            var frame = _shell.PreviewWindow?.Renderer.LatestWebFrame;
 
             if (frame == null)
                 return ("404 Not Found", "application/octet-stream", Array.Empty<byte>());

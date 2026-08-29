@@ -792,6 +792,10 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
             return;
         }
 
+        // ponytail: web-UI 3D preview capture — MUST happen here (Draw(), in-line with Present),
+        // never via Framework.RunOnFrameworkThread from the web server. See PreviewRenderer.CaptureFrameForWeb.
+        renderer.CaptureFrameForWeb(_configuration.WebUiLive3DPreview);
+
         if (ImGui.Checkbox("Show Weapon/Tool", ref _weaponDrawn))
         {
             var drawn = _weaponDrawn;
