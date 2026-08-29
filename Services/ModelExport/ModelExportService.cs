@@ -133,6 +133,12 @@ public sealed class ModelExportService
 
             var meshes = MdlGeometry.DecodeLod0(mdl);
             LastTrace.Add($"{slot}:{itemId} meshes decoded: {meshes.Count}");
+            if (mdl.LodCount > 0)
+            {
+                var lod0 = mdl.Lods[0];
+                var decl0 = mdl.VertexDeclarations[lod0.MeshIndex];
+                LastTrace.Add($"  vtxdecl[0]: [{string.Join(",", decl0.VertexElements.Select(e => $"u{e.Usage}t{e.Type}s{e.Stream}"))}]");
+            }
             foreach (var m in meshes)
             {
                 if (m.SubmeshesKept < m.SubmeshesTotal)
