@@ -167,7 +167,6 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         if (visible)
         {
             Plugin.CommandManager.ProcessCommand("/bw overlay glamsource url http://127.0.0.1:23424/");
-            Plugin.CommandManager.ProcessCommand("/bw overlay glamsource locked on");
             Plugin.CommandManager.ProcessCommand("/bw overlay glamsource hidden off");
         }
         else
@@ -1152,7 +1151,7 @@ private void ApplyTargetGlamourToSelf()
                     _configuration.Save();
                 }
                 ImGui.SameLine();
-                ImGuiComponents.HelpMarker("Overlay is created automatically in Browsingway's config;\nGlamSource then sets its URL, shows it when this window opens,\nhides it on close and keeps it locked (fixed size/position).");
+                ImGuiComponents.HelpMarker("Overlay is created automatically in Browsingway's config;\nGlamSource then sets its URL, shows it when this window opens,\nhides it on close. Drag/resize it like any Browsingway overlay.");
             }
             ImGui.Unindent(ImGui.GetFontSize());
         }

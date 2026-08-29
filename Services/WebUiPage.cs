@@ -16,9 +16,14 @@ internal static class WebUiPage
   --text:#d8dce6; --muted:#8a91a3; --accent:#d4af5a; --success:#6fbf73; --warn:#e0a03c;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--text);font:14px/1.5 "Segoe UI",system-ui,sans-serif;padding:24px;max-width:1100px;margin:0 auto}
-h1{color:var(--accent);font-size:20px;letter-spacing:.5px;margin-bottom:2px}
-.sub{color:var(--muted);font-size:12px;margin-bottom:18px}
+body{background:transparent;color:var(--text);font:14px/1.5 "Segoe UI",system-ui,sans-serif;margin:0}
+#titlebar{display:flex;align-items:center;gap:10px;background:var(--panel2);border-bottom:1px solid var(--border);padding:6px 12px;user-select:none}
+#titlebar .brand{color:var(--accent);font-weight:600;font-size:14px;letter-spacing:.5px}
+#titlebar .sub{color:var(--muted);font-size:11px}
+#titlebar .spacer{flex:1}
+#titlebar button{background:none;border:1px solid var(--border);color:var(--muted);width:22px;height:22px;border-radius:5px;cursor:pointer;font-size:13px;line-height:1}
+#titlebar button:hover{border-color:var(--accent);color:var(--accent)}
+#app{background:var(--bg);padding:18px 24px;max-width:1100px;min-height:calc(100vh - 36px)}
 nav{display:flex;gap:8px;margin-bottom:18px}
 nav button{background:var(--panel);border:1px solid var(--border);color:var(--text);padding:8px 18px;border-radius:8px;cursor:pointer;font-size:14px;transition:.15s}
 nav button:hover{border-color:var(--accent)}
@@ -60,8 +65,14 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 </style>
 </head>
 <body>
-<h1>GlamSource</h1>
-<div class="sub">glamour source resolver — web ui</div>
+<div id="titlebar">
+  <span class="brand">GlamSource</span>
+  <span class="sub">web ui</span>
+  <span class="spacer"></span>
+  <button id="btn-min" title="Minimize" onclick="toggleMin()">–</button>
+  <button title="Close" onclick="post('/api/action/overlay/hide')">×</button>
+</div>
+<div id="app">
 <nav>
   <button id="tab-lookup" class="active" onclick="showTab('lookup')">Lookup</button>
   <button id="tab-character" onclick="showTab('character')">Character</button>
@@ -78,8 +89,15 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
   <div class="snapgrid" id="snap"></div>
 </section>
 
+</div>
 <script>
 const $=s=>document.querySelector(s);
+function toggleMin(){
+  const app=$('#app');
+  const min=app.style.display==='none';
+  app.style.display=min?'':'none';
+  $('#btn-min').textContent=min?'–':'+';
+}
 const icon=id=>{if(!id)return'';const f=String(Math.floor(id/1000)*1000).padStart(6,'0');const n=String(id).padStart(6,'0');return`https://xivapi.com/i/${f}/${n}.png`};
 const esc=t=>(t??'').toString().replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 

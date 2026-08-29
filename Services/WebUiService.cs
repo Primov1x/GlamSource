@@ -87,7 +87,7 @@ public sealed class WebUiService : IDisposable
                 ["Name"] = "GlamSource",
                 ["Url"] = $"http://127.0.0.1:{Port}/",
                 ["Hidden"] = true,
-                ["Locked"] = true,
+                ["Locked"] = false,
                 ["TypeThrough"] = false,
                 ["ClickThrough"] = false,
                 ["Fullscreen"] = false,
@@ -242,6 +242,13 @@ public sealed class WebUiService : IDisposable
         if (method == "POST" && path.StartsWith("/api/action/dutyfinder/") && uint.TryParse(path["/api/action/dutyfinder/".Length..], out var cfcId))
         {
             _framework.RunOnFrameworkThread(() => ItemDetailWindow.TryOpenDutyFinder(cfcId));
+            return Json(new { ok = true });
+        }
+
+        if (method == "POST" && path == "/api/action/overlay/hide")
+        {
+            _framework.RunOnFrameworkThread(() =>
+                Plugin.CommandManager.ProcessCommand("/bw overlay glamsource hidden on"));
             return Json(new { ok = true });
         }
 
