@@ -240,6 +240,10 @@ public unsafe class GameDataService : IGlamourService
 
     private static EquipmentSlotType? MapInventorySlotToEquipmentSlot(int index)
     {
+        // ponytail: EquippedItems container still reserves index 5 for the long-removed Belt/Waist
+        // slot (confirmed via FFXIVClientStructs RecommendEquipModule field order and Penumbra.
+        // GameData's EquipSlot enum — both place Belt between Hands and Legs). Everything from Legs
+        // onward was off by one before this fix.
         return index switch
         {
             0 => EquipmentSlotType.MainHand,
@@ -247,13 +251,14 @@ public unsafe class GameDataService : IGlamourService
             2 => EquipmentSlotType.Head,
             3 => EquipmentSlotType.Body,
             4 => EquipmentSlotType.Hands,
-            5 => EquipmentSlotType.Legs,
-            6 => EquipmentSlotType.Feet,
-            7 => EquipmentSlotType.Earrings,
-            8 => EquipmentSlotType.Necklace,
-            9 => EquipmentSlotType.Bracelets,
-            10 => EquipmentSlotType.RingRight,
-            11 => EquipmentSlotType.RingLeft,
+            5 => null, // Belt/Waist — unused since the slot was removed from the game
+            6 => EquipmentSlotType.Legs,
+            7 => EquipmentSlotType.Feet,
+            8 => EquipmentSlotType.Earrings,
+            9 => EquipmentSlotType.Necklace,
+            10 => EquipmentSlotType.Bracelets,
+            11 => EquipmentSlotType.RingRight,
+            12 => EquipmentSlotType.RingLeft,
             _ => null
         };
     }

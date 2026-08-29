@@ -7,10 +7,10 @@ using Lumina.Data.Files;
 
 namespace GlamSource.Services.ModelExport;
 
-// ponytail: static bind-pose export, LOD0, equipment+accessories only (no body/face/hair, no
-// weapons, no dye tint yet) — the vertices in .mdl are already in bind pose, so a skeleton is
-// not needed for a still viewer. Race code fixed to c0101: most gear ships only that model and
-// the game fits it to races at runtime via skeleton deforms we don't replicate anyway.
+// ponytail: static bind-pose export, LOD0, no weapons, no live pose — the vertices in .mdl are
+// already in bind pose, so a skeleton is not needed for a still viewer. Equipment race code fixed
+// to c0101: most gear ships only that model and the game fits it to races at runtime via skeleton
+// deforms we don't replicate. Body/face/hair/tail DO use the live Customize race code.
 /// <summary>Character base-model parameters resolved from the live Customize array.</summary>
 public sealed record CharacterModelInfo(string RaceCode, int Face, int Hair, int TailOrEars)
 {
@@ -67,7 +67,7 @@ public sealed class ModelExportService
 
         var meshInputs = new List<GltfMeshInput>();
         var pngs = new List<byte[]>();
-        var texIndexByPath = new Dictionary<string, int>();
+        var materialCache = new Dictionary<string, (int, float[]?)>();
 
         var itemSheet = _gameData.GetExcelSheet<Lumina.Excel.Sheets.Item>();
         var stainSheet = _gameData.GetExcelSheet<Lumina.Excel.Sheets.Stain>();
@@ -118,9 +118,19 @@ public sealed class ModelExportService
             foreach (var m in meshes)
             {
                 var texIndex = -1;
+                var effectiveTint = tint;
                 if (m.MaterialIndex >= 0 && m.MaterialIndex < mdl.Materials.Length)
-                    texIndex = ResolveDiffuseTexture(mdl.Materials[m.MaterialIndex], info, setId, materialId, pngs, texIndexByPath);
-                meshInputs.Add(new GltfMeshInput(m, texIndex, tint));
+                {
+                    var mtrlName = mdl.Materials[m.MaterialIndex];
+                    var mtrlPath = mtrlName.StartsWith('/')
+                        ? $"chara/{info.Category}/{info.Prefix}{setId:D4}/material/v{materialId:D4}{mtrlName}"
+                        : mtrlName;
+                    var (t, colorSetTint) = ResolveMaterialByPath(mtrlPath, pngs, materialCache);
+                    texIndex = t;
+                    // stain always wins over colorset average when the item is actually dyed
+                    if (texIndex < 0 && effectiveTint == null) effectiveTint = colorSetTint;
+                }
+                meshInputs.Add(new GltfMeshInput(m, texIndex, effectiveTint));
             }
         }
 
@@ -131,14 +141,14 @@ public sealed class ModelExportService
             // we can't look up, so body/face fall back to a skin-tone tint when untextured.
             var skinTint = new[] { 0.85f, 0.66f, 0.56f };
             var hairTint = new[] { 0.35f, 0.30f, 0.28f };
-            AddCharaPart($"chara/human/{rc}/obj/body/b0001/model/{rc}b0001_top.mdl", rc, "body/b0001", skinTint, meshInputs, pngs, texIndexByPath);
-            AddCharaPart($"chara/human/{rc}/obj/face/f{chara.Face:D4}/model/{rc}f{chara.Face:D4}_fac.mdl", rc, $"face/f{chara.Face:D4}", skinTint, meshInputs, pngs, texIndexByPath);
-            AddCharaPart($"chara/human/{rc}/obj/hair/h{chara.Hair:D4}/model/{rc}h{chara.Hair:D4}_hir.mdl", rc, $"hair/h{chara.Hair:D4}", hairTint, meshInputs, pngs, texIndexByPath);
+            AddCharaPart($"chara/human/{rc}/obj/body/b0001/model/{rc}b0001_top.mdl", rc, "body/b0001", skinTint, meshInputs, pngs, materialCache);
+            AddCharaPart($"chara/human/{rc}/obj/face/f{chara.Face:D4}/model/{rc}f{chara.Face:D4}_fac.mdl", rc, $"face/f{chara.Face:D4}", skinTint, meshInputs, pngs, materialCache);
+            AddCharaPart($"chara/human/{rc}/obj/hair/h{chara.Hair:D4}/model/{rc}h{chara.Hair:D4}_hir.mdl", rc, $"hair/h{chara.Hair:D4}", hairTint, meshInputs, pngs, materialCache);
             if (chara.TailOrEars > 0)
             {
                 // tail (Miqo'te/Au Ra/Hrothgar) or ears (Viera) — whichever path exists
-                AddCharaPart($"chara/human/{rc}/obj/tail/t{chara.TailOrEars:D4}/model/{rc}t{chara.TailOrEars:D4}_til.mdl", rc, $"tail/t{chara.TailOrEars:D4}", hairTint, meshInputs, pngs, texIndexByPath);
-                AddCharaPart($"chara/human/{rc}/obj/zear/z{chara.TailOrEars:D4}/model/{rc}z{chara.TailOrEars:D4}_zer.mdl", rc, $"zear/z{chara.TailOrEars:D4}", skinTint, meshInputs, pngs, texIndexByPath);
+                AddCharaPart($"chara/human/{rc}/obj/tail/t{chara.TailOrEars:D4}/model/{rc}t{chara.TailOrEars:D4}_til.mdl", rc, $"tail/t{chara.TailOrEars:D4}", hairTint, meshInputs, pngs, materialCache);
+                AddCharaPart($"chara/human/{rc}/obj/zear/z{chara.TailOrEars:D4}/model/{rc}z{chara.TailOrEars:D4}_zer.mdl", rc, $"zear/z{chara.TailOrEars:D4}", skinTint, meshInputs, pngs, materialCache);
             }
         }
 
@@ -151,7 +161,7 @@ public sealed class ModelExportService
     /// <summary>Load one character base-model part (body/face/hair/tail/ears); silently skipped
     /// when the path doesn't exist for this race. Untextured meshes get the fallback tint.</summary>
     private void AddCharaPart(string mdlPath, string raceCode, string partFolder, float[] fallbackTint,
-        List<GltfMeshInput> meshInputs, List<byte[]> pngs, Dictionary<string, int> texIndexByPath)
+        List<GltfMeshInput> meshInputs, List<byte[]> pngs, Dictionary<string, (int, float[]?)> materialCache)
     {
         if (!_gameData.FileExists(mdlPath)) { LastTrace.Add($"chara part missing: {mdlPath}"); return; }
         var raw = _gameData.GetFile(mdlPath);
@@ -166,23 +176,26 @@ public sealed class ModelExportService
         foreach (var m in meshes)
         {
             var texIndex = -1;
+            float[]? tint = fallbackTint;
             if (m.MaterialIndex >= 0 && m.MaterialIndex < mdl.Materials.Length)
             {
                 var mtrlName = mdl.Materials[m.MaterialIndex];
                 var mtrlPath = mtrlName.StartsWith('/')
                     ? $"chara/human/{raceCode}/obj/{partFolder}/material/v0001{mtrlName}"
                     : mtrlName;
-                texIndex = ResolveDiffuseByPath(mtrlPath, pngs, texIndexByPath);
+                var (t, colorSetTint) = ResolveMaterialByPath(mtrlPath, pngs, materialCache);
+                texIndex = t;
+                // textured -> real colors, no tint; else colorset average if we found one, else flat fallback
+                if (texIndex < 0) tint = colorSetTint ?? fallbackTint;
             }
-            // textured -> no tint (real colors); untextured (skin "--" runtime paths) -> tint
-            meshInputs.Add(new GltfMeshInput(m, texIndex, texIndex >= 0 ? null : fallbackTint));
+            meshInputs.Add(new GltfMeshInput(m, texIndex, texIndex >= 0 ? null : tint));
         }
     }
 
-    private int ResolveDiffuseByPath(string mtrlPath, List<byte[]> pngs, Dictionary<string, int> cache)
+    private (int Tex, float[]? Tint) ResolveMaterialByPath(string mtrlPath, List<byte[]> pngs, Dictionary<string, (int, float[]?)> cache)
     {
         if (cache.TryGetValue(mtrlPath, out var cached)) return cached;
-        var result = -1;
+        (int, float[]?) result = (-1, null);
         try
         {
             if (_gameData.FileExists(mtrlPath))
@@ -195,10 +208,12 @@ public sealed class ModelExportService
                     if (tex != null)
                     {
                         var png = PngEncoder.EncodeRgba(tex.ImageData, tex.Header.Width, tex.Header.Height);
-                        result = pngs.Count;
+                        result = (pngs.Count, null);
                         pngs.Add(png);
                     }
                 }
+                if (result.Item1 < 0 && mtrl != null)
+                    result = (-1, TintFromColorSet(mtrl));
             }
         }
         catch { /* untextured fallback */ }
@@ -206,37 +221,25 @@ public sealed class ModelExportService
         return result;
     }
 
-    private int ResolveDiffuseTexture(string mtrlName, (string Category, string Prefix, string Suffix, int ImcPart) info, ushort setId, byte materialId, List<byte[]> pngs, Dictionary<string, int> cache)
+    /// <summary>Average diffuse color over the material's colorset rows — Dawntrail-era gear often
+    /// has no diffuse texture at all; its color lives in this table. Rough (per-pixel row mapping
+    /// via the id texture is ignored) but beats flat gray.</summary>
+    private static unsafe float[]? TintFromColorSet(MtrlFile mtrl)
     {
-        // mdl stores "/mt_....mtrl" — relative to the set's material variant folder
-        var mtrlPath = mtrlName.StartsWith('/')
-            ? $"chara/{info.Category}/{info.Prefix}{setId:D4}/material/v{materialId:D4}{mtrlName}"
-            : mtrlName;
-        if (cache.TryGetValue(mtrlPath, out var cached)) return cached;
-
-        var result = -1;
-        try
+        var info = mtrl.ColorSetInfo;
+        float r = 0, g = 0, b = 0;
+        var n = 0;
+        for (var row = 0; row < 16; row++)
         {
-            if (_gameData.FileExists(mtrlPath))
-            {
-                var mtrl = _gameData.GetFile<MtrlFile>(mtrlPath);
-                var texPath = PickDiffuse(mtrl);
-                if (texPath != null && _gameData.FileExists(texPath))
-                {
-                    var tex = _gameData.GetFile<TexFile>(texPath);
-                    if (tex != null)
-                    {
-                        var png = PngEncoder.EncodeRgba(tex.ImageData, tex.Header.Width, tex.Header.Height);
-                        result = pngs.Count;
-                        pngs.Add(png);
-                    }
-                }
-            }
+            var cr = (float)BitConverter.UInt16BitsToHalf(info.Data[row * 16 + 0]);
+            var cg = (float)BitConverter.UInt16BitsToHalf(info.Data[row * 16 + 1]);
+            var cb = (float)BitConverter.UInt16BitsToHalf(info.Data[row * 16 + 2]);
+            if (float.IsNaN(cr) || float.IsNaN(cg) || float.IsNaN(cb)) continue;
+            if (cr + cg + cb < 0.02f) continue; // empty/black row
+            r += Math.Clamp(cr, 0f, 1f); g += Math.Clamp(cg, 0f, 1f); b += Math.Clamp(cb, 0f, 1f);
+            n++;
         }
-        catch { /* untextured fallback material */ }
-
-        cache[mtrlPath] = result;
-        return result;
+        return n > 0 ? new[] { r / n, g / n, b / n } : null;
     }
 
     /// <summary>Pick the diffuse/base texture from a material's texture list — "_d.tex" preferred,
