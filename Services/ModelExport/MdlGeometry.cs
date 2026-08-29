@@ -14,11 +14,11 @@ public sealed class DecodedMesh
     public ushort[] Indices = [];
     public int MaterialIndex;
 
-    // ponytail: skinning inputs, 4 influences per vertex — enough for all classic (non-Dawntrail-
-    // extended 8-influence) meshes, which is everything we've tested. Empty when the mesh has no
-    // blend vertex elements (unskinned parts render rigid/bind-pose, same as before this existed).
-    public byte[] BlendIndices = [];  // 4 per vertex, local index into BoneTableIndex's table
-    public float[] BlendWeights = []; // 4 per vertex
+    // ponytail: skinning inputs, always 8 slots per vertex — classic gear only fills 4 (rest stay
+    // weight 0, SkinApply just skips them). Empty when the mesh has no blend vertex elements
+    // (unskinned parts render rigid/bind-pose, same as before skinning existed).
+    public byte[] BlendIndices = [];  // 8 per vertex, local index into BoneTableIndex's table
+    public float[] BlendWeights = []; // 8 per vertex
     public ushort BoneTableIndex;
     public bool HasSkinning;
 
@@ -41,10 +41,12 @@ public static class MdlGeometry
     private const byte TByteFloat4 = 8;
     private const byte THalf2 = 13;
     private const byte THalf4 = 14;
-    // Dawntrail additions (xivModdingFramework naming); only hit for the extended 8-influence blend
-    // format we don't support yet — those meshes fall back to unskinned (HasSkinning stays false).
-    private const byte TUShort2 = 16;
-    private const byte TUShort4 = 17;
+    // Dawntrail's extended 8-influence blend format (verified against TexTools/xivModdingFramework's
+    // MdlVertexReader.cs, VertexDataType.UByte8 = 0x11): 8 raw bytes per vertex, but NOT in stream
+    // order — read sequentially into array slots [0,4,1,5,2,6,3,7] ("silly low=>high" per that
+    // source's own comment). Same interleave for both BoneWeight (byte/255f) and BoneIndex (raw).
+    private const byte TUByte8 = 0x11;
+    private static readonly int[] UByte8Order = [0, 4, 1, 5, 2, 6, 3, 7];
 
     private const byte UsagePosition = 0;
     private const byte UsageBlendWeights = 1;
@@ -88,27 +90,35 @@ public static class MdlGeometry
 
                 if (isBlendIdx)
                 {
-                    // raw bytes, never normalized — these are table indices, not a color/normal
-                    blendIdx = new byte[n * 4];
+                    // raw bytes, never normalized — these are table indices, not a color/normal.
+                    // Always allocate 8 slots; classic 4-influence gear leaves slots 4-7 at 0 with
+                    // matching weight 0 (see below), so SkinApply just skips them.
+                    blendIdx = new byte[n * 8];
+                    var extended = el.Type == TUByte8;
                     for (var v = 0; v < n; v++)
                     {
                         var o = (int)(baseOffset + (uint)(v * stride));
-                        for (var c = 0; c < 4; c++) blendIdx[v * 4 + c] = data[o + c];
+                        if (extended)
+                            for (var c = 0; c < 8; c++) blendIdx[v * 8 + UByte8Order[c]] = data[o + c];
+                        else
+                            for (var c = 0; c < 4; c++) blendIdx[v * 8 + c] = data[o + c];
                     }
                     continue;
                 }
                 if (isBlendWt)
                 {
-                    // classic format only: 4 unsigned-normalized bytes (ByteFloat4) or 4 halfs.
-                    // Dawntrail's extended 8-influence format (UShort2/4 pairs) isn't handled —
-                    // those meshes just fall back to unskinned below.
-                    if (el.Type != TByteFloat4 && el.Type != THalf4) continue;
-                    blendWt = new float[n * 4];
+                    // classic: 4 unsigned-normalized bytes (ByteFloat4) or 4 halfs. Extended
+                    // (Dawntrail, UByte8): 8 unsigned-normalized bytes, interleaved (see TUByte8).
+                    if (el.Type != TByteFloat4 && el.Type != THalf4 && el.Type != TUByte8) continue;
+                    blendWt = new float[n * 8];
                     for (var v = 0; v < n; v++)
                     {
                         var o = (int)(baseOffset + (uint)(v * stride));
-                        for (var c = 0; c < 4; c++)
-                            blendWt[v * 4 + c] = el.Type == TByteFloat4 ? data[o + c] / 255f : (float)BitConverter.ToHalf(data, o + c * 2);
+                        if (el.Type == TUByte8)
+                            for (var c = 0; c < 8; c++) blendWt[v * 8 + UByte8Order[c]] = data[o + c] / 255f;
+                        else
+                            for (var c = 0; c < 4; c++)
+                                blendWt[v * 8 + c] = el.Type == TByteFloat4 ? data[o + c] / 255f : (float)BitConverter.ToHalf(data, o + c * 2);
                     }
                     continue;
                 }
@@ -185,8 +195,7 @@ public static class MdlGeometry
                 for (var c = 0; c < dst.Length; c++) dst[c] = d[o + c] / 255f * 2f - 1f;
                 break;
             case TUInt:
-            case TUShort2:
-            case TUShort4:
+            case TUByte8:
                 // blend indices/weights formats — never routed here (handled separately above),
                 // but keep a defined behavior instead of throwing on odd files
                 dst.Clear();

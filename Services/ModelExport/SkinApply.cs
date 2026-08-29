@@ -39,13 +39,13 @@ public static class SkinApply
         var rejected = 0;
         for (var v = 0; v < n; v++)
         {
-            var bi = v * 4;
+            var bi = v * 8;
             var pos = new Vector3(mesh.Positions[v * 3], mesh.Positions[v * 3 + 1], mesh.Positions[v * 3 + 2]);
             var skinnedPos = Vector3.Zero;
             var normal = hasNormals ? new Vector3(mesh.Normals[v * 3], mesh.Normals[v * 3 + 1], mesh.Normals[v * 3 + 2]) : Vector3.Zero;
             var skinnedNormal = Vector3.Zero;
             var wsum = 0f;
-            for (var k = 0; k < 4; k++)
+            for (var k = 0; k < 8; k++)
             {
                 var w = mesh.BlendWeights[bi + k];
                 if (w <= 0f) continue;
