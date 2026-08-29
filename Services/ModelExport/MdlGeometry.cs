@@ -35,9 +35,12 @@ public sealed class DecodedMesh
 public static class MdlGeometry
 {
     // Lumina.Models.Models.Vertex+VertexType values (verified via reflection against Lumina 7.6).
+    // Type 5 is actually "Ubyte4" (4 RAW bytes, xivModdingFramework's VertexDataType naming) —
+    // "TUInt" was a leftover misnomer from an older guess. Confirmed via real vertex declaration
+    // dump: equipment gear uses type 5 for BOTH BlendWeights and BlendIndices, not just indices.
     private const byte TSingle3 = 2;
     private const byte TSingle4 = 3;
-    private const byte TUInt = 5;
+    private const byte TRawByte4 = 5;
     private const byte TByteFloat4 = 8;
     private const byte THalf2 = 13;
     private const byte THalf4 = 14;
@@ -107,9 +110,10 @@ public static class MdlGeometry
                 }
                 if (isBlendWt)
                 {
-                    // classic: 4 unsigned-normalized bytes (ByteFloat4) or 4 halfs. Extended
-                    // (Dawntrail, UByte8): 8 unsigned-normalized bytes, interleaved (see TUByte8).
-                    if (el.Type != TByteFloat4 && el.Type != THalf4 && el.Type != TUByte8) continue;
+                    // classic: 4 raw bytes (RawByte4 — confirmed via real equipment vertex decl
+                    // dump, e.g. "u1t5") or ByteFloat4, or 4 halfs — all just byte/255f except
+                    // halfs. Extended (Dawntrail, UByte8): 8 unsigned bytes, interleaved (TUByte8).
+                    if (el.Type != TByteFloat4 && el.Type != THalf4 && el.Type != TUByte8 && el.Type != TRawByte4) continue;
                     blendWt = new float[n * 8];
                     for (var v = 0; v < n; v++)
                     {
@@ -118,7 +122,7 @@ public static class MdlGeometry
                             for (var c = 0; c < 8; c++) blendWt[v * 8 + UByte8Order[c]] = data[o + c] / 255f;
                         else
                             for (var c = 0; c < 4; c++)
-                                blendWt[v * 8 + c] = el.Type == TByteFloat4 ? data[o + c] / 255f : (float)BitConverter.ToHalf(data, o + c * 2);
+                                blendWt[v * 8 + c] = el.Type == THalf4 ? (float)BitConverter.ToHalf(data, o + c * 2) : data[o + c] / 255f;
                     }
                     continue;
                 }
@@ -194,7 +198,7 @@ public static class MdlGeometry
                 // normalized bytes; for normals the -1..1 remap is the convention that renders correctly
                 for (var c = 0; c < dst.Length; c++) dst[c] = d[o + c] / 255f * 2f - 1f;
                 break;
-            case TUInt:
+            case TRawByte4:
             case TUByte8:
                 // blend indices/weights formats — never routed here (handled separately above),
                 // but keep a defined behavior instead of throwing on odd files
