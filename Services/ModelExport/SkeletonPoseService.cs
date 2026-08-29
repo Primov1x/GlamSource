@@ -27,12 +27,30 @@ public sealed class SkeletonPose
     /// throwing on VFX-only/attach bones that aren't in the mdl's skeleton.</summary>
     public Matrix4x4 SkinMatrix(string boneName)
     {
-        if (BindInverse.TryGetValue(boneName, out var bi) && CurrentModel.TryGetValue(boneName, out var cm))
+        var resolved = Resolve(boneName);
+        if (resolved != null && BindInverse.TryGetValue(resolved, out var bi) && CurrentModel.TryGetValue(resolved, out var cm))
             return bi * cm;
         return Matrix4x4.Identity;
     }
 
-    public bool HasBone(string boneName) => BindInverse.ContainsKey(boneName) && CurrentModel.ContainsKey(boneName);
+    public bool HasBone(string boneName) => Resolve(boneName) != null;
+
+    /// <summary>Equipment "extra bone" (j_ex_*) mesh tables sometimes name a bone with an extra "v"
+    /// before its final a/b/l/r suffix (e.g. mdl wants "j_ex_met_va", the live skeleton's actual
+    /// partial for that item's extra bones has it as "j_ex_met_a") — verified against a real trace:
+    /// the partial skeleton genuinely exists with the right bone count, just this one-letter-off
+    /// name. Try the exact name first; only fall back to the de-"v"'d variant if that's what the
+    /// live skeleton actually has.</summary>
+    private string? Resolve(string boneName)
+    {
+        if (BindInverse.ContainsKey(boneName) && CurrentModel.ContainsKey(boneName)) return boneName;
+        if (boneName.Length > 1 && boneName[^1] is 'a' or 'b' && boneName[^2] == 'v')
+        {
+            var stripped = boneName[..^2] + boneName[^1];
+            if (BindInverse.ContainsKey(stripped) && CurrentModel.ContainsKey(stripped)) return stripped;
+        }
+        return null;
+    }
 }
 
 // ponytail: reads the character's ALREADY-COMPUTED live skeleton pose (game recomputes this every
