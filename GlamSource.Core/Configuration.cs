@@ -22,4 +22,7 @@ public class Configuration
 
     // ponytail: optional HTML alternative UI (localhost:23424), off by default.
     public bool WebUiEnabled { get; set; } = false;
+
+    // ponytail: auto-drive a Browsingway overlay named "GlamSource" (show on open, hide on close).
+    public bool WebUiAutoOverlay { get; set; } = true;
 }

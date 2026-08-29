@@ -154,8 +154,32 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         IsOpen = true;
     }
 
+    private bool IsBrowsingwayLoaded()
+        => _pi.InstalledPlugins.Any(p => p.InternalName == "Browsingway" && p.IsLoaded);
+
+    // ponytail: Browsingway has no IPC and no create-via-command; we can only drive an EXISTING
+    // overlay (user creates one named "GlamSource" once). Command name = display name lowercased.
+    private void SetWebUiOverlay(bool visible)
+    {
+        if (!_configuration.WebUiEnabled || !_configuration.WebUiAutoOverlay || !IsBrowsingwayLoaded())
+            return;
+        if (visible)
+        {
+            Plugin.CommandManager.ProcessCommand("/bw overlay glamsource url http://127.0.0.1:23424/");
+            Plugin.CommandManager.ProcessCommand("/bw overlay glamsource locked on");
+            Plugin.CommandManager.ProcessCommand("/bw overlay glamsource hidden off");
+        }
+        else
+        {
+            Plugin.CommandManager.ProcessCommand("/bw overlay glamsource hidden on");
+        }
+    }
+
+    public override void OnClose() => SetWebUiOverlay(false);
+
     public override void OnOpen()
     {
+        SetWebUiOverlay(true);
         // ponytail: first frame after open shows self, not whatever the game is targeting.
         // User must explicitly re-target (or click Recent) to switch away.
         _lastLiveTarget = 0;
@@ -1100,6 +1124,33 @@ private void ApplyTargetGlamourToSelf()
         }
         ImGui.SameLine();
         ImGuiComponents.HelpMarker("HTML alternative UI on http://localhost:23424 — open in a browser or via Browsingway for an in-game overlay.");
+
+        if (webUiEnabled)
+        {
+            var bwLoaded = IsBrowsingwayLoaded();
+            ImGui.Indent(ImGui.GetFontSize());
+            using (ImRaii.PushFont(UiBuilder.IconFont))
+                ImGui.TextColored(bwLoaded ? UiStyle.Success : UiStyle.Warning,
+                    (bwLoaded ? FontAwesomeIcon.Check : FontAwesomeIcon.ExclamationTriangle).ToIconString());
+            ImGui.SameLine();
+            if (bwLoaded)
+                ImGui.TextColored(UiStyle.Success, "Browsingway found");
+            else
+                ImGui.TextColored(UiStyle.Warning, "Browsingway not installed — in-game overlay unavailable");
+
+            if (bwLoaded)
+            {
+                var autoOverlay = _configuration.WebUiAutoOverlay;
+                if (ImGui.Checkbox("Auto-Overlay", ref autoOverlay))
+                {
+                    _configuration.WebUiAutoOverlay = autoOverlay;
+                    _configuration.Save();
+                }
+                ImGui.SameLine();
+                ImGuiComponents.HelpMarker("One-time setup: create an overlay named 'GlamSource' in /bw.\nGlamSource then sets its URL, shows it when this window opens,\nhides it on close and keeps it locked (fixed size/position).");
+            }
+            ImGui.Unindent(ImGui.GetFontSize());
+        }
 
         ImGui.Spacing();
         UiStyle.SectionHeader("Auto-Gathering");
