@@ -26,13 +26,27 @@ public static class SkinApply
         var refsTotal = 0;
         var unmatchedNames = new SortedSet<string>();
 
+        // ponytail: a bone we can't find (physics/jiggle bones — see SkeletonPose, that live data
+        // isn't reachable) used to fall back to Identity, i.e. "stay frozen at the bind-pose spot".
+        // For a hair-strand tip or ear-dangle that's visible clipping once the head has moved away
+        // from bind pose. Falling back to the mesh's first successfully-matched bone instead makes
+        // it move rigidly with its actual attachment point (head, ear root, ...) — no independent
+        // sway, but no longer left behind in space either.
+        var fallback = Matrix4x4.Identity;
+        foreach (var idx in table)
+        {
+            if (idx >= mdlBones.Length || !pose.HasBone(mdlBones[idx])) continue;
+            fallback = pose.SkinMatrix(mdlBones[idx]);
+            break;
+        }
+
         (Matrix4x4 M, bool Matched) SkinFor(byte localIdx)
         {
             if (skinCache.TryGetValue(localIdx, out var cached)) return cached;
             var boneName = localIdx < table.Length && table[localIdx] < mdlBones.Length ? mdlBones[table[localIdx]] : null;
             var matched = boneName != null && pose.HasBone(boneName);
             if (boneName != null && !matched) unmatchedNames.Add(boneName);
-            var m = matched ? pose.SkinMatrix(boneName!) : Matrix4x4.Identity;
+            var m = matched ? pose.SkinMatrix(boneName!) : fallback;
             var result = (m, matched);
             skinCache[localIdx] = result;
             return result;
