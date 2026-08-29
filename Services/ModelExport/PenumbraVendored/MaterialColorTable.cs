@@ -131,7 +131,12 @@ public static class MaterialColorTable
         for (var p = 0; p < idWidth * idHeight; p++)
         {
             var o = p * 4;
-            var red = idTexRgba[o] / 255f;
+            // id textures are BC5 (2-channel) — Lumina's decoder packs the two channels into the
+            // Green and Blue bytes of the output RGBA (Red is always 0), not Red/Green as the
+            // shader docs describe for the raw channel layout. Verified against real files: with
+            // Red/Green every material outside a lucky one baked to flat white; Blue/Green gives
+            // distinct, plausible colors for every material tested.
+            var red = idTexRgba[o + 2] / 255f;
             var green = idTexRgba[o + 1] / 255f;
             var colorA = SampleRamp(rampA, red);
             var colorB = SampleRamp(rampB, red);
