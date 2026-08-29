@@ -84,6 +84,18 @@ public static class GltfBuilder
                 attrs["NORMAL"] = AddAccessor(bin, bufferViews, accessors, g.Normals, 3, "VEC3", 34962);
             if (g.Uvs.Length > 0)
                 attrs["TEXCOORD_0"] = AddAccessor(bin, bufferViews, accessors, g.Uvs, 2, "VEC2", 34962);
+            // ponytail: without an explicit TANGENT attribute, glTF has the renderer derive one from
+            // screen-space UV/position derivatives per the spec's fallback. three.js does this, but
+            // it visibly broke on several meshes here (streaky/blotchy normal-map lighting on the
+            // hat, oddly dark shading on the face) — computing real per-vertex tangents ourselves
+            // (standard Lengyel method) sidesteps whatever about these meshes' UV layout the
+            // fallback didn't like.
+            if (input.NormalTextureIndex >= 0 && g.Normals.Length > 0 && g.Uvs.Length > 0)
+            {
+                var tangents = ComputeTangents(g);
+                if (tangents != null)
+                    attrs["TANGENT"] = AddAccessor(bin, bufferViews, accessors, tangents, 4, "VEC4", 34962);
+            }
 
             var idxBytes = new byte[g.Indices.Length * 2];
             Buffer.BlockCopy(g.Indices, 0, idxBytes, 0, idxBytes.Length);
@@ -125,6 +137,83 @@ public static class GltfBuilder
         var json = JsonSerializer.SerializeToUtf8Bytes(gltf);
 
         return WrapGlb(json, bin.ToArray());
+    }
+
+    /// <summary>Per-vertex tangents (xyz + handedness w), standard Lengyel method: accumulate a
+    /// tangent/bitangent per triangle from its UV gradient, average per shared vertex, then
+    /// Gram-Schmidt orthogonalize against the vertex normal. Returns null if degenerate (e.g. a
+    /// zero-UV-area triangle everywhere) rather than emit garbage tangents.</summary>
+    private static float[]? ComputeTangents(DecodedMesh g)
+    {
+        var n = g.Positions.Length / 3;
+        var tan = new float[n * 3];
+        var bitan = new float[n * 3];
+
+        for (var t = 0; t < g.Indices.Length; t += 3)
+        {
+            int i0 = g.Indices[t], i1 = g.Indices[t + 1], i2 = g.Indices[t + 2];
+            var p0x = g.Positions[i0 * 3]; var p0y = g.Positions[i0 * 3 + 1]; var p0z = g.Positions[i0 * 3 + 2];
+            var p1x = g.Positions[i1 * 3]; var p1y = g.Positions[i1 * 3 + 1]; var p1z = g.Positions[i1 * 3 + 2];
+            var p2x = g.Positions[i2 * 3]; var p2y = g.Positions[i2 * 3 + 1]; var p2z = g.Positions[i2 * 3 + 2];
+            var e1x = p1x - p0x; var e1y = p1y - p0y; var e1z = p1z - p0z;
+            var e2x = p2x - p0x; var e2y = p2y - p0y; var e2z = p2z - p0z;
+
+            var u0 = g.Uvs[i0 * 2]; var v0 = g.Uvs[i0 * 2 + 1];
+            var u1 = g.Uvs[i1 * 2]; var v1 = g.Uvs[i1 * 2 + 1];
+            var u2 = g.Uvs[i2 * 2]; var v2 = g.Uvs[i2 * 2 + 1];
+            var du1 = u1 - u0; var dv1 = v1 - v0;
+            var du2 = u2 - u0; var dv2 = v2 - v0;
+
+            var denom = du1 * dv2 - du2 * dv1;
+            if (MathF.Abs(denom) < 1e-12f) continue; // degenerate UV triangle — skip, don't poison
+            var f = 1f / denom;
+
+            var tx = f * (dv2 * e1x - dv1 * e2x);
+            var ty = f * (dv2 * e1y - dv1 * e2y);
+            var tz = f * (dv2 * e1z - dv1 * e2z);
+            var bx = f * (du1 * e2x - du2 * e1x);
+            var by = f * (du1 * e2y - du2 * e1y);
+            var bz = f * (du1 * e2z - du2 * e1z);
+
+            foreach (var i in new[] { i0, i1, i2 })
+            {
+                tan[i * 3] += tx; tan[i * 3 + 1] += ty; tan[i * 3 + 2] += tz;
+                bitan[i * 3] += bx; bitan[i * 3 + 1] += by; bitan[i * 3 + 2] += bz;
+            }
+        }
+
+        var result = new float[n * 4];
+        var anyValid = false;
+        for (var i = 0; i < n; i++)
+        {
+            var nx = g.Normals[i * 3]; var ny = g.Normals[i * 3 + 1]; var nz = g.Normals[i * 3 + 2];
+            var tx = tan[i * 3]; var ty = tan[i * 3 + 1]; var tz = tan[i * 3 + 2];
+
+            // Gram-Schmidt: T - N * dot(N, T)
+            var d = nx * tx + ny * ty + nz * tz;
+            var ox = tx - nx * d; var oy = ty - ny * d; var oz = tz - nz * d;
+            var len = MathF.Sqrt(ox * ox + oy * oy + oz * oz);
+            if (len < 1e-8f)
+            {
+                // no usable tangent at this vertex (e.g. isolated/degenerate) — pick an arbitrary
+                // axis perpendicular to the normal so the accessor still has a unit vector, not NaN.
+                ox = 1f; oy = 0f; oz = 0f;
+                d = nx; // reuse d as dot(N,(1,0,0))
+                ox -= nx * d;
+                len = MathF.Sqrt(ox * ox + oy * oy + oz * oz);
+                if (len < 1e-8f) { ox = 0f; oy = 1f; oz = 0f; len = 1f; }
+            }
+            else anyValid = true;
+            ox /= len; oy /= len; oz /= len;
+
+            // handedness: sign of dot(cross(N,T), B)
+            var cx = ny * oz - nz * oy; var cy = nz * ox - nx * oz; var cz = nx * oy - ny * ox;
+            var bx = bitan[i * 3]; var by = bitan[i * 3 + 1]; var bz = bitan[i * 3 + 2];
+            var w = (cx * bx + cy * by + cz * bz) < 0f ? -1f : 1f;
+
+            result[i * 4] = ox; result[i * 4 + 1] = oy; result[i * 4 + 2] = oz; result[i * 4 + 3] = w;
+        }
+        return anyValid ? result : null;
     }
 
     private static int AddAccessor(MemoryStream bin, List<object> views, List<object> accessors, float[] data, int comps, string type, int target)

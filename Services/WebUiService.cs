@@ -463,7 +463,12 @@ public sealed class WebUiService : IDisposable
                     // player actually customized further via Advanced Customization (its own "Apply"
                     // flag, not just a placeholder — see GlamourerColorIpc's doc comment for why
                     // blindly trusting IPC without that flag produced garbage before).
-                    try { colors = ModelExport.CmpColorReader.Read(_modelExportGameData, tribe, gender, skinColorIdx, hairColorIdx); }
+                    var debugSrc = $"tribe={tribe} gender={gender} skinIdx={skinColorIdx} hairIdx={hairColorIdx}";
+                    try
+                    {
+                        colors = ModelExport.CmpColorReader.Read(_modelExportGameData, tribe, gender, skinColorIdx, hairColorIdx);
+                        if (colors != null) colors = colors.Value with { DebugSource = $"cmp:{debugSrc}" };
+                    }
                     catch (Exception ex) { _log.Warning($"[WebUi] human.cmp color read failed: {ex.Message}"); }
                     try
                     {
@@ -472,7 +477,12 @@ public sealed class WebUiService : IDisposable
                         {
                             var baseColors = colors ?? new ModelExport.CustomizeColors(
                                 new[] { 0.85f, 0.66f, 0.56f }, new[] { 0.35f, 0.30f, 0.28f });
-                            colors = baseColors with { Skin = a.Skin ?? baseColors.Skin, Hair = a.Hair ?? baseColors.Hair };
+                            colors = baseColors with
+                            {
+                                Skin = a.Skin ?? baseColors.Skin,
+                                Hair = a.Hair ?? baseColors.Hair,
+                                DebugSource = $"{baseColors.DebugSource}+ipc(skinApplied={a.Skin != null},hairApplied={a.Hair != null})",
+                            };
                         }
                     }
                     catch (Exception ex) { _log.Warning($"[WebUi] Glamourer IPC color read failed: {ex.Message}"); }

@@ -70,7 +70,7 @@ public sealed class ModelExportService
         }
         LastTrace.Add(colors == null
             ? "customize colors: null (buffer not ready / degenerate read rejected — using flat 0.85/0.66/0.56 skin, 0.35/0.30/0.28 hair fallback)"
-            : $"customize colors: skin={colors.Value.Skin[0]:F2},{colors.Value.Skin[1]:F2},{colors.Value.Skin[2]:F2} hair={colors.Value.Hair[0]:F2},{colors.Value.Hair[1]:F2},{colors.Value.Hair[2]:F2}");
+            : $"customize colors: skin={colors.Value.Skin[0]:F2},{colors.Value.Skin[1]:F2},{colors.Value.Skin[2]:F2} hair={colors.Value.Hair[0]:F2},{colors.Value.Hair[1]:F2},{colors.Value.Hair[2]:F2} src=[{colors.Value.DebugSource}]");
         var items = slots
             .Select(s => (Slot: s.Slot, ItemId: s.GlamourItemId ?? s.ActualItemId, Stain: s.Stain0))
             .Where(x => x.ItemId > 0 && SlotInfo(x.Slot) != null)
