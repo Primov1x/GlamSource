@@ -135,7 +135,12 @@ public sealed class ModelExportService
             LastTrace.Add($"{slot}:{itemId} meshes decoded: {meshes.Count}");
             foreach (var m in meshes)
             {
-                if (pose != null) SkinApply.Apply(m, mdl.Bones, mdl.BoneTables, pose);
+                if (pose != null)
+                {
+                    var stats = SkinApply.Apply(m, mdl.Bones, mdl.BoneTables, pose);
+                    if (stats.Vertices > 0)
+                        LastTrace.Add($"  skin: {stats.SkinnedVertices}/{stats.Vertices} verts, bones matched {stats.BoneRefsMatched}/{stats.BoneRefsTotal}, rejected {stats.RejectedVertices}");
+                }
                 var texIndex = -1;
                 var effectiveTint = tint;
                 if (m.MaterialIndex >= 0 && m.MaterialIndex < mdl.Materials.Length)
@@ -205,7 +210,12 @@ public sealed class ModelExportService
         LastTrace.Add($"chara part {partFolder}: {meshes.Count} meshes");
         foreach (var m in meshes)
         {
-            if (pose != null) SkinApply.Apply(m, mdl.Bones, mdl.BoneTables, pose);
+            if (pose != null)
+            {
+                var stats = SkinApply.Apply(m, mdl.Bones, mdl.BoneTables, pose);
+                if (stats.Vertices > 0)
+                    LastTrace.Add($"  skin: {stats.SkinnedVertices}/{stats.Vertices} verts, bones matched {stats.BoneRefsMatched}/{stats.BoneRefsTotal}, rejected {stats.RejectedVertices}");
+            }
             var texIndex = -1;
             float[]? tint = fallbackTint;
             if (m.MaterialIndex >= 0 && m.MaterialIndex < mdl.Materials.Length)

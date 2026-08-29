@@ -26,6 +26,8 @@ public sealed class SkeletonPose
             return bi * cm;
         return Matrix4x4.Identity;
     }
+
+    public bool HasBone(string boneName) => BindInverse.ContainsKey(boneName) && CurrentModel.ContainsKey(boneName);
 }
 
 // ponytail: reads the character's ALREADY-COMPUTED live skeleton pose (game recomputes this every
