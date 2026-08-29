@@ -30,6 +30,7 @@ public sealed class WebUiService : IDisposable
     private readonly Configuration _configuration;
     private readonly IFramework _framework;
     private readonly IPluginLog _log;
+    private readonly ModelExport.ModelExportService _modelExport;
     private TcpListener? _listener;
     private TcpListener? _listener6;
     private CancellationTokenSource? _cts;
@@ -49,6 +50,7 @@ public sealed class WebUiService : IDisposable
         _configuration = configuration;
         _framework = framework;
         _log = log;
+        _modelExport = new ModelExport.ModelExportService(detail.GameData);
         // pluginConfigs/GlamSource.json -> sibling Browsingway.json
         var dir = pi.ConfigFile.DirectoryName;
         _browsingwayConfigPath = dir != null ? Path.Combine(dir, "Browsingway.json") : null;
@@ -311,6 +313,25 @@ public sealed class WebUiService : IDisposable
                 if (renderer != null) renderer.SetZoom(renderer.Zoom + zoomDelta);
             });
             return Json(new { ok = true });
+        }
+
+        if (method == "GET" && path == "/api/model3d.glb")
+        {
+            // ponytail: pure file parsing (Lumina + vendored Penumbra mdl parser) — no game
+            // memory, no GPU, safe from any thread. Built from the current snapshot's items.
+            try
+            {
+                var slots = _shell.DebugSnapshot;
+                var glb = _modelExport.BuildGlb(slots);
+                return glb == null
+                    ? ("404 Not Found", "application/octet-stream", Array.Empty<byte>())
+                    : ("200 OK", "model/gltf-binary", glb);
+            }
+            catch (Exception ex)
+            {
+                _log.Error($"[WebUi] model3d export failed: {ex.Message}");
+                return ("500 Internal Server Error", "application/octet-stream", Array.Empty<byte>());
+            }
         }
 
         if (method == "POST" && path == "/api/action/overlay/hide")

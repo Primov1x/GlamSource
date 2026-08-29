@@ -82,6 +82,7 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 <nav>
   <button id="tab-lookup" class="active" onclick="showTab('lookup')">Lookup</button>
   <button id="tab-character" onclick="showTab('character')">Character</button>
+  <button id="tab-viewer" onclick="showTab('viewer')">3D Viewer</button>
 </nav>
 
 <section id="view-lookup">
@@ -97,6 +98,11 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
   <div class="snapgrid" id="snap"></div>
 </section>
 
+<section id="view-viewer" style="display:none">
+  <div class="empty" id="viewerinfo"><span class="spinner"></span>Loading model…</div>
+  <div id="viewer3d" style="width:100%;height:70vh;border:1px solid var(--border);border-radius:8px;overflow:hidden;display:none"></div>
+</section>
+
 </div>
 <script>
 const $=s=>document.querySelector(s);
@@ -107,11 +113,12 @@ const TYPE_ICON={craft:'🔨',vendor:'🛒',quest:'❗',duty:'⚔️'};
 function typeIcon(cls){return TYPE_ICON[cls]??'✦'}
 
 function showTab(t){
-  for(const x of['lookup','character']){
+  for(const x of['lookup','character','viewer']){
     $('#view-'+x).style.display=x===t?'':'none';
     $('#tab-'+x).classList.toggle('active',x===t);
   }
   if(t==='character'){loadSnapshot();startPreview3D()}else{stopPreview3D()}
+  if(t==='viewer')startViewer();
 }
 
 // --- 3D preview (opt-in, see Settings > 3D Preview) ---
@@ -250,6 +257,60 @@ async function loadSnapshot(){
 }
 
 async function post(url){await fetch(url,{method:'POST'})}
+
+// --- glTF mesh viewer (static bind pose; equipment from current snapshot) ---
+// three.js from CDN; the whole scene is client-side WebGL — smooth camera, zero game load.
+let viewerStarted=false;
+async function startViewer(){
+  if(viewerStarted){reloadViewerModel();return}
+  viewerStarted=true;
+  const info=$('#viewerinfo');
+  try{
+    const THREE=await import('https://unpkg.com/three@0.160.0/build/three.module.js');
+    const {GLTFLoader}=await import('https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js');
+    const {OrbitControls}=await import('https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js');
+    const box=$('#viewer3d');
+    box.style.display='block';
+    const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+    renderer.setSize(box.clientWidth,box.clientHeight);
+    box.appendChild(renderer.domElement);
+    const scene=new THREE.Scene();
+    scene.background=new THREE.Color(0x14161c);
+    const camera=new THREE.PerspectiveCamera(45,box.clientWidth/box.clientHeight,0.01,100);
+    camera.position.set(0,1.2,2.2);
+    const controls=new OrbitControls(camera,renderer.domElement);
+    controls.target.set(0,1.0,0);
+    scene.add(new THREE.AmbientLight(0xffffff,2.0));
+    const dir=new THREE.DirectionalLight(0xffffff,2.0);
+    dir.position.set(2,3,2);
+    scene.add(dir);
+    window._glamViewer={THREE,GLTFLoader,scene,renderer,camera,controls,box,model:null};
+    await reloadViewerModel();
+    (function animate(){requestAnimationFrame(animate);controls.update();renderer.render(scene,camera)})();
+    new ResizeObserver(()=>{renderer.setSize(box.clientWidth,box.clientHeight);camera.aspect=box.clientWidth/box.clientHeight;camera.updateProjectionMatrix()}).observe(box);
+  }catch(e){
+    info.textContent='⚠️ Viewer failed to load: '+e.message;
+    viewerStarted=false;
+  }
+}
+
+async function reloadViewerModel(){
+  const v=window._glamViewer;
+  if(!v)return;
+  const info=$('#viewerinfo');
+  info.innerHTML='<span class="spinner"></span>Loading model…';
+  info.style.display='flex';
+  try{
+    const r=await fetch('/api/model3d.glb?t='+Date.now());
+    if(!r.ok){info.textContent='🤷 No model — open the Character tab in-game first.';return}
+    const buf=await r.arrayBuffer();
+    const gltf=await new Promise((res,rej)=>new v.GLTFLoader().parse(buf,'',res,rej));
+    if(v.model)v.scene.remove(v.model);
+    v.model=gltf.scene;
+    v.scene.add(v.model);
+    info.style.display='none';
+  }catch(e){info.textContent='⚠️ '+e.message}
+}
 
 let overlayLocked=false;
 function toggleLock(){
