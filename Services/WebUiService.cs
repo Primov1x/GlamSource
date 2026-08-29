@@ -331,6 +331,16 @@ public sealed class WebUiService : IDisposable
         if (method == "GET" && path == "/api/pose/list")
             return Json(new { poses = _savedPoses.Keys.ToArray() });
 
+        if (method == "POST" && path == "/api/action/pose/reset")
+        {
+            // ponytail: snapshots freeze after first capture (see ResolveModelInputs) — this is
+            // the escape hatch for "the frozen one is bad, let me recapture" without a plugin reload.
+            var name = query["name"];
+            if (string.IsNullOrEmpty(name)) { _savedPoses.Clear(); return Json(new { ok = true, cleared = "all" }); }
+            _savedPoses.TryRemove(name, out _);
+            return Json(new { ok = true, cleared = name });
+        }
+
         if (method == "GET" && path == "/api/model3d.glb")
         {
             // ponytail: mdl/mtrl/tex parsing is pure file I/O (Lumina + vendored Penumbra parser),
@@ -435,11 +445,10 @@ public sealed class WebUiService : IDisposable
                     try { pose = ModelExport.SkeletonPoseService.Capture(pc.Address); }
                     catch (Exception ex) { _log.Warning($"[WebUi] skeleton pose capture failed: {ex.Message}"); }
 
-                    // ponytail: self-maintaining "idle"/"weapon" snapshots — no user action needed.
-                    // Every time we happen to observe the character in a clean idle or weapon-drawn
-                    // state, silently refresh that saved pose. /api/model3d.glb?pose=idle|weapon
-                    // then always serves the last good one, however stale the character's CURRENT
-                    // live animation is (crafting, sitting, emoting, ...).
+                    // ponytail: self-maintaining "idle"/"weapon" snapshots — no user action needed,
+                    // and captured ONCE then frozen (not continuously refreshed) so the pose stays
+                    // exactly the same across views instead of drifting with the idle animation's
+                    // breathing/sway loop every time the character happens to be observed idling.
                     if (pose != null)
                     {
                         var busy = Plugin.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.Crafting]
@@ -453,8 +462,8 @@ public sealed class WebUiService : IDisposable
                         unsafe
                         {
                             var chr = (FFXIVClientStructs.FFXIV.Client.Game.Character.Character*)pc.Address;
-                            if (chr->IsWeaponDrawn && !busy) _savedPoses["weapon"] = pose;
-                            else if (!chr->IsWeaponDrawn && !busy) _savedPoses["idle"] = pose;
+                            if (chr->IsWeaponDrawn && !busy) _savedPoses.TryAdd("weapon", pose);
+                            else if (!chr->IsWeaponDrawn && !busy) _savedPoses.TryAdd("idle", pose);
                         }
                     }
                 }

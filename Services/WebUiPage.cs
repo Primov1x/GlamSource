@@ -103,9 +103,10 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
   <div class="empty" id="viewerinfo"><span class="spinner"></span>Loading model…</div>
   <div id="viewer3d" style="width:100%;height:70vh;border:1px solid var(--border);border-radius:8px;overflow:hidden;display:none"></div>
   <div id="pose-toggle" style="display:none;margin-top:6px;gap:4px" class="row">
-    <button id="pose-idle" onclick="setViewerPose('idle')" title="Last time the character was seen standing normally (not crafting/sitting/mounted/...) — auto-updated, no action needed">🧍 Idle</button>
-    <button id="pose-weapon" onclick="setViewerPose('weapon')" title="Last time the character was seen with weapon drawn — auto-updated, no action needed">⚔️ Waffe</button>
+    <button id="pose-idle" onclick="setViewerPose('idle')" title="First time the character was seen standing normally (not crafting/sitting/mounted/...) — captured once, frozen">🧍 Idle</button>
+    <button id="pose-weapon" onclick="setViewerPose('weapon')" title="First time the character was seen with weapon drawn — captured once, frozen">⚔️ Waffe</button>
     <button id="pose-live" onclick="setViewerPose('live')" title="Whatever the character is doing right this second">🔴 Live</button>
+    <button onclick="resetPose()" title="Bad capture? Clear the frozen Idle/Weapon snapshots so they get re-captured next time you're in that state">♻️ Neu erfassen</button>
   </div>
 </section>
 
@@ -307,6 +308,8 @@ async function startViewer(){
     viewerStarted=false;
   }
 }
+
+async function resetPose(){await post('/api/action/pose/reset');reloadViewerModel()}
 
 let viewerPose='idle';
 function setViewerPose(p){
