@@ -49,12 +49,18 @@ public sealed class ModelExportService
     /// <summary>Per-request resolution trace for /api/model3d/debug — why did items drop out?</summary>
     public List<string> LastTrace { get; } = new();
 
+    /// <summary>The exact PNGs baked/embedded into the last BuildGlb call, in tex=N order matching
+    /// LastTrace — inspect these directly (unlit, unshaded) instead of guessing from a lit 3D
+    /// render or a lossy screenshot when a color looks wrong.</summary>
+    public List<byte[]> LastTextures { get; } = new();
+
     /// <summary>Build a GLB containing all equipment models for the given slots. Returns null when
     /// nothing could be resolved.</summary>
     public byte[]? BuildGlb(IReadOnlyList<EquipmentSlot> slots, CharacterModelInfo? chara = null, bool bypassCache = false, SkeletonPose? pose = null, CustomizeColors? colors = null)
     {
         bypassCache = bypassCache || pose != null; // live pose changes every capture — never cache it
         LastTrace.Clear();
+        LastTextures.Clear();
         LastTrace.Add($"slots in: {slots.Count}, chara: {chara?.RaceCode ?? "none"}");
         var items = slots
             .Select(s => (Slot: s.Slot, ItemId: s.GlamourItemId ?? s.ActualItemId, Stain: s.Stain0))
@@ -200,6 +206,7 @@ public sealed class ModelExportService
         }
 
         if (meshInputs.Count == 0) return null;
+        LastTextures.AddRange(pngs);
         var glb = GltfBuilder.BuildGlb(meshInputs, pngs);
         _cache = (key, glb);
         return glb;

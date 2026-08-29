@@ -328,6 +328,22 @@ public sealed class WebUiService : IDisposable
             return Json(new { trace = _modelExport.LastTrace, live = dbgPose != null });
         }
 
+        if (method == "GET" && path == "/api/model3d/textures")
+        {
+            // ponytail: the raw baked/loaded PNGs, unlit and unshaded — for chasing a color bug,
+            // read the actual pixel here instead of guessing from a lit 3D render or a lossy
+            // screenshot. Index matches "tex=N"/"normal=N" in /api/model3d/debug's trace.
+            var (texSlots, texChara, texPose, texColors) = ResolveModelInputs();
+            _modelExport.BuildGlb(texSlots, texChara, bypassCache: true, pose: texPose, colors: texColors);
+            var sb = new StringBuilder("<html><body style='background:#333;color:#eee;font-family:monospace'>");
+            for (var i = 0; i < _modelExport.LastTextures.Count; i++)
+            {
+                var b64 = Convert.ToBase64String(_modelExport.LastTextures[i]);
+                sb.Append($"<div style='margin-bottom:12px'>tex={i}<br><img src='data:image/png;base64,{b64}' style='max-width:400px;image-rendering:pixelated;border:1px solid #666'></div>");
+            }
+            return ("200 OK", "text/html; charset=utf-8", Encoding.UTF8.GetBytes(sb.ToString()));
+        }
+
         if (method == "GET" && path == "/api/pose/list")
             return Json(new { poses = _savedPoses.Keys.ToArray() });
 

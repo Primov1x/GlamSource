@@ -107,7 +107,10 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
     <button id="pose-weapon" onclick="setViewerPose('weapon')" title="First time the character was seen with weapon drawn — captured once, frozen">⚔️ Waffe</button>
     <button id="pose-live" onclick="setViewerPose('live')" title="Whatever the character is doing right this second">🔴 Live</button>
     <button onclick="resetPose()" title="Bad capture? Clear the frozen Idle/Weapon snapshots so they get re-captured next time you're in that state">♻️ Neu erfassen</button>
+    <button id="btn-eyedrop" onclick="toggleEyedrop()" title="Click a spot on the model to read its exact rendered pixel color (hex) — for reporting a specific color that looks wrong">🎨 Farbe messen</button>
+    <span id="eyedrop-result" style="margin-left:6px"></span>
   </div>
+  <div style="margin-top:4px"><a href="/api/model3d/textures" target="_blank" style="font-size:12px">🖼️ Rohe Texturen ansehen (unbeleuchtet)</a></div>
 </section>
 
 </div>
@@ -278,7 +281,8 @@ async function startViewer(){
     const {OrbitControls}=await import('three/addons/controls/OrbitControls.js');
     const box=$('#viewer3d');
     box.style.display='block';
-    const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+    // preserveDrawingBuffer: the eyedropper reads pixels back from this canvas after each frame
+    const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true,preserveDrawingBuffer:true});
     renderer.setSize(box.clientWidth,box.clientHeight);
     // ponytail: lights at 2.0+2.0 with no tone mapping blew every mid-tone toward white/saturated
     // — a near-black dyed material (baseColorFactor ~0.12) still rendered as bright vivid color.
@@ -309,6 +313,7 @@ async function startViewer(){
     await reloadViewerModel();
     (function animate(){requestAnimationFrame(animate);controls.update();renderer.render(scene,camera)})();
     new ResizeObserver(()=>{renderer.setSize(box.clientWidth,box.clientHeight);camera.aspect=box.clientWidth/box.clientHeight;camera.updateProjectionMatrix()}).observe(box);
+    renderer.domElement.addEventListener('click',onViewerClick);
   }catch(e){
     info.textContent='⚠️ Viewer failed to load: '+e.message;
     viewerStarted=false;
@@ -316,6 +321,26 @@ async function startViewer(){
 }
 
 async function resetPose(){await post('/api/action/pose/reset');reloadViewerModel()}
+
+let eyedropActive=false;
+function toggleEyedrop(){
+  eyedropActive=!eyedropActive;
+  $('#btn-eyedrop').style.fontWeight=eyedropActive?'bold':'normal';
+  if(!eyedropActive)$('#eyedrop-result').textContent='';
+}
+function onViewerClick(ev){
+  if(!eyedropActive)return;
+  const v=window._glamViewer;
+  const rect=v.renderer.domElement.getBoundingClientRect();
+  const x=Math.round(ev.clientX-rect.left);
+  const yTop=Math.round(ev.clientY-rect.top);
+  const yGl=Math.round(rect.height-yTop); // WebGL reads bottom-up
+  const gl=v.renderer.getContext();
+  const px=new Uint8Array(4);
+  gl.readPixels(x,yGl,1,1,gl.RGBA,gl.UNSIGNED_BYTE,px);
+  const hex='#'+[px[0],px[1],px[2]].map(c=>c.toString(16).padStart(2,'0')).join('');
+  $('#eyedrop-result').innerHTML=`<span style="display:inline-block;width:12px;height:12px;background:${hex};border:1px solid #fff;vertical-align:middle"></span> ${hex} rgb(${px[0]},${px[1]},${px[2]})`;
+}
 
 let viewerPose='idle';
 function setViewerPose(p){
