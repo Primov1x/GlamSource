@@ -179,10 +179,15 @@ public sealed class ModelExportService
                         : bodyRefMatch.Success
                             ? $"chara/human/c{bodyRefMatch.Groups[1].Value}/obj/body/b{bodyRefMatch.Groups[2].Value}/material/v0001{mtrlName}"
                             : $"chara/{info.Category}/{info.Prefix}{setId:D4}/material/v{materialId:D4}{mtrlName}";
-                    var (t, colorSetTint, normalTex) = ResolveMaterialByPath(mtrlPath, pngs, materialCache);
+                    var (t, colorSetTint, normalTex) = ResolveMaterialByPath(mtrlPath, effectiveTint, pngs, materialCache);
                     texIndex = t;
-                    // stain always wins over colorset average when the item is actually dyed
-                    if (texIndex < 0 && effectiveTint == null) effectiveTint = colorSetTint;
+                    // ponytail: when a real texture exists, ResolveMaterialByPath already baked
+                    // effectiveTint into the PNG pixels directly (see its own comment for why —
+                    // glTF baseColorFactor multiply was confirmed NOT visually applying in the
+                    // viewer despite correct material JSON). Don't apply it a second time via
+                    // baseColorFactor. Only the flat-no-texture fallback still needs it.
+                    if (texIndex >= 0) effectiveTint = null;
+                    else if (effectiveTint == null) effectiveTint = colorSetTint;
                     LastTrace.Add($"{slot}:{itemId} mesh mtrl={mtrlPath} tex={texIndex} normal={normalTex} colorSetTint={(colorSetTint == null ? "null" : $"{colorSetTint[0]:F2},{colorSetTint[1]:F2},{colorSetTint[2]:F2}")} stain={(tint == null ? "null" : $"{tint[0]:F2},{tint[1]:F2},{tint[2]:F2}")}");
                     meshInputs.Add(new GltfMeshInput(m, texIndex, effectiveTint, normalTex));
                     continue;
@@ -266,15 +271,16 @@ public sealed class ModelExportService
                     : mtrlName.StartsWith('/')
                         ? (_gameData.FileExists(mtrlPathVariant) ? mtrlPathVariant : mtrlPathFlat)
                         : mtrlName;
-                var (t, colorSetTint, normalTex) = ResolveMaterialByPath(mtrlPath, pngs, materialCache);
-                texIndex = t;
-                // untextured -> colorset average if we found one, else flat fallback
-                if (texIndex < 0) tint = colorSetTint ?? fallbackTint;
                 // ponytail: skin/hair "_base"/"_hir" textures are a neutral grounding layer, not the
                 // final color — the game multiplies them by the character's actual skin/hair color
-                // (set via CustomizeParameter, which we don't have file access to). Always multiply
-                // by our flat approximation, even when a texture was found — a bare base.tex renders
-                // as dull blue-gray, not skin tone.
+                // (set via CustomizeParameter). Always tint, even when a texture was found — a bare
+                // base.tex renders as dull blue-gray, not skin tone. Baked directly into the PNG
+                // pixels (see ResolveMaterialByPath) — glTF baseColorFactor multiply was confirmed
+                // NOT visually applying in the viewer, so don't also rely on it here.
+                var (t, colorSetTint, normalTex) = ResolveMaterialByPath(mtrlPath, tint, pngs, materialCache);
+                texIndex = t;
+                if (texIndex >= 0) tint = null;
+                else tint = colorSetTint ?? fallbackTint;
                 LastTrace.Add($"  {partFolder} mtrl={mtrlPath} tex={texIndex} normal={normalTex} finalTint={(tint == null ? "null" : $"{tint[0]:F2},{tint[1]:F2},{tint[2]:F2}")}");
                 meshInputs.Add(new GltfMeshInput(m, texIndex, tint, normalTex));
                 continue;
@@ -283,13 +289,24 @@ public sealed class ModelExportService
         }
     }
 
-    private (int Tex, float[]? Tint, int NormalTex) ResolveMaterialByPath(string mtrlPath, List<byte[]> pngs, Dictionary<string, (int, float[]?, int)> cache)
+    /// <summary>Resolves one material to (texture index, flat tint for the no-texture case, normal
+    /// map index). When a real texture is produced (picked diffuse or baked colorset) and
+    /// <paramref name="tint"/> is given, the tint is multiplied directly into the PNG's pixels
+    /// before embedding — NOT left to glTF's baseColorFactor. Confirmed by direct test (a black-
+    /// dyed jacket, a tinted skin texture) that baseColorFactor's multiply was not visually taking
+    /// effect in the viewer despite correct material JSON; baking it into the texture sidesteps
+    /// whatever in the load/render path was dropping it. Cache key includes the tint since the same
+    /// material path can be requested with a different tint (different stain, different chara-part
+    /// skin/hair tint).</summary>
+    private (int Tex, float[]? Tint, int NormalTex) ResolveMaterialByPath(string mtrlPath, float[]? tint, List<byte[]> pngs, Dictionary<string, (int, float[]?, int)> cache)
     {
-        if (cache.TryGetValue(mtrlPath, out var cached)) return cached;
+        var cacheKey = tint == null ? mtrlPath : $"{mtrlPath}|{tint[0]:F3},{tint[1]:F3},{tint[2]:F3}";
+        if (cache.TryGetValue(cacheKey, out var cached)) return cached;
         (int, float[]?, int) result = (-1, null, -1);
         try
         {
-            if (!_gameData.FileExists(mtrlPath)) { LastTrace.Add($"  mtrl missing: {mtrlPath}"); cache[mtrlPath] = result; return result; }
+            if (!_gameData.FileExists(mtrlPath)) { LastTrace.Add($"  mtrl missing: {mtrlPath}"); cache[cacheKey] = result; return result; }
+
 
             var mtrlRaw = _gameData.GetFile(mtrlPath);
             var mtrl = _gameData.GetFile<MtrlFile>(mtrlPath);
@@ -302,7 +319,9 @@ public sealed class ModelExportService
                 var tex = _gameData.GetFile<TexFile>(texPath);
                 if (tex != null)
                 {
-                    var png = PngEncoder.EncodeRgba(tex.ImageData, tex.Header.Width, tex.Header.Height);
+                    var pixels = tex.ImageData;
+                    if (tint != null) pixels = ApplyTint(pixels, tint);
+                    var png = PngEncoder.EncodeRgba(pixels, tex.Header.Width, tex.Header.Height);
                     texIndex = pngs.Count;
                     pngs.Add(png);
                 }
@@ -323,6 +342,7 @@ public sealed class ModelExportService
                         baked = Penumbra.GameData.Files.MaterialColorTable.BakeDiffuse(mtrlRaw.Data, idTex.ImageData, idTex.Header.Width, idTex.Header.Height);
                     if (baked != null)
                     {
+                        if (tint != null) baked = ApplyTint(baked, tint);
                         var png = PngEncoder.EncodeRgba(baked, idTex!.Header.Width, idTex.Header.Height);
                         texIndex = pngs.Count;
                         pngs.Add(png);
@@ -356,7 +376,22 @@ public sealed class ModelExportService
             result = (texIndex, colorSetTint, normalIndex);
         }
         catch (Exception ex) { LastTrace.Add($"  mtrl exception: {ex.Message}"); }
-        cache[mtrlPath] = result;
+        cache[cacheKey] = result;
+        return result;
+    }
+
+    /// <summary>Multiply an RGBA8 pixel buffer's RGB by a tint (0-1 each); alpha untouched. Returns
+    /// a new array — never mutates the source (Lumina's decoded TexFile.ImageData may be reused).</summary>
+    private static byte[] ApplyTint(byte[] rgba, float[] tint)
+    {
+        var result = new byte[rgba.Length];
+        for (var i = 0; i < rgba.Length; i += 4)
+        {
+            result[i] = (byte)(rgba[i] * tint[0]);
+            result[i + 1] = (byte)(rgba[i + 1] * tint[1]);
+            result[i + 2] = (byte)(rgba[i + 2] * tint[2]);
+            result[i + 3] = rgba[i + 3];
+        }
         return result;
     }
 
