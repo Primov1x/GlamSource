@@ -129,6 +129,7 @@ public sealed class ModelExportService
                     texIndex = t;
                     // stain always wins over colorset average when the item is actually dyed
                     if (texIndex < 0 && effectiveTint == null) effectiveTint = colorSetTint;
+                    LastTrace.Add($"{slot}:{itemId} mesh mtrl={mtrlPath} tex={texIndex} colorSetTint={(colorSetTint == null ? "null" : $"{colorSetTint[0]:F2},{colorSetTint[1]:F2},{colorSetTint[2]:F2}")} stain={(tint == null ? "null" : $"{tint[0]:F2},{tint[1]:F2},{tint[2]:F2}")}");
                 }
                 meshInputs.Add(new GltfMeshInput(m, texIndex, effectiveTint));
             }
@@ -198,45 +199,56 @@ public sealed class ModelExportService
         (int, float[]?) result = (-1, null);
         try
         {
-            if (_gameData.FileExists(mtrlPath))
+            if (!_gameData.FileExists(mtrlPath)) { LastTrace.Add($"  mtrl missing: {mtrlPath}"); cache[mtrlPath] = result; return result; }
+
+            var mtrlRaw = _gameData.GetFile(mtrlPath);
+            var mtrl = _gameData.GetFile<MtrlFile>(mtrlPath);
+            var texPath = PickDiffuse(mtrl);
+            LastTrace.Add($"  mtrl={mtrlPath} allTex=[{string.Join(", ", MaterialTexturePaths(mtrl))}] picked={texPath ?? "none"}");
+            if (texPath != null && _gameData.FileExists(texPath))
             {
-                var mtrlRaw = _gameData.GetFile(mtrlPath);
-                var mtrl = _gameData.GetFile<MtrlFile>(mtrlPath);
-                var texPath = PickDiffuse(mtrl);
-                if (texPath != null && _gameData.FileExists(texPath))
+                var tex = _gameData.GetFile<TexFile>(texPath);
+                if (tex != null)
                 {
-                    var tex = _gameData.GetFile<TexFile>(texPath);
-                    if (tex != null)
-                    {
-                        var png = PngEncoder.EncodeRgba(tex.ImageData, tex.Header.Width, tex.Header.Height);
-                        result = (pngs.Count, null);
-                        pngs.Add(png);
-                    }
+                    var png = PngEncoder.EncodeRgba(tex.ImageData, tex.Header.Width, tex.Header.Height);
+                    result = (pngs.Count, null);
+                    pngs.Add(png);
                 }
-                // Dawntrail-era gear commonly has no diffuse texture at all — color lives in the
-                // material's color table. Read from raw bytes (Lumina's own ColorSetInfo is a
-                // fixed pre-Dawntrail 512-byte buffer and misreads the current 32-row format).
-                if (result.Item1 < 0 && mtrlRaw != null)
-                    result = (-1, Penumbra.GameData.Files.MaterialColorTable.AverageDiffuse(mtrlRaw.Data));
+                else LastTrace.Add($"  tex GetFile null: {texPath}");
+            }
+            // Dawntrail-era gear commonly has no diffuse texture at all — color lives in the
+            // material's color table. Read from raw bytes (Lumina's own ColorSetInfo is a
+            // fixed pre-Dawntrail 512-byte buffer and misreads the current 32-row format).
+            if (result.Item1 < 0 && mtrlRaw != null)
+            {
+                var tint = Penumbra.GameData.Files.MaterialColorTable.AverageDiffuse(mtrlRaw.Data);
+                LastTrace.Add($"  colorset tint: {(tint == null ? "null" : $"{tint[0]:F2},{tint[1]:F2},{tint[2]:F2}")}");
+                result = (-1, tint);
             }
         }
-        catch { /* untextured fallback */ }
+        catch (Exception ex) { LastTrace.Add($"  mtrl exception: {ex.Message}"); }
         cache[mtrlPath] = result;
         return result;
     }
 
-    /// <summary>Pick the diffuse/base texture from a material's texture list — "_d.tex" preferred,
-    /// else the first non-normal/non-mask entry.</summary>
-    private static string? PickDiffuse(MtrlFile? mtrl)
+    private static List<string> MaterialTexturePaths(MtrlFile? mtrl)
     {
-        if (mtrl == null) return null;
         var paths = new List<string>();
+        if (mtrl == null) return paths;
         foreach (var t in mtrl.TextureOffsets)
         {
             var end = Array.IndexOf(mtrl.Strings, (byte)0, t.Offset);
             if (end < 0) end = mtrl.Strings.Length;
             paths.Add(System.Text.Encoding.UTF8.GetString(mtrl.Strings, t.Offset, end - t.Offset));
         }
+        return paths;
+    }
+
+    /// <summary>Pick the diffuse/base texture from a material's texture list — "_d.tex" preferred,
+    /// else the first non-normal/non-mask entry.</summary>
+    private static string? PickDiffuse(MtrlFile? mtrl)
+    {
+        var paths = MaterialTexturePaths(mtrl);
         // strictly diffuse/base candidates only — the old "first not-normal/spec/mask" fallback
         // happily grabbed id/mask maps and rendered gear in neon blue/green
         return paths.FirstOrDefault(p => p.EndsWith("_d.tex"))
