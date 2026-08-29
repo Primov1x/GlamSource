@@ -32,6 +32,7 @@ public sealed class WebUiService : IDisposable
     private readonly IFramework _framework;
     private readonly IPluginLog _log;
     private readonly ModelExport.ModelExportService _modelExport;
+    private readonly GlamourerColorIpc _glamourerColors;
     // ponytail: named pose snapshots (e.g. "idle", "weapon"), self-refreshed whenever the framework
     // thread happens to observe the character in that state — no user action needed. Concurrent
     // dictionary because writes happen on the framework thread while reads happen on arbitrary
@@ -57,6 +58,7 @@ public sealed class WebUiService : IDisposable
         _framework = framework;
         _log = log;
         _modelExport = new ModelExport.ModelExportService(detail.GameData);
+        _glamourerColors = new GlamourerColorIpc(pi);
         // pluginConfigs/GlamSource.json -> sibling Browsingway.json
         var dir = pi.ConfigFile.DirectoryName;
         _browsingwayConfigPath = dir != null ? Path.Combine(dir, "Browsingway.json") : null;
@@ -448,13 +450,18 @@ public sealed class WebUiService : IDisposable
                 ModelExport.CustomizeColors? colors = null;
                 if (Plugin.ObjectTable.LocalPlayer is { } pc && pc.Customize is { Length: > 0 } c)
                 {
-                    // ponytail: previous access path (Human.CustomizeParameterCBuffer via
-                    // FFXIVClientStructs' ConstantBuffer flags-gated pointer) kept returning
-                    // implausible near-white/near-black values across two fixes (0.0.0.78, .81).
-                    // Replaced with Brio's exact working access pattern (see CustomizeColorsService)
-                    // — same underlying data, ungated direct double pointer chase.
-                    try { colors = ModelExport.CustomizeColorsService.Capture(pc.Address); }
-                    catch (Exception ex) { _log.Warning($"[WebUi] customize color capture failed: {ex.Message}"); }
+                    // ponytail: our own memory read (Human.CustomizeParameterCBuffer, then Brio's
+                    // exact pointer-chase pattern) kept returning implausible near-white/near-black
+                    // values across two fixes (0.0.0.78, .81) — root cause never found. Glamourer's
+                    // own IPC returns state it already knows is correct (it renders it), so prefer
+                    // that when Glamourer is installed; fall back to our memory read otherwise.
+                    try { colors = _glamourerColors.GetColors(pc.ObjectIndex); }
+                    catch (Exception ex) { _log.Warning($"[WebUi] Glamourer IPC color read failed: {ex.Message}"); }
+                    if (colors == null)
+                    {
+                        try { colors = ModelExport.CustomizeColorsService.Capture(pc.Address); }
+                        catch (Exception ex) { _log.Warning($"[WebUi] customize color capture failed: {ex.Message}"); }
+                    }
                     var race = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.Race];
                     var tribe = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.Tribe];
                     var gender = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.Gender];
