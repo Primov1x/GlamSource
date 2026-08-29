@@ -10,6 +10,7 @@ internal static class WebUiPage
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GlamSource</title>
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230d0f14'/%3E%3Ctext x='16' y='23' font-size='20' text-anchor='middle' fill='%23d4af5a'%3E✦%3C/text%3E%3C/svg%3E">
 <style>
 :root{
@@ -266,9 +267,9 @@ async function startViewer(){
   viewerStarted=true;
   const info=$('#viewerinfo');
   try{
-    const THREE=await import('https://unpkg.com/three@0.160.0/build/three.module.js');
-    const {GLTFLoader}=await import('https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js');
-    const {OrbitControls}=await import('https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js');
+    const THREE=await import('three');
+    const {GLTFLoader}=await import('three/addons/loaders/GLTFLoader.js');
+    const {OrbitControls}=await import('three/addons/controls/OrbitControls.js');
     const box=$('#viewer3d');
     box.style.display='block';
     const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
