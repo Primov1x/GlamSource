@@ -317,7 +317,8 @@ public sealed class WebUiService : IDisposable
 
         if (method == "GET" && path == "/api/model3d/debug")
         {
-            _modelExport.BuildGlb(ResolveModelSlots());
+            var (dbgSlots, dbgChara) = ResolveModelInputs();
+            _modelExport.BuildGlb(dbgSlots, dbgChara);
             return Json(new { trace = _modelExport.LastTrace });
         }
 
@@ -327,7 +328,8 @@ public sealed class WebUiService : IDisposable
             // memory, no GPU, safe from any thread. Built from the current snapshot's items.
             try
             {
-                var glb = _modelExport.BuildGlb(ResolveModelSlots());
+                var (glbSlots, glbChara) = ResolveModelInputs();
+                var glb = _modelExport.BuildGlb(glbSlots, glbChara);
                 return glb == null
                     ? ("404 Not Found", "application/octet-stream", Array.Empty<byte>())
                     : ("200 OK", "model/gltf-binary", glb);
@@ -388,16 +390,32 @@ public sealed class WebUiService : IDisposable
     }
 
     // ponytail: viewer shows whoever the shell is showing; with no snapshot (nobody clicked yet),
-    // fall back to the player's own gear. Equipment read needs the Framework thread.
-    private System.Collections.Generic.IReadOnlyList<GlamSource.Core.EquipmentSlot> ResolveModelSlots()
+    // fall back to the player's own gear. Body/face/hair always come from the LOCAL player's
+    // Customize — Recent snapshots don't store appearance (yet). Framework thread for both.
+    private (System.Collections.Generic.IReadOnlyList<GlamSource.Core.EquipmentSlot> Slots, ModelExport.CharacterModelInfo? Chara) ResolveModelInputs()
     {
         var slots = _shell.DebugSnapshot;
-        if (slots.Count > 0) return slots;
         try
         {
-            return _framework.RunOnFrameworkThread(() => _glamour.GetSelfEquipment()).GetAwaiter().GetResult();
+            return _framework.RunOnFrameworkThread(() =>
+            {
+                var effective = slots.Count > 0 ? slots : _glamour.GetSelfEquipment();
+                ModelExport.CharacterModelInfo? chara = null;
+                if (Plugin.ObjectTable.LocalPlayer is { } pc && pc.Customize is { Length: > 0 } c)
+                {
+                    var race = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.Race];
+                    var tribe = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.Tribe];
+                    var gender = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.Gender];
+                    var face = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.FaceType];
+                    var hair = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.HairStyle];
+                    var tail = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.RaceFeatureType];
+                    chara = new ModelExport.CharacterModelInfo(
+                        ModelExport.CharacterModelInfo.ResolveRaceCode(race, tribe, gender), face, hair, tail);
+                }
+                return (effective, chara);
+            }).GetAwaiter().GetResult();
         }
-        catch { return slots; }
+        catch { return (slots, null); }
     }
 
     private static (string, string, byte[]) Json(object payload, string status = "200 OK")
