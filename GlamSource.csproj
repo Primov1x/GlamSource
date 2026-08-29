@@ -14,8 +14,8 @@
     <IsPackable>false</IsPackable>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <NoWarn>$(NoWarn);CA1416</NoWarn>
-    <Version>0.0.0.40</Version>
-    <AssemblyVersion>0.0.0.40</AssemblyVersion>
+    <Version>0.0.0.41</Version>
+    <AssemblyVersion>0.0.0.41</AssemblyVersion>
     <IconUrl>https://raw.githubusercontent.com/Primov1x/GlamSource/main/images/icon.png</IconUrl>
     <InternalsVisibleTo>GlamSource.Mock</InternalsVisibleTo>
   </PropertyGroup>
@@ -31,6 +31,9 @@
     </PackageReference>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="Lumina.Excel" Version="7.4.3" />
+    <!-- ponytail: same D3D11 interop bindings Dalamud itself uses (see Dx11Renderer.cs) — for the
+         web-UI 3D preview's GPU texture readback. Version matches what this Dalamud build ships. -->
+    <PackageReference Include="TerraFX.Interop.Windows" Version="10.0.26100.5" />
   </ItemGroup>
 
   <ItemGroup>

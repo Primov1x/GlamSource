@@ -7,6 +7,8 @@ using FFXIVClientStructs.FFXIV.Client.Graphics.Render;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using System.Collections.Generic;
 using GlamSource.Core;
+using TerraFX.Interop.DirectX;
+using TerraFX.Interop.Windows;
 
 namespace GlamSource.Services;
 
@@ -386,6 +388,74 @@ public sealed unsafe class PreviewRenderer : IDisposable
         var tex = rtm->GetCharaViewTexture(CharaViewSlot);
         if (tex == null) return 0;
         return (nint)tex->D3D11ShaderResourceView;
+    }
+
+    /// <summary>Raw CPU-readback of the current CharaView frame, for the web-UI 3D preview
+    /// (experimental, opt-in). BGRA byte order per pixel unless <see cref="IsBgra"/> is false.</summary>
+    public readonly record struct CapturedFrame(int Width, int Height, int RowPitch, byte[] Pixels, bool IsBgra);
+
+    /// <summary>Copy the CharaView GPU texture to CPU. Must run on the Framework thread — the
+    /// D3D11 immediate context is not thread-safe. Returns null if not ready or the copy failed.</summary>
+    /// <remarks>ponytail: pattern mirrors Dalamud's own TextureManager.GetRawImageAsync (internal,
+    /// not exposed to plugins) — CopyResource into a STAGING texture, Map, read, Unmap. The SRV
+    /// ComPtr below is adopted from a borrowed handle (GetTextureHandle owns nothing) and must
+    /// NEVER be Dispose()'d — TerraFX's raw-pointer ComPtr ctor does not AddRef, so releasing it
+    /// would drop a refcount CharaView still owns. Everything obtained via GetResource/As/GetDevice/
+    /// GetImmediateContext DOES own a ref and must be disposed (all four `using`).</remarks>
+    public CapturedFrame? TryCapturePixels()
+    {
+        var srvHandle = GetTextureHandle();
+        if (srvHandle == 0) return null;
+
+        // Adopted, not owned — do not Dispose. See remarks above.
+        var srv = new ComPtr<ID3D11ShaderResourceView>((ID3D11ShaderResourceView*)srvHandle);
+
+        using ComPtr<ID3D11Resource> res = default;
+        srv.Get()->GetResource(res.GetAddressOf());
+        if (res.Get() == null) return null;
+
+        using ComPtr<ID3D11Texture2D> tex = default;
+        if (res.As(&tex).FAILED) return null;
+
+        using ComPtr<ID3D11Device> device = default;
+        tex.Get()->GetDevice(device.GetAddressOf());
+        using ComPtr<ID3D11DeviceContext> context = default;
+        device.Get()->GetImmediateContext(context.GetAddressOf());
+        if (device.Get() == null || context.Get() == null) return null;
+
+        D3D11_TEXTURE2D_DESC desc;
+        tex.Get()->GetDesc(&desc);
+
+        var stagingDesc = desc with
+        {
+            Usage = D3D11_USAGE.D3D11_USAGE_STAGING,
+            BindFlags = 0u,
+            CPUAccessFlags = (uint)D3D11_CPU_ACCESS_FLAG.D3D11_CPU_ACCESS_READ,
+            MiscFlags = 0u,
+            MipLevels = 1,
+            ArraySize = 1,
+        };
+        using ComPtr<ID3D11Texture2D> staging = default;
+        if (device.Get()->CreateTexture2D(&stagingDesc, null, staging.GetAddressOf()).FAILED) return null;
+
+        context.Get()->CopyResource((ID3D11Resource*)staging.Get(), (ID3D11Resource*)tex.Get());
+
+        D3D11_MAPPED_SUBRESOURCE mapped;
+        if (context.Get()->Map((ID3D11Resource*)staging.Get(), 0, D3D11_MAP.D3D11_MAP_READ, 0, &mapped).FAILED)
+            return null;
+        try
+        {
+            var byteCount = (int)(mapped.RowPitch * desc.Height);
+            var bytes = new byte[byteCount];
+            fixed (byte* dst = bytes)
+                Buffer.MemoryCopy((void*)mapped.pData, dst, byteCount, byteCount);
+            var isBgra = desc.Format is DXGI_FORMAT.DXGI_FORMAT_B8G8R8A8_UNORM or DXGI_FORMAT.DXGI_FORMAT_B8G8R8X8_UNORM;
+            return new CapturedFrame((int)desc.Width, (int)desc.Height, (int)mapped.RowPitch, bytes, isBgra);
+        }
+        finally
+        {
+            context.Get()->Unmap((ID3D11Resource*)staging.Get(), 0);
+        }
     }
 
     /// <summary>Release CharaView. Must be called on Framework thread.</summary>

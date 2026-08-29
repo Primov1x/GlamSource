@@ -27,6 +27,7 @@ public sealed class WebUiService : IDisposable
     private readonly IItemDetailService _detail;
     private readonly IGlamourService _glamour;
     private readonly GlamSourceShellWindow _shell;
+    private readonly Configuration _configuration;
     private readonly IFramework _framework;
     private readonly IPluginLog _log;
     private TcpListener? _listener;
@@ -40,11 +41,12 @@ public sealed class WebUiService : IDisposable
     /// <summary>Human-readable state of the Browsingway inlay bootstrap, shown in Settings.</summary>
     public string? InlayStatus { get; private set; }
 
-    public WebUiService(IItemDetailService detail, IGlamourService glamour, GlamSourceShellWindow shell, IFramework framework, Dalamud.Plugin.IDalamudPluginInterface pi, IPluginLog log)
+    public WebUiService(IItemDetailService detail, IGlamourService glamour, GlamSourceShellWindow shell, Configuration configuration, IFramework framework, Dalamud.Plugin.IDalamudPluginInterface pi, IPluginLog log)
     {
         _detail = detail;
         _glamour = glamour;
         _shell = shell;
+        _configuration = configuration;
         _framework = framework;
         _log = log;
         // pluginConfigs/GlamSource.json -> sibling Browsingway.json
@@ -256,6 +258,53 @@ public sealed class WebUiService : IDisposable
             return Json(new { ok = true });
         }
 
+        if (method == "GET" && path == "/api/preview3d")
+        {
+            if (!_configuration.WebUiLive3DPreview)
+                return ("404 Not Found", "application/octet-stream", Array.Empty<byte>());
+
+            // Framework-thread hop needed: D3D11 immediate context isn't thread-safe.
+            var frame = _framework.RunOnFrameworkThread(() =>
+            {
+                var renderer = _shell.PreviewWindow?.Renderer;
+                return renderer is { IsInitialized: true } ? renderer.TryCapturePixels() : null;
+            }).GetAwaiter().GetResult();
+
+            if (frame == null)
+                return ("404 Not Found", "application/octet-stream", Array.Empty<byte>());
+
+            // header: width(4) height(4) rowPitch(4) isBgra(1), then raw pixel bytes
+            var f = frame.Value;
+            var head = new byte[13];
+            BitConverter.GetBytes(f.Width).CopyTo(head, 0);
+            BitConverter.GetBytes(f.Height).CopyTo(head, 4);
+            BitConverter.GetBytes(f.RowPitch).CopyTo(head, 8);
+            head[12] = (byte)(f.IsBgra ? 1 : 0);
+            var payload = new byte[head.Length + f.Pixels.Length];
+            head.CopyTo(payload, 0);
+            f.Pixels.CopyTo(payload, head.Length);
+            return ("200 OK", "application/octet-stream", payload);
+        }
+
+        if (method == "POST" && path == "/api/action/preview3d/rotate" && _configuration.WebUiLive3DPreview
+            && float.TryParse(query["dx"], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var dyaw)
+            && float.TryParse(query["dy"], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var dpitch))
+        {
+            _framework.RunOnFrameworkThread(() => _shell.PreviewWindow?.Renderer.SetYawPitch(dyaw, dpitch));
+            return Json(new { ok = true });
+        }
+
+        if (method == "POST" && path == "/api/action/preview3d/zoom" && _configuration.WebUiLive3DPreview
+            && float.TryParse(query["delta"], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var zoomDelta))
+        {
+            _framework.RunOnFrameworkThread(() =>
+            {
+                var renderer = _shell.PreviewWindow?.Renderer;
+                if (renderer != null) renderer.SetZoom(renderer.Zoom + zoomDelta);
+            });
+            return Json(new { ok = true });
+        }
+
         if (method == "POST" && path == "/api/action/overlay/hide")
         {
             _framework.RunOnFrameworkThread(() =>
@@ -284,7 +333,7 @@ public sealed class WebUiService : IDisposable
             error = "unknown endpoint",
             available = new[]
             {
-                "GET /", "GET /api/search?q=", "GET /api/item/{id}", "GET /api/snapshot",
+                "GET /", "GET /api/search?q=", "GET /api/item/{id}", "GET /api/snapshot", "GET /api/preview3d",
                 "POST /api/action/craftlog/{id}", "POST /api/action/dutyfinder/{cfc}",
                 "POST /api/action/map?territory=&map=&x=&y=",
             },

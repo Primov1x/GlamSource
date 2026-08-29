@@ -25,4 +25,9 @@ public class Configuration
 
     // ponytail: auto-drive a Browsingway overlay named "GlamSource" (show on open, hide on close).
     public bool WebUiAutoOverlay { get; set; } = true;
+
+    // ponytail: experimental — live 3D preview streamed to the web UI via GPU texture readback
+    // (D3D11 CopyResource+Map). Opt-in, off by default: raw COM interop on a live game texture,
+    // riskier than the rest of GlamSource. See Services/PreviewRenderer.cs TryCapturePixels.
+    public bool WebUiLive3DPreview { get; set; } = false;
 }

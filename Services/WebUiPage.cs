@@ -66,6 +66,8 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 .slot img{width:32px;height:32px;border-radius:5px}
 .slot .g{color:var(--success);font-size:12px}
 .slot .s{color:var(--muted);font-size:11px}
+#preview3d{background:var(--panel);border:1px solid var(--border);border-radius:8px;margin-bottom:14px;cursor:grab;display:none;image-rendering:pixelated}
+#preview3d.active{cursor:grabbing}
 </style>
 </head>
 <body>
@@ -88,6 +90,7 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 </section>
 
 <section id="view-character" style="display:none">
+  <canvas id="preview3d" width="256" height="256"></canvas>
   <div class="empty" id="snapinfo">Loading…</div>
   <div class="snapgrid" id="snap"></div>
 </section>
@@ -106,8 +109,66 @@ function showTab(t){
     $('#view-'+x).style.display=x===t?'':'none';
     $('#tab-'+x).classList.toggle('active',x===t);
   }
-  if(t==='character')loadSnapshot();
+  if(t==='character'){loadSnapshot();startPreview3D()}else{stopPreview3D()}
 }
+
+// --- 3D preview (opt-in, see Settings > 3D Preview) ---
+// Polls raw pixel frames instead of JPEG — no encode cost, loopback bandwidth is free.
+// Faster while dragging/zooming, slow otherwise; a 404 means the feature is off in-game.
+let p3dTimer=null, p3dOn=false, p3dDragging=false, p3dLastX=0, p3dLastY=0;
+function startPreview3D(){ stopPreview3D(); p3dOn=true; pollPreview3D(); }
+function stopPreview3D(){ p3dOn=false; if(p3dTimer)clearTimeout(p3dTimer); }
+
+async function pollPreview3D(){
+  if(!p3dOn)return;
+  const canvas=$('#preview3d');
+  try{
+    const r=await fetch('/api/preview3d');
+    if(r.ok){
+      drawPreview3D(await r.arrayBuffer());
+      canvas.style.display='';
+    } else canvas.style.display='none';
+  }catch(e){ canvas.style.display='none' }
+  if(p3dOn)p3dTimer=setTimeout(pollPreview3D, p3dDragging?100:500);
+}
+
+function drawPreview3D(buf){
+  const dv=new DataView(buf);
+  const w=dv.getInt32(0,true), h=dv.getInt32(4,true), rowPitch=dv.getInt32(8,true), isBgra=dv.getUint8(12)!==0;
+  const canvas=$('#preview3d');
+  if(canvas.width!==w)canvas.width=w;
+  if(canvas.height!==h)canvas.height=h;
+  const ctx=canvas.getContext('2d');
+  const out=ctx.createImageData(w,h);
+  const src=new Uint8Array(buf,13);
+  for(let y=0;y<h;y++){
+    const srcRow=y*rowPitch, dstRow=y*w*4;
+    for(let x=0;x<w;x++){
+      const s=srcRow+x*4, d=dstRow+x*4;
+      // force opaque — CharaView's own alpha channel isn't meaningful for a preview image
+      if(isBgra){out.data[d]=src[s+2];out.data[d+1]=src[s+1];out.data[d+2]=src[s]}
+      else{out.data[d]=src[s];out.data[d+1]=src[s+1];out.data[d+2]=src[s+2]}
+      out.data[d+3]=255;
+    }
+  }
+  ctx.putImageData(out,0,0);
+}
+
+(function initPreview3DDrag(){
+  const canvas=$('#preview3d');
+  canvas.addEventListener('mousedown',e=>{p3dDragging=true;p3dLastX=e.clientX;p3dLastY=e.clientY;canvas.classList.add('active')});
+  window.addEventListener('mouseup',()=>{p3dDragging=false;canvas.classList.remove('active')});
+  window.addEventListener('mousemove',e=>{
+    if(!p3dDragging)return;
+    const dx=e.clientX-p3dLastX, dy=e.clientY-p3dLastY;
+    p3dLastX=e.clientX;p3dLastY=e.clientY;
+    post(`/api/action/preview3d/rotate?dx=${(dx*0.75).toFixed(2)}&dy=${(dy*0.75).toFixed(2)}`);
+  });
+  canvas.addEventListener('wheel',e=>{
+    e.preventDefault();
+    post(`/api/action/preview3d/zoom?delta=${(-e.deltaY*0.002).toFixed(3)}`);
+  },{passive:false});
+})();
 
 let deb;
 $('#q').addEventListener('input',e=>{

@@ -1166,6 +1166,17 @@ private void ApplyTargetGlamourToSelf()
                 ImGui.SameLine();
                 ImGuiComponents.HelpMarker("Overlay is created automatically in Browsingway's config;\nGlamSource then sets its URL, shows it when this window opens,\nhides it on close. Drag/resize it like any Browsingway overlay.");
             }
+
+            var live3D = _configuration.WebUiLive3DPreview;
+            using (ImRaii.PushColor(ImGuiCol.Text, UiStyle.Warning))
+                ImGui.Checkbox("3D Preview (experimental)", ref live3D);
+            if (ImGui.IsItemEdited())
+            {
+                _configuration.WebUiLive3DPreview = live3D;
+                _configuration.Save();
+            }
+            ImGui.SameLine();
+            ImGuiComponents.HelpMarker("Streams the live 3D character view into the web UI, like the inline preview above.\nUses raw D3D11 GPU texture readback — riskier than the rest of GlamSource.\nDisable if you notice crashes; report so it can be fixed.");
             ImGui.Unindent(ImGui.GetFontSize());
         }
 
