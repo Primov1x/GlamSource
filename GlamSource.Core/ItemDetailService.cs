@@ -571,10 +571,12 @@ public sealed class ItemDetailService : IItemDetailService
                 }
                 else
                 {
+                    // ponytail: name-only fallback before generic "Merchant"
+                    var nameOnly = _shopNpcNameOnly.GetValueOrDefault(shopId);
                     allSources.Add(new ItemSourceDetail(
                         ItemSourceType.Vendor,
-                        "Vendor: Merchant",
-                        null, null, null, null, null, null,
+                        $"Vendor: {nameOnly ?? "Merchant"}",
+                        nameOnly, null, null, null, null, null,
                         costs, null, null, null, null, null, null, null, null));
                 }
             }
@@ -913,16 +915,13 @@ public sealed class ItemDetailService : IItemDetailService
                     var supMapX = place.Position.X;
                     var supMapY = place.Position.Y;
 
+                    var supInfo = new NpcLocationInfo(
+                        npcName, supZoneName, supMapX, supMapY, supTerritoryTypeId, supMapId);
                     foreach (var dataRef in npcBase.ENpcData)
                     {
                         if (dataRef.RowId == 0)
                             continue;
-
-                        var shopId = dataRef.RowId;
-                        if (!_shopNpcLookup.ContainsKey(shopId))
-                            _shopNpcLookup[shopId] = new();
-                        _shopNpcLookup[shopId].Add(new NpcLocationInfo(
-                            npcName, supZoneName, supMapX, supMapY, supTerritoryTypeId, supMapId));
+                        RegisterShopBinding(dataRef.RowId, supInfo, npcName, new HashSet<uint>());
                     }
                 }
                 continue;
@@ -935,16 +934,13 @@ public sealed class ItemDetailService : IItemDetailService
             var mapX = ToMapCoordinate(levelInfo.x, map.SizeFactor, map.OffsetX);
             var mapY = ToMapCoordinate(levelInfo.z, map.SizeFactor, map.OffsetY);
 
+            var levelInfoRecord = new NpcLocationInfo(
+                npcName, zoneName, mapX, mapY, territoryTypeId, mapId);
             foreach (var dataRef in npcBase.ENpcData)
             {
                 if (dataRef.RowId == 0)
                     continue;
-
-                var shopId = dataRef.RowId;
-                if (!_shopNpcLookup.ContainsKey(shopId))
-                    _shopNpcLookup[shopId] = new();
-                _shopNpcLookup[shopId].Add(new NpcLocationInfo(
-                    npcName, zoneName, mapX, mapY, territoryTypeId, mapId));
+                RegisterShopBinding(dataRef.RowId, levelInfoRecord, npcName, new HashSet<uint>());
             }
         }
 
@@ -990,14 +986,13 @@ public sealed class ItemDetailService : IItemDetailService
                                 if (string.IsNullOrEmpty(npcName)) continue;
 
                                 var npcBase = enpcBaseSheet.GetRow(npcId);
+                                var lgbInfo = new NpcLocationInfo(
+                                    npcName, zoneName, mapX, mapY,
+                                    territory.RowId, map.Value.RowId);
                                 foreach (var dataRef in npcBase.ENpcData)
                                 {
                                     if (dataRef.RowId == 0) continue;
-                                    if (!_shopNpcLookup.ContainsKey(dataRef.RowId))
-                                        _shopNpcLookup[dataRef.RowId] = new();
-                                    _shopNpcLookup[dataRef.RowId].Add(new NpcLocationInfo(
-                                        npcName, zoneName, mapX, mapY,
-                                        territory.RowId, map.Value.RowId));
+                                    RegisterShopBinding(dataRef.RowId, lgbInfo, npcName, new HashSet<uint>());
                                 }
 
                                 missingNpcs.Remove(npcId);
@@ -1023,10 +1018,69 @@ public sealed class ItemDetailService : IItemDetailService
             var npcBase = enpcBaseSheet.GetRow(npcId);
             foreach (var dataRef in npcBase.ENpcData)
             {
-                if (dataRef.RowId > 0 && !_shopNpcNameOnly.ContainsKey(dataRef.RowId))
-                    _shopNpcNameOnly[dataRef.RowId] = npcName;
+                if (dataRef.RowId > 0)
+                    RegisterShopBinding(dataRef.RowId, null, npcName, new HashSet<uint>());
             }
         }
+    }
+
+    // ponytail: IVL-style menu unwrap (ItemVendorLocation ItemLookup.AddItem.cs) — ENpcData often
+    // holds PreHandler (0x0036) / TopicSelect (0x0032) / InclusionShop (0x003A) wrapper ids, not the
+    // GilShop/SpecialShop id our lookups expect. Recurse to the terminal shop ids and register those.
+    // info == null → name-only registration (Stage 3 semantics).
+    private void RegisterShopBinding(uint rowId, NpcLocationInfo? info, string npcName, HashSet<uint> visited)
+    {
+        if (rowId == 0 || !visited.Add(rowId)) return;
+
+        try
+        {
+            switch (rowId >> 16)
+            {
+                case 0x0036: // PreHandler → Target
+                    var pre = _gameData.GetExcelSheet<PreHandler>()?.GetRowOrDefault(rowId);
+                    if (pre != null)
+                        RegisterShopBinding(pre.Value.Target.RowId, info, npcName, visited);
+                    return;
+                case 0x0032: // TopicSelect → Shop[]
+                    var topic = _gameData.GetExcelSheet<TopicSelect>()?.GetRowOrDefault(rowId);
+                    if (topic != null)
+                        foreach (var shopRef in topic.Value.Shop)
+                            RegisterShopBinding(shopRef.RowId, info, npcName, visited);
+                    return;
+                case 0x003A: // InclusionShop → Category → InclusionShopSeries subrows → SpecialShop
+                    var inc = _gameData.GetExcelSheet<InclusionShop>()?.GetRowOrDefault(rowId);
+                    if (inc != null)
+                    {
+                        var seriesSheet = _gameData.GetSubrowExcelSheet<InclusionShopSeries>();
+                        foreach (var category in inc.Value.Category)
+                        {
+                            if (category.RowId == 0) continue;
+                            var seriesId = category.Value.InclusionShopSeries.RowId;
+                            for (ushort i = 0; ; i++)
+                            {
+                                var series = seriesSheet?.GetSubrowOrDefault(seriesId, i);
+                                if (series == null) break;
+                                RegisterShopBinding(series.Value.SpecialShop.RowId, info, npcName, visited);
+                            }
+                        }
+                    }
+                    return;
+            }
+        }
+        catch (Lumina.Excel.Exceptions.MismatchedColumnHashException)
+        {
+            return;
+        }
+
+        // Terminal id (GilShop/SpecialShop/GcShop/FcShop/CollectablesShop/…)
+        if (info != null)
+        {
+            if (!_shopNpcLookup.ContainsKey(rowId))
+                _shopNpcLookup[rowId] = new();
+            _shopNpcLookup[rowId].Add(info);
+        }
+        if (!string.IsNullOrEmpty(npcName) && !_shopNpcNameOnly.ContainsKey(rowId))
+            _shopNpcNameOnly[rowId] = npcName;
     }
 
     // ponytail: all nodes per item (level + position vary by zone)
