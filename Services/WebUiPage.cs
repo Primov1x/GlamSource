@@ -300,7 +300,7 @@ async function startViewer(){
     const key=new THREE.DirectionalLight(0xffffff,1.8);
     key.position.set(2,3,2.5);
     scene.add(key);
-    const rim=new THREE.DirectionalLight(0xaaccff,0.5);
+    const rim=new THREE.DirectionalLight(0xffffff,0.4);
     rim.position.set(-2,1.5,-2);
     scene.add(rim);
     window._glamViewer={THREE,GLTFLoader,scene,renderer,camera,controls,box,model:null};

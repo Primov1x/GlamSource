@@ -51,7 +51,7 @@ public sealed class ModelExportService
 
     /// <summary>Build a GLB containing all equipment models for the given slots. Returns null when
     /// nothing could be resolved.</summary>
-    public byte[]? BuildGlb(IReadOnlyList<EquipmentSlot> slots, CharacterModelInfo? chara = null, bool bypassCache = false, SkeletonPose? pose = null)
+    public byte[]? BuildGlb(IReadOnlyList<EquipmentSlot> slots, CharacterModelInfo? chara = null, bool bypassCache = false, SkeletonPose? pose = null, CustomizeColors? colors = null)
     {
         bypassCache = bypassCache || pose != null; // live pose changes every capture — never cache it
         LastTrace.Clear();
@@ -180,9 +180,11 @@ public sealed class ModelExportService
         {
             var rc = chara.RaceCode;
             // body: skin shows where gear doesn't cover; textures use runtime-resolved "--" paths
-            // we can't look up, so body/face fall back to a skin-tone tint when untextured.
-            var skinTint = new[] { 0.85f, 0.66f, 0.56f };
-            var hairTint = new[] { 0.35f, 0.30f, 0.28f };
+            // we can't look up, so body/face fall back to a skin-tone tint when untextured. Prefer
+            // the character's REAL live skin/hair color (read from the shader constant buffer —
+            // see CustomizeColorsService) over the flat guessed approximation whenever we have it.
+            var skinTint = colors?.Skin ?? new[] { 0.85f, 0.66f, 0.56f };
+            var hairTint = colors?.Hair ?? new[] { 0.35f, 0.30f, 0.28f };
             // ponytail: base body model id varies per race (Hyur etc = b0001, Viera male = b0002,
             // ...) — no full per-race table yet, just try the two ids confirmed to exist.
             var bodyId = _gameData.FileExists($"chara/human/{rc}/obj/body/b0001/model/{rc}b0001_top.mdl") ? "b0001" : "b0002";

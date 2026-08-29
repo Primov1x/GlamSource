@@ -323,8 +323,8 @@ public sealed class WebUiService : IDisposable
 
         if (method == "GET" && path == "/api/model3d/debug")
         {
-            var (dbgSlots, dbgChara, dbgPose) = ResolveModelInputs();
-            _modelExport.BuildGlb(dbgSlots, dbgChara, bypassCache: true, pose: dbgPose);
+            var (dbgSlots, dbgChara, dbgPose, dbgColors) = ResolveModelInputs();
+            _modelExport.BuildGlb(dbgSlots, dbgChara, bypassCache: true, pose: dbgPose, colors: dbgColors);
             return Json(new { trace = _modelExport.LastTrace, live = dbgPose != null });
         }
 
@@ -348,7 +348,7 @@ public sealed class WebUiService : IDisposable
             // memory, and that's already marshalled onto the framework thread.
             try
             {
-                var (glbSlots, glbChara, glbPose) = ResolveModelInputs();
+                var (glbSlots, glbChara, glbPose, glbColors) = ResolveModelInputs();
                 // ponytail: default view is the self-maintained "idle" snapshot, not raw live pose
                 // — whatever the character happens to be doing right now (crafting, sitting, ...)
                 // shouldn't be what opens by default. ?pose=live forces the raw live capture,
@@ -356,7 +356,7 @@ public sealed class WebUiService : IDisposable
                 var poseName = query["pose"] ?? "idle";
                 if (poseName != "live" && _savedPoses.TryGetValue(poseName, out var saved))
                     glbPose = saved;
-                var glb = _modelExport.BuildGlb(glbSlots, glbChara, bypassCache: true, pose: glbPose);
+                var glb = _modelExport.BuildGlb(glbSlots, glbChara, bypassCache: true, pose: glbPose, colors: glbColors);
                 return glb == null
                     ? ("404 Not Found", "application/octet-stream", Array.Empty<byte>())
                     : ("200 OK", "model/gltf-binary", glb);
@@ -419,7 +419,7 @@ public sealed class WebUiService : IDisposable
     // ponytail: viewer shows whoever the shell is showing; with no snapshot (nobody clicked yet),
     // fall back to the player's own gear. Body/face/hair always come from the LOCAL player's
     // Customize — Recent snapshots don't store appearance (yet). Framework thread for both.
-    private (System.Collections.Generic.IReadOnlyList<GlamSource.Core.EquipmentSlot> Slots, ModelExport.CharacterModelInfo? Chara, ModelExport.SkeletonPose? Pose) ResolveModelInputs()
+    private (System.Collections.Generic.IReadOnlyList<GlamSource.Core.EquipmentSlot> Slots, ModelExport.CharacterModelInfo? Chara, ModelExport.SkeletonPose? Pose, ModelExport.CustomizeColors? Colors) ResolveModelInputs()
     {
         var slots = _shell.DebugSnapshot;
         try
@@ -429,8 +429,11 @@ public sealed class WebUiService : IDisposable
                 var effective = slots.Count > 0 ? slots : _glamour.GetSelfEquipment();
                 ModelExport.CharacterModelInfo? chara = null;
                 ModelExport.SkeletonPose? pose = null;
+                ModelExport.CustomizeColors? colors = null;
                 if (Plugin.ObjectTable.LocalPlayer is { } pc && pc.Customize is { Length: > 0 } c)
                 {
+                    try { colors = ModelExport.CustomizeColorsService.Capture(pc.Address); }
+                    catch (Exception ex) { _log.Warning($"[WebUi] customize color capture failed: {ex.Message}"); }
                     var race = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.Race];
                     var tribe = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.Tribe];
                     var gender = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.Gender];
@@ -467,10 +470,10 @@ public sealed class WebUiService : IDisposable
                         }
                     }
                 }
-                return (effective, chara, pose);
+                return (effective, chara, pose, colors);
             }).GetAwaiter().GetResult();
         }
-        catch { return (slots, null, null); }
+        catch { return (slots, null, null, null); }
     }
 
     private static (string, string, byte[]) Json(object payload, string status = "200 OK")
