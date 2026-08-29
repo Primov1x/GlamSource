@@ -122,9 +122,16 @@ public sealed class ModelExportService
                 if (m.MaterialIndex >= 0 && m.MaterialIndex < mdl.Materials.Length)
                 {
                     var mtrlName = mdl.Materials[m.MaterialIndex];
-                    var mtrlPath = mtrlName.StartsWith('/')
-                        ? $"chara/{info.Category}/{info.Prefix}{setId:D4}/material/v{materialId:D4}{mtrlName}"
-                        : mtrlName;
+                    // some equipment submeshes (skin peeking through a low-cut top, bare hands on
+                    // fingerless gloves, ...) reference the character's OWN skin material by name
+                    // (mt_c{race}b{bodyId}_*.mtrl) instead of the item's own — route those to the
+                    // body material folder, not the item's equipment folder.
+                    var bodyRefMatch = System.Text.RegularExpressions.Regex.Match(mtrlName, @"^/mt_c(\d{4})b(\d{4})_");
+                    var mtrlPath = !mtrlName.StartsWith('/')
+                        ? mtrlName
+                        : bodyRefMatch.Success
+                            ? $"chara/human/c{bodyRefMatch.Groups[1].Value}/obj/body/b{bodyRefMatch.Groups[2].Value}/material/v0001{mtrlName}"
+                            : $"chara/{info.Category}/{info.Prefix}{setId:D4}/material/v{materialId:D4}{mtrlName}";
                     var (t, colorSetTint) = ResolveMaterialByPath(mtrlPath, pngs, materialCache);
                     texIndex = t;
                     // stain always wins over colorset average when the item is actually dyed
@@ -142,7 +149,10 @@ public sealed class ModelExportService
             // we can't look up, so body/face fall back to a skin-tone tint when untextured.
             var skinTint = new[] { 0.85f, 0.66f, 0.56f };
             var hairTint = new[] { 0.35f, 0.30f, 0.28f };
-            AddCharaPart($"chara/human/{rc}/obj/body/b0001/model/{rc}b0001_top.mdl", rc, "body/b0001", skinTint, meshInputs, pngs, materialCache);
+            // ponytail: base body model id varies per race (Hyur etc = b0001, Viera male = b0002,
+            // ...) — no full per-race table yet, just try the two ids confirmed to exist.
+            var bodyId = _gameData.FileExists($"chara/human/{rc}/obj/body/b0001/model/{rc}b0001_top.mdl") ? "b0001" : "b0002";
+            AddCharaPart($"chara/human/{rc}/obj/body/{bodyId}/model/{rc}{bodyId}_top.mdl", rc, $"body/{bodyId}", skinTint, meshInputs, pngs, materialCache);
             AddCharaPart($"chara/human/{rc}/obj/face/f{chara.Face:D4}/model/{rc}f{chara.Face:D4}_fac.mdl", rc, $"face/f{chara.Face:D4}", skinTint, meshInputs, pngs, materialCache);
             AddCharaPart($"chara/human/{rc}/obj/hair/h{chara.Hair:D4}/model/{rc}h{chara.Hair:D4}_hir.mdl", rc, $"hair/h{chara.Hair:D4}", hairTint, meshInputs, pngs, materialCache);
             if (chara.TailOrEars > 0)
@@ -217,13 +227,32 @@ public sealed class ModelExportService
                 else LastTrace.Add($"  tex GetFile null: {texPath}");
             }
             // Dawntrail-era gear commonly has no diffuse texture at all — color lives in the
-            // material's color table. Read from raw bytes (Lumina's own ColorSetInfo is a
-            // fixed pre-Dawntrail 512-byte buffer and misreads the current 32-row format).
+            // material's color table, and WHICH row applies per-pixel comes from the id texture
+            // (Red = ramp position, Green = A/B blend — see MaterialColorTable.BakeDiffuse). Bake
+            // a real diffuse texture when we have an id map; a flat colorset average otherwise.
             if (result.Item1 < 0 && mtrlRaw != null)
             {
-                var tint = Penumbra.GameData.Files.MaterialColorTable.AverageDiffuse(mtrlRaw.Data);
-                LastTrace.Add($"  colorset tint: {(tint == null ? "null" : $"{tint[0]:F2},{tint[1]:F2},{tint[2]:F2}")}");
-                result = (-1, tint);
+                var idPath = MaterialTexturePaths(mtrl).FirstOrDefault(p => p.EndsWith("_id.tex"));
+                byte[]? baked = null;
+                if (idPath != null && _gameData.FileExists(idPath))
+                {
+                    var idTex = _gameData.GetFile<TexFile>(idPath);
+                    if (idTex != null)
+                        baked = Penumbra.GameData.Files.MaterialColorTable.BakeDiffuse(mtrlRaw.Data, idTex.ImageData, idTex.Header.Width, idTex.Header.Height);
+                    if (baked != null)
+                    {
+                        var png = PngEncoder.EncodeRgba(baked, idTex!.Header.Width, idTex.Header.Height);
+                        result = (pngs.Count, null);
+                        pngs.Add(png);
+                        LastTrace.Add($"  colorset BAKED via {idPath} ({idTex.Header.Width}x{idTex.Header.Height})");
+                    }
+                }
+                if (baked == null)
+                {
+                    var tint = Penumbra.GameData.Files.MaterialColorTable.AverageDiffuse(mtrlRaw.Data);
+                    LastTrace.Add($"  colorset tint (no id map): {(tint == null ? "null" : $"{tint[0]:F2},{tint[1]:F2},{tint[2]:F2}")}");
+                    result = (-1, tint);
+                }
             }
         }
         catch (Exception ex) { LastTrace.Add($"  mtrl exception: {ex.Message}"); }
