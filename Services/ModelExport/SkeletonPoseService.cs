@@ -50,22 +50,41 @@ public static unsafe class SkeletonPoseService
         if (skeleton == null || skeleton->PartialSkeletonCount == 0) return null;
 
         var result = new SkeletonPose();
+        Matrix4x4[]? bindModel0 = null; // partial 0 (body/root)'s global bind pose — other partials attach to it
         for (var p = 0; p < skeleton->PartialSkeletonCount; p++)
         {
-            var pose = skeleton->PartialSkeletons[p].GetHavokPose(0);
+            var partial = skeleton->PartialSkeletons[p];
+            var pose = partial.GetHavokPose(0);
             if (pose == null || pose->Skeleton == null) continue;
             var hkSkel = pose->Skeleton;
             var boneCount = hkSkel->Bones.Length;
             if (boneCount == 0 || pose->ModelPose.Length < boneCount) continue;
 
             // bind pose: hkSkel->ReferencePose is LOCAL space, walk ParentIndices to model space.
-            // Parents always precede children in these arrays, so one forward pass suffices.
+            // Parents always precede children in these arrays, so one forward pass suffices. This
+            // is correct in isolation but only lands in the CHARACTER's shared model space for
+            // partial 0 (body/root) — partial 1+ (fingers, face, hair, ...) have their own tiny
+            // skeleton with its own local root, e.g. near the wrist for a hand partial.
             var bindModel = new Matrix4x4[boneCount];
             for (var i = 0; i < boneCount; i++)
             {
                 var local = ToMatrix(hkSkel->ReferencePose[i]);
                 var parent = hkSkel->ParentIndices[i];
                 bindModel[i] = parent >= 0 && parent < i ? local * bindModel[parent] : local;
+            }
+
+            // re-base partial 1+ into partial 0's space via its attach point (ConnectedBoneIndex on
+            // THIS partial = ConnectedParentBoneIndex on partial 0) — the live pose we read below is
+            // already correctly composed by the engine either way, only the bind pose needs this to
+            // match; skipping it is exactly what made attached geometry (fingers) explode/stretch.
+            if (p == 0)
+                bindModel0 = bindModel;
+            else if (bindModel0 != null && partial.ConnectedBoneIndex >= 0 && partial.ConnectedBoneIndex < boneCount
+                     && partial.ConnectedParentBoneIndex >= 0 && partial.ConnectedParentBoneIndex < bindModel0.Length
+                     && Matrix4x4.Invert(bindModel[partial.ConnectedBoneIndex], out var attachLocalInv))
+            {
+                var offset = attachLocalInv * bindModel0[partial.ConnectedParentBoneIndex];
+                for (var i = 0; i < boneCount; i++) bindModel[i] *= offset;
             }
 
             for (var i = 0; i < boneCount; i++)
