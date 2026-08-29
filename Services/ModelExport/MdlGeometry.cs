@@ -133,22 +133,26 @@ public static class MdlGeometry
                 outMesh.HasSkinning = true;
             }
 
-            // ponytail: only unconditional submeshes (AttributeIndexMask == 0) — the others are
-            // optional variants (race-specific parts, hide-flags, alt decorations) gated on
-            // attributes we have no way to evaluate; showing them all overlapped/stretched wrong
-            // detail across the mesh (verified: a small 'emblem' submesh + conditional jacket
-            // panels rendering as a big wrong-colored patch on an otherwise-correct outfit).
+            // ponytail: AttributeIndexMask != 0 was previously treated as "optional decoration,
+            // hide by default" — WRONG. Verified against real data (debug trace across many
+            // meshes): atr_ude/atr_arm/atr_hiz/atr_sne/atr_leg/atr_nek etc. are actual body-part
+            // submeshes (arm/knee/shin/neck) that other equipped items can hide via their own IMC
+            // hide-flags — we don't evaluate those, so the correct default is VISIBLE, not hidden.
+            // Dropping them removed whole limbs. atr_lod is the one genuine exception: an explicit
+            // lower-detail LOD variant that should never render alongside the main geometry.
             var indices = new List<ushort>();
             var idxBaseAll = (int)lod.IndexDataOffset;
             for (var si = mesh.SubMeshIndex; si < mesh.SubMeshIndex + mesh.SubMeshCount; si++)
             {
                 var sub = mdl.SubMeshes[si];
                 outMesh.SubmeshesTotal++;
-                if (sub.AttributeIndexMask != 0)
+                var isLod = false;
+                for (var bit = 0; bit < 32 && bit < mdl.Attributes.Length; bit++)
+                    if ((sub.AttributeIndexMask & (1u << bit)) != 0 && mdl.Attributes[bit] == "atr_lod")
+                        isLod = true;
+                if (isLod)
                 {
-                    for (var bit = 0; bit < 32 && bit < mdl.Attributes.Length; bit++)
-                        if ((sub.AttributeIndexMask & (1u << bit)) != 0)
-                            outMesh.DroppedAttributes.Add(mdl.Attributes[bit]);
+                    outMesh.DroppedAttributes.Add("atr_lod");
                     continue;
                 }
                 outMesh.SubmeshesKept++;
