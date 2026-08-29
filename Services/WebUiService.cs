@@ -320,6 +320,19 @@ public sealed class WebUiService : IDisposable
             return Json(new { ok = true });
         }
 
+        if (method == "POST" && path == "/api/action/overlay/lock")
+        {
+            // ponytail: Browsingway has no title bar — unlocked means the WHOLE overlay body is
+            // ImGui-draggable, which eats every mousedown-drag before it reaches this page (that's
+            // why camera-drag didn't work). Lock briefly while dragging the 3D view, unlock to move
+            // the overlay itself. Two separate commands (on/off), not a toggle, so repeated calls
+            // from a flaky client can't desync from the real state.
+            var locked = query["locked"] == "true";
+            _framework.RunOnFrameworkThread(() =>
+                Plugin.CommandManager.ProcessCommand($"/bw overlay glamsource locked {(locked ? "on" : "off")}"));
+            return Json(new { ok = true });
+        }
+
         if (method == "POST" && path == "/api/action/map")
         {
             if (uint.TryParse(query["territory"], out var territory) && uint.TryParse(query["map"], out var mapId)

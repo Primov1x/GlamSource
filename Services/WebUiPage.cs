@@ -75,6 +75,7 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
   <span class="brand">GlamSource</span>
   <span class="sub">web ui</span>
   <span class="spacer"></span>
+  <button id="btn-lock" title="Lock overlay position — needed to drag-rotate the 3D preview (Browsingway has no title bar; unlocked, any drag moves the whole window instead)" onclick="toggleLock()">🔓</button>
   <button title="Hide (reopen from the GlamSource window)" onclick="post('/api/action/overlay/hide')">×</button>
 </div>
 <div id="app">
@@ -91,6 +92,7 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 
 <section id="view-character" style="display:none">
   <canvas id="preview3d" width="256" height="256"></canvas>
+  <div class="empty" id="p3dhint" style="display:none;font-size:12px">Click 🔓 above to lock the overlay, then drag the model to rotate.</div>
   <div class="empty" id="snapinfo">Loading…</div>
   <div class="snapgrid" id="snap"></div>
 </section>
@@ -127,7 +129,8 @@ async function pollPreview3D(){
     if(r.ok){
       drawPreview3D(await r.arrayBuffer());
       canvas.style.display='block';
-    } else canvas.style.display='none';
+      $('#p3dhint').style.display=overlayLocked?'none':'flex';
+    } else { canvas.style.display='none'; $('#p3dhint').style.display='none'; }
   }catch(e){ canvas.style.display='none' }
   if(p3dOn)p3dTimer=setTimeout(pollPreview3D, p3dDragging?150:700);
 }
@@ -247,6 +250,18 @@ async function loadSnapshot(){
 }
 
 async function post(url){await fetch(url,{method:'POST'})}
+
+let overlayLocked=false;
+function toggleLock(){
+  overlayLocked=!overlayLocked;
+  $('#btn-lock').textContent=overlayLocked?'🔒':'🔓';
+  $('#btn-lock').title=overlayLocked
+    ?'Unlock — drag the overlay by its title bar to move it'
+    :'Lock overlay position — needed to drag-rotate the 3D preview (Browsingway has no title bar; unlocked, any drag moves the whole window instead)';
+  const hint=$('#p3dhint');
+  if(hint)hint.style.display=(!overlayLocked&&$('#preview3d').style.display!=='none')?'flex':'none';
+  post('/api/action/overlay/lock?locked='+overlayLocked);
+}
 </script>
 </body>
 </html>
