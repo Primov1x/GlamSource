@@ -29,6 +29,7 @@ public sealed class WebUiService : IDisposable
     private readonly IFramework _framework;
     private readonly IPluginLog _log;
     private TcpListener? _listener;
+    private TcpListener? _listener6;
     private CancellationTokenSource? _cts;
 
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
@@ -55,7 +56,15 @@ public sealed class WebUiService : IDisposable
             _listener = new TcpListener(IPAddress.Loopback, Port);
             _listener.Start();
             _cts = new CancellationTokenSource();
-            _ = Task.Run(() => AcceptLoop(_cts.Token));
+            _ = Task.Run(() => AcceptLoop(_listener, _cts.Token));
+            // ponytail: browsers resolve "localhost" to ::1 first; bind v6 loopback too (best effort).
+            try
+            {
+                _listener6 = new TcpListener(IPAddress.IPv6Loopback, Port);
+                _listener6.Start();
+                _ = Task.Run(() => AcceptLoop(_listener6, _cts.Token));
+            }
+            catch { _listener6 = null; }
             _log.Information($"[WebUi] listening on http://127.0.0.1:{Port}/");
         }
         catch (Exception ex)
@@ -69,16 +78,18 @@ public sealed class WebUiService : IDisposable
     {
         _cts?.Cancel();
         _listener?.Stop();
+        _listener6?.Stop();
         _listener = null;
+        _listener6 = null;
         _cts = null;
     }
 
-    private async Task AcceptLoop(CancellationToken token)
+    private async Task AcceptLoop(TcpListener listener, CancellationToken token)
     {
-        while (!token.IsCancellationRequested && _listener != null)
+        while (!token.IsCancellationRequested)
         {
             TcpClient client;
-            try { client = await _listener.AcceptTcpClientAsync(token); }
+            try { client = await listener.AcceptTcpClientAsync(token); }
             catch { return; }
 
             _ = Task.Run(() =>
