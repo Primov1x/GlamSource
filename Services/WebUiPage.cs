@@ -129,7 +129,7 @@ async function pollPreview3D(){
       canvas.style.display='block';
     } else canvas.style.display='none';
   }catch(e){ canvas.style.display='none' }
-  if(p3dOn)p3dTimer=setTimeout(pollPreview3D, p3dDragging?100:500);
+  if(p3dOn)p3dTimer=setTimeout(pollPreview3D, p3dDragging?150:700);
 }
 
 function drawPreview3D(buf){
@@ -141,15 +141,23 @@ function drawPreview3D(buf){
   const ctx=canvas.getContext('2d');
   const out=ctx.createImageData(w,h);
   const src=new Uint8Array(buf,13);
-  for(let y=0;y<h;y++){
-    const srcRow=y*rowPitch, dstRow=y*w*4;
-    for(let x=0;x<w;x++){
-      const s=srcRow+x*4, d=dstRow+x*4;
-      // force opaque — CharaView's own alpha channel isn't meaningful for a preview image
-      if(isBgra){out.data[d]=src[s+2];out.data[d+1]=src[s+1];out.data[d+2]=src[s]}
-      else{out.data[d]=src[s];out.data[d+1]=src[s+1];out.data[d+2]=src[s+2]}
-      out.data[d+3]=255;
+  // Bulk row copy (native memcpy) instead of a per-pixel JS loop — at ~2MB/frame the old
+  // per-pixel/per-channel loop was the actual stutter, not the network transfer.
+  if(rowPitch===w*4){
+    out.data.set(src.subarray(0,w*h*4));
+  } else {
+    for(let y=0;y<h;y++) out.data.set(src.subarray(y*rowPitch,y*rowPitch+w*4), y*w*4);
+  }
+  // One pass over 32-bit words (4x fewer iterations than per-byte) to force full opacity
+  // (CharaView's own alpha channel isn't meaningful here) and swap R/B if the source was BGRA.
+  const words=new Uint32Array(out.data.buffer);
+  if(isBgra){
+    for(let i=0;i<words.length;i++){
+      const v=words[i];
+      words[i]=0xFF000000|((v&0xFF)<<16)|(v&0xFF00)|((v>>>16)&0xFF);
     }
+  } else {
+    for(let i=0;i<words.length;i++) words[i]|=0xFF000000;
   }
   ctx.putImageData(out,0,0);
 }

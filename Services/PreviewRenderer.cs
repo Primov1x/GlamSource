@@ -396,7 +396,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
 
     private CapturedFrame? _lastWebFrame;
     private long _lastCaptureTickMs;
-    private const long CaptureThrottleMs = 90; // ~10-11 fps ceiling — matches the web UI's fast-poll rate
+    private const long CaptureThrottleMs = 150; // ~6-7 fps ceiling — each capture is a GPU stall (CopyResource+Map)
 
     /// <summary>Last frame captured for the web-UI 3D preview, or null if never captured / feature off.
     /// Thread-safe to read from anywhere (plain field read) — capture itself only ever runs from
