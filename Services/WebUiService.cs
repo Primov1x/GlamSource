@@ -3,6 +3,7 @@ using Dalamud.Plugin.Services;
 using GlamSource.Core;
 using GlamSource.Windows;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json.Nodes;
@@ -31,6 +32,11 @@ public sealed class WebUiService : IDisposable
     private readonly IFramework _framework;
     private readonly IPluginLog _log;
     private readonly ModelExport.ModelExportService _modelExport;
+    // ponytail: named pose snapshots (e.g. "idle", "weapon"), self-refreshed whenever the framework
+    // thread happens to observe the character in that state — no user action needed. Concurrent
+    // dictionary because writes happen on the framework thread while reads happen on arbitrary
+    // HTTP worker threads. In-memory only, resets on plugin reload (re-populates within seconds).
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, ModelExport.SkeletonPose> _savedPoses = new();
     private TcpListener? _listener;
     private TcpListener? _listener6;
     private CancellationTokenSource? _cts;
@@ -322,6 +328,9 @@ public sealed class WebUiService : IDisposable
             return Json(new { trace = _modelExport.LastTrace, live = dbgPose != null });
         }
 
+        if (method == "GET" && path == "/api/pose/list")
+            return Json(new { poses = _savedPoses.Keys.ToArray() });
+
         if (method == "GET" && path == "/api/model3d.glb")
         {
             // ponytail: mdl/mtrl/tex parsing is pure file I/O (Lumina + vendored Penumbra parser),
@@ -330,7 +339,14 @@ public sealed class WebUiService : IDisposable
             try
             {
                 var (glbSlots, glbChara, glbPose) = ResolveModelInputs();
-                var glb = _modelExport.BuildGlb(glbSlots, glbChara, pose: glbPose);
+                // ponytail: default view is the self-maintained "idle" snapshot, not raw live pose
+                // — whatever the character happens to be doing right now (crafting, sitting, ...)
+                // shouldn't be what opens by default. ?pose=live forces the raw live capture,
+                // ?pose=weapon the other snapshot; either falls back to live if not saved yet.
+                var poseName = query["pose"] ?? "idle";
+                if (poseName != "live" && _savedPoses.TryGetValue(poseName, out var saved))
+                    glbPose = saved;
+                var glb = _modelExport.BuildGlb(glbSlots, glbChara, bypassCache: true, pose: glbPose);
                 return glb == null
                     ? ("404 Not Found", "application/octet-stream", Array.Empty<byte>())
                     : ("200 OK", "model/gltf-binary", glb);
@@ -418,6 +434,29 @@ public sealed class WebUiService : IDisposable
                     // No .pap/animation parsing; see SkeletonPoseService for why that's unneeded.
                     try { pose = ModelExport.SkeletonPoseService.Capture(pc.Address); }
                     catch (Exception ex) { _log.Warning($"[WebUi] skeleton pose capture failed: {ex.Message}"); }
+
+                    // ponytail: self-maintaining "idle"/"weapon" snapshots — no user action needed.
+                    // Every time we happen to observe the character in a clean idle or weapon-drawn
+                    // state, silently refresh that saved pose. /api/model3d.glb?pose=idle|weapon
+                    // then always serves the last good one, however stale the character's CURRENT
+                    // live animation is (crafting, sitting, emoting, ...).
+                    if (pose != null)
+                    {
+                        var busy = Plugin.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.Crafting]
+                            || Plugin.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.Gathering]
+                            || Plugin.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.Emoting]
+                            || Plugin.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.Mounted]
+                            || Plugin.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InCombat]
+                            || Plugin.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.Casting]
+                            || Plugin.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.BetweenAreas]
+                            || Plugin.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.WatchingCutscene];
+                        unsafe
+                        {
+                            var chr = (FFXIVClientStructs.FFXIV.Client.Game.Character.Character*)pc.Address;
+                            if (chr->IsWeaponDrawn && !busy) _savedPoses["weapon"] = pose;
+                            else if (!chr->IsWeaponDrawn && !busy) _savedPoses["idle"] = pose;
+                        }
+                    }
                 }
                 return (effective, chara, pose);
             }).GetAwaiter().GetResult();

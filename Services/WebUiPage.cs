@@ -102,7 +102,11 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 <section id="view-viewer" style="display:none">
   <div class="empty" id="viewerinfo"><span class="spinner"></span>Loading model…</div>
   <div id="viewer3d" style="width:100%;height:70vh;border:1px solid var(--border);border-radius:8px;overflow:hidden;display:none"></div>
-  <button id="btn-repose" onclick="reloadViewerModel()" style="display:none;margin-top:6px" title="Re-capture whatever pose the character is doing right now (idle, weapon drawn, sitting, ...)">🔄 Update pose</button>
+  <div id="pose-toggle" style="display:none;margin-top:6px;gap:4px" class="row">
+    <button id="pose-idle" onclick="setViewerPose('idle')" title="Last time the character was seen standing normally (not crafting/sitting/mounted/...) — auto-updated, no action needed">🧍 Idle</button>
+    <button id="pose-weapon" onclick="setViewerPose('weapon')" title="Last time the character was seen with weapon drawn — auto-updated, no action needed">⚔️ Waffe</button>
+    <button id="pose-live" onclick="setViewerPose('live')" title="Whatever the character is doing right this second">🔴 Live</button>
+  </div>
 </section>
 
 </div>
@@ -293,7 +297,8 @@ async function startViewer(){
     dir.position.set(2,3,2);
     scene.add(dir);
     window._glamViewer={THREE,GLTFLoader,scene,renderer,camera,controls,box,model:null};
-    $('#btn-repose').style.display='inline-block';
+    $('#pose-toggle').style.display='flex';
+    $('#pose-idle').style.fontWeight='bold';
     await reloadViewerModel();
     (function animate(){requestAnimationFrame(animate);controls.update();renderer.render(scene,camera)})();
     new ResizeObserver(()=>{renderer.setSize(box.clientWidth,box.clientHeight);camera.aspect=box.clientWidth/box.clientHeight;camera.updateProjectionMatrix()}).observe(box);
@@ -303,6 +308,13 @@ async function startViewer(){
   }
 }
 
+let viewerPose='idle';
+function setViewerPose(p){
+  viewerPose=p;
+  ['idle','weapon','live'].forEach(x=>$('#pose-'+x).style.fontWeight=(x===p?'bold':'normal'));
+  reloadViewerModel();
+}
+
 async function reloadViewerModel(){
   const v=window._glamViewer;
   if(!v)return;
@@ -310,7 +322,7 @@ async function reloadViewerModel(){
   info.innerHTML='<span class="spinner"></span>Loading model…';
   info.style.display='flex';
   try{
-    const r=await fetch('/api/model3d.glb?t='+Date.now());
+    const r=await fetch('/api/model3d.glb?pose='+viewerPose+'&t='+Date.now());
     if(!r.ok){info.textContent='🤷 No model — open the Character tab in-game first.';return}
     const buf=await r.arrayBuffer();
     const gltf=await new Promise((res,rej)=>new v.GLTFLoader().parse(buf,'',res,rej));
