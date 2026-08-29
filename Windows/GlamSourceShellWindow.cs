@@ -54,6 +54,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
     public GlamourPreviewWindow? PreviewWindow { get; set; }
     public Action<bool>? OnDebugApiToggle { get; set; }
     public Action<bool>? OnWebUiToggle { get; set; }
+    public Func<string?>? WebUiInlayStatus { get; set; }
 
     // ---------- Lookup tab state (from MainWindow) ----------
     private string _lookupText = "";
@@ -1138,6 +1139,10 @@ private void ApplyTargetGlamourToSelf()
             else
                 ImGui.TextColored(UiStyle.Warning, "Browsingway not installed — in-game overlay unavailable");
 
+            var inlayStatus = WebUiInlayStatus?.Invoke();
+            if (!string.IsNullOrEmpty(inlayStatus))
+                ImGui.TextColored(UiStyle.Muted, inlayStatus);
+
             if (bwLoaded)
             {
                 var autoOverlay = _configuration.WebUiAutoOverlay;
@@ -1147,7 +1152,7 @@ private void ApplyTargetGlamourToSelf()
                     _configuration.Save();
                 }
                 ImGui.SameLine();
-                ImGuiComponents.HelpMarker("One-time setup: create an overlay named 'GlamSource' in /bw.\nGlamSource then sets its URL, shows it when this window opens,\nhides it on close and keeps it locked (fixed size/position).");
+                ImGuiComponents.HelpMarker("Overlay is created automatically in Browsingway's config;\nGlamSource then sets its URL, shows it when this window opens,\nhides it on close and keeps it locked (fixed size/position).");
             }
             ImGui.Unindent(ImGui.GetFontSize());
         }

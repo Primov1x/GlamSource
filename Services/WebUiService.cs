@@ -5,6 +5,7 @@ using GlamSource.Windows;
 using System;
 using System.IO;
 using System.Linq;
+using System.Text.Json.Nodes;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -34,18 +35,87 @@ public sealed class WebUiService : IDisposable
 
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
-    public WebUiService(IItemDetailService detail, IGlamourService glamour, GlamSourceShellWindow shell, IFramework framework, IPluginLog log)
+    private readonly string? _browsingwayConfigPath;
+
+    /// <summary>Human-readable state of the Browsingway inlay bootstrap, shown in Settings.</summary>
+    public string? InlayStatus { get; private set; }
+
+    public WebUiService(IItemDetailService detail, IGlamourService glamour, GlamSourceShellWindow shell, IFramework framework, Dalamud.Plugin.IDalamudPluginInterface pi, IPluginLog log)
     {
         _detail = detail;
         _glamour = glamour;
         _shell = shell;
         _framework = framework;
         _log = log;
+        // pluginConfigs/GlamSource.json -> sibling Browsingway.json
+        var dir = pi.ConfigFile.DirectoryName;
+        _browsingwayConfigPath = dir != null ? Path.Combine(dir, "Browsingway.json") : null;
+    }
+
+    // ponytail: Browsingway has no IPC and no create-overlay command; it reads its config once at
+    // load. So we seed the inlay entry directly into Browsingway.json — active after the next
+    // Browsingway load (game restart or plugin reload), no manual setup.
+    public void EnsureBrowsingwayInlay()
+    {
+        try
+        {
+            if (_browsingwayConfigPath == null || !File.Exists(_browsingwayConfigPath))
+            {
+                InlayStatus = "Browsingway config not found — open /bw once, then re-toggle Web UI.";
+                return;
+            }
+
+            var root = JsonNode.Parse(File.ReadAllText(_browsingwayConfigPath));
+            if (root == null) { InlayStatus = "Browsingway config unreadable."; return; }
+
+            var inlays = root["Inlays"] as JsonArray;
+            if (inlays == null)
+            {
+                inlays = new JsonArray();
+                root["Inlays"] = inlays;
+            }
+
+            if (inlays.Any(n => string.Equals((string?)n?["Name"], "GlamSource", StringComparison.OrdinalIgnoreCase)))
+            {
+                InlayStatus = "Overlay ready.";
+                return;
+            }
+
+            inlays.Add(new JsonObject
+            {
+                ["Guid"] = Guid.NewGuid().ToString(),
+                ["Name"] = "GlamSource",
+                ["Url"] = $"http://127.0.0.1:{Port}/",
+                ["Hidden"] = true,
+                ["Locked"] = true,
+                ["TypeThrough"] = false,
+                ["ClickThrough"] = false,
+                ["Fullscreen"] = false,
+                ["Muted"] = false,
+                ["Disabled"] = false,
+                ["ActOptimizations"] = false,
+                ["HideOutOfCombat"] = false,
+                ["HideInPvP"] = false,
+                ["HideDelay"] = 0,
+                ["Framerate"] = 60,
+                ["Opacity"] = 100.0,
+                ["Zoom"] = 100.0,
+                ["CustomCss"] = "",
+            });
+            File.WriteAllText(_browsingwayConfigPath, root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+            InlayStatus = "Overlay created — restart the game or reload Browsingway once to activate.";
+            _log.Information("[WebUi] seeded GlamSource inlay into Browsingway.json");
+        }
+        catch (Exception ex)
+        {
+            InlayStatus = $"Overlay setup failed: {ex.Message}";
+            _log.Error($"[WebUi] EnsureBrowsingwayInlay failed: {ex.Message}");
+        }
     }
 
     public void SetEnabled(bool enabled)
     {
-        if (enabled && _listener == null) Start();
+        if (enabled && _listener == null) { Start(); EnsureBrowsingwayInlay(); }
         else if (!enabled && _listener != null) Stop();
     }
 

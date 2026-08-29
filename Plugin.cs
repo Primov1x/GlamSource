@@ -155,7 +155,8 @@ public class Plugin : IAsyncDalamudPlugin
         debugApiService.SetEnabled(Configuration.DebugApiEnabled);
         shellWindow.OnDebugApiToggle = enabled => debugApiService.SetEnabled(enabled);
 
-        webUiService = new WebUiService(itemDetailService, GlamourServiceOverride ?? gameDataService, shellWindow, Framework, Log);
+        webUiService = new WebUiService(itemDetailService, GlamourServiceOverride ?? gameDataService, shellWindow, Framework, PluginInterface, Log);
+        shellWindow.WebUiInlayStatus = () => webUiService.InlayStatus;
         webUiService.SetEnabled(Configuration.WebUiEnabled);
         shellWindow.OnWebUiToggle = enabled => webUiService.SetEnabled(enabled);
 
