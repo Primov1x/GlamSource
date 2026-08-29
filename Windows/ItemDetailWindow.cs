@@ -9,8 +9,10 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
 
 using Dalamud.Interface;
+using Dalamud.Interface.Components;
 using Dalamud.Interface.Textures;
 using Dalamud.Interface.Utility;
+using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
@@ -511,9 +513,12 @@ public class ItemDetailWindow : Window, IDisposable
 
     // ponytail: draw-list channels so the card background paints behind the content,
     // same pattern as Questionable's CardScope (QstWidgets).
+    // ponytail: one size for all row/source icons; header keeps its own 3x size.
+    private static float RowIconSize => ImGui.GetFontSize() * 1.5f;
+
     private sealed class SourceCardScope : IDisposable
     {
-        private const float Rounding = 8f;
+        private static float Rounding => ImGui.GetFontSize() * 0.5f;
         private static readonly Vector4 FillColor = new(0f, 0f, 0f, 0.35f);
 
         private readonly ImDrawListPtr _drawList;
@@ -527,7 +532,7 @@ public class ItemDetailWindow : Window, IDisposable
             _drawList = ImGui.GetWindowDrawList();
             _topLeft = ImGui.GetCursorScreenPos();
             _width = ImGui.GetContentRegionAvail().X;
-            _padding = 7f * ImGuiHelpers.GlobalScale;
+            _padding = ImGui.GetFontSize() * 0.45f;
             _borderColor = ImGui.ColorConvertFloat4ToU32(borderColor);
 
             _drawList.ChannelsSplit(2);
@@ -673,15 +678,15 @@ public class ItemDetailWindow : Window, IDisposable
         {
             DrawBadge(srcStyle.Item3, srcStyle.Item2);
             ImGui.SameLine();
-            TryDrawSourceIcon(itemIconId, 24f);
+            TryDrawSourceIcon(itemIconId, RowIconSize);
 
             if (!hasContent)
             {
-                ImGui.TextDisabled($" {titleOverride ?? src.Description}");
+                ImGui.TextDisabled(titleOverride ?? src.Description);
             }
             else
             {
-                ImGui.Text($" {titleOverride ?? src.Description}");
+                ImGui.Text(titleOverride ?? src.Description);
                 if (src.SourceItemId.HasValue)
                 {
                     ImGui.SameLine();
@@ -741,182 +746,84 @@ public class ItemDetailWindow : Window, IDisposable
     }
 
     private void DrawMaterialRow(CostEntry mat, int sourceIdx, int matIdx, bool showCheckmark = true, string? prefix = null)
-    {
-        var have = mat.ItemId > 19 ? GetItemCount(mat.ItemId) : 0;
-        var sufficient = have >= mat.Count;
-        var breakdown = mat.ItemId > 19 ? GetInventoryBreakdown(mat.ItemId) : new Dictionary<string, int>();
-        var showGatherBtn = ShouldShowGatherButton(mat.ItemId);
+        => DrawEntryRow(mat, sourceIdx, matIdx, "mat", showInfoButton: true, _lastMaterialGatherTimestamp);
 
-        const float IconSize = 32f;
-        if (_textureProvider != null && mat.IconId > 0)
+    private void DrawCostRow(CostEntry cost, int sourceIdx, int costIdx, bool showInfoButton = true, string? prefix = null)
+        => DrawEntryRow(cost, sourceIdx, costIdx, "cost", showInfoButton, _lastCostGatherTimestamp);
+
+    // ponytail: shared material/cost row — icon, name, (have/need), info + gather buttons.
+    // Sufficient/insufficient communicated via color; inventory breakdown lives in the count tooltip.
+    private void DrawEntryRow(CostEntry entry, int sourceIdx, int rowIdx, string idPrefix,
+        bool showInfoButton, Dictionary<uint, long> gatherCooldowns)
+    {
+        if (entry.ItemId == 0)
         {
-            var iconTexture = _textureProvider.GetFromGameIcon(new GameIconLookup(mat.IconId)).GetWrapOrEmpty();
-            var iconSize = new Vector2(IconSize, IconSize);
-            // Vertically center icon with text
-            float textHeight = ImGui.GetTextLineHeight();
-            float offsetY = (textHeight - IconSize) * 0.5f;
+            ImGui.TextColored(new Vector4(1f, 0.84f, 0f, 1f), $"{FormatNumber(entry.Count)} Gil");
+            return;
+        }
+
+        var have = entry.ItemId > 19 ? GetItemCount(entry.ItemId) : 0;
+        var sufficient = have >= entry.Count;
+
+        if (_textureProvider != null && entry.IconId > 0)
+        {
+            var iconTexture = _textureProvider.GetFromGameIcon(new GameIconLookup(entry.IconId)).GetWrapOrEmpty();
+            var size = RowIconSize;
             var cursorPos = ImGui.GetCursorPos();
-            ImGui.SetCursorPosY(cursorPos.Y + offsetY);
-            ImGui.Image(iconTexture.Handle, iconSize);
+            ImGui.SetCursorPosY(cursorPos.Y + (ImGui.GetTextLineHeight() - size) * 0.5f);
+            ImGui.Image(iconTexture.Handle, new Vector2(size, size));
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip(entry.Name);
             ImGui.SameLine();
             ImGui.SetCursorPosY(cursorPos.Y);
         }
 
-        var nameColor = sufficient
-            ? ImGui.ColorConvertFloat4ToU32(new Vector4(0.25f, 0.75f, 0.25f, 1f))
-            : ImGui.ColorConvertFloat4ToU32(new Vector4(0.5f, 0.5f, 0.5f, 1f));
-        ImGui.PushStyleColor(ImGuiCol.Text, nameColor);
-        ImGui.Text($"{mat.Name} x{FormatNumber(mat.Count)}");
-        ImGui.PopStyleColor();
-        if (mat.ItemId > 19)
+        ImGui.TextColored(sufficient ? UiStyle.Success : UiStyle.Muted, $"{entry.Name} x{FormatNumber(entry.Count)}");
+
+        if (entry.ItemId > 19)
         {
             ImGui.SameLine();
-            var countColor = sufficient
-                ? ImGui.ColorConvertFloat4ToU32(new Vector4(0.3f, 0.8f, 0.3f, 1f))
-                : ImGui.ColorConvertFloat4ToU32(new Vector4(0.6f, 0.6f, 0.6f, 1f));
-            ImGui.PushStyleColor(ImGuiCol.Text, countColor);
-            ImGui.Text($"({have}/{mat.Count})");
-            ImGui.PopStyleColor();
-            if (showCheckmark)
+            ImGui.TextColored(sufficient ? UiStyle.Success : UiStyle.Muted, $"({have}/{entry.Count})");
+            if (ImGui.IsItemHovered())
             {
-                ImGui.SameLine();
-                ImGui.SetCursorPosY(ImGui.GetCursorPosY() - 1f);
-                var checkColor = sufficient
-                    ? ImGui.ColorConvertFloat4ToU32(new Vector4(0.25f, 0.75f, 0.25f, 1f))
-                    : ImGui.ColorConvertFloat4ToU32(new Vector4(0.5f, 0.5f, 0.5f, 1f));
-                ImGui.PushStyleColor(ImGuiCol.Text, checkColor);
-                ImGui.Text(sufficient ? "\u2713" : "\u25CB");
-                ImGui.PopStyleColor();
+                var breakdown = GetInventoryBreakdown(entry.ItemId);
+                if (breakdown.Count > 0)
+                    ImGui.SetTooltip(string.Join("\n", breakdown.Select(kv => $"{kv.Key}: {kv.Value}")));
             }
 
-            ImGui.SameLine();
-            if (ImGui.SmallButton($"[i]##mat_{sourceIdx}_{matIdx}"))
+            if (showInfoButton && !string.IsNullOrEmpty(entry.Name))
             {
-                _navigateToItemId = mat.ItemId;
-                _navigateToSourceIdx = sourceIdx;
+                ImGui.SameLine();
+                using (ImRaii.PushId($"info_{idPrefix}_{sourceIdx}_{rowIdx}"))
+                {
+                    if (ImGuiComponents.IconButton(FontAwesomeIcon.InfoCircle))
+                    {
+                        _navigateToItemId = entry.ItemId;
+                        _navigateToSourceIdx = sourceIdx;
+                    }
+                }
+                if (ImGui.IsItemHovered())
+                    ImGui.SetTooltip("Show item details");
             }
         }
 
-        if (showGatherBtn)
+        if (ShouldShowGatherButton(entry.ItemId))
         {
-            // Check per-material cooldown (keyed by ItemId, same 2s window as main Gather button)
             var now = Environment.TickCount64;
-            var hasCooldown = _lastMaterialGatherTimestamp.TryGetValue(mat.ItemId, out var ts)
+            var hasCooldown = gatherCooldowns.TryGetValue(entry.ItemId, out var ts)
                 && (now - ts) < GatherButtonCooldownMs;
 
             ImGui.SameLine();
-
-            if (hasCooldown)
+            using (ImRaii.Disabled(hasCooldown))
             {
-                // Disabled button during cooldown — clicks are ignored
-                ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.4f, 0.4f, 0.4f, 0.5f));
-                ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.6f, 0.6f, 0.6f, 1f));
-                ImGui.SmallButton($"Gathering...##gathering_{sourceIdx}_{matIdx}");
-                ImGui.PopStyleColor(2);
-            }
-            else
-            {
-                if (ImGui.SmallButton($"Gather##gather_{sourceIdx}_{matIdx}"))
+                if (ImGui.SmallButton($"Gather##gather_{idPrefix}_{sourceIdx}_{rowIdx}") && !hasCooldown)
                 {
-                    _lastMaterialGatherTimestamp[mat.ItemId] = now;
-                    TriggerGather(mat.ItemId, mat.Name);
+                    gatherCooldowns[entry.ItemId] = now;
+                    TriggerGather(entry.ItemId, entry.Name);
                 }
             }
-        }
-
-        if (breakdown.Count > 0)
-        {
-            ImGui.Indent(20f);
-            ImGui.TextDisabled($"Breakdown: {string.Join(", ", breakdown.Select(kv => $"{kv.Key}: {kv.Value}"))}");
-            ImGui.Unindent(20f);
-        }
-    }
-
-    private void DrawCostRow(CostEntry cost, int sourceIdx, int costIdx, bool showInfoButton = true, string? prefix = null)
-    {
-        if (cost.ItemId == 0)
-        {
-            ImGui.TextColored(new Vector4(1f, 0.84f, 0f, 1f), $"{prefix} {FormatNumber(cost.Count)} Gil");
-        }
-        else
-        {
-            const float IconSize = 32f;
-            var have = GetItemCount(cost.ItemId);
-            var sufficient = have >= cost.Count;
-            var breakdown = cost.ItemId > 19 ? GetInventoryBreakdown(cost.ItemId) : new Dictionary<string, int>();
-
-if (_textureProvider != null && cost.IconId > 0)
-        {
-            var iconTexture = _textureProvider.GetFromGameIcon(new GameIconLookup(cost.IconId)).GetWrapOrEmpty();
-            var iconSize = new Vector2(IconSize, IconSize);
-            // Vertically center icon with text
-            float textHeight = ImGui.GetTextLineHeight();
-            float offsetY = (textHeight - IconSize) * 0.5f;
-            var cursorPos = ImGui.GetCursorPos();
-            ImGui.SetCursorPosY(cursorPos.Y + offsetY);
-            ImGui.Image(iconTexture.Handle, iconSize);
-            ImGui.SameLine();
-            ImGui.SetCursorPosY(cursorPos.Y);
-        }
-
-            var nameColor = sufficient
-                ? ImGui.ColorConvertFloat4ToU32(new Vector4(0.25f, 0.75f, 0.25f, 1f))
-                : ImGui.ColorConvertFloat4ToU32(new Vector4(0.5f, 0.5f, 0.5f, 1f));
-            ImGui.PushStyleColor(ImGuiCol.Text, nameColor);
-            ImGui.Text($"{cost.Name} x{FormatNumber(cost.Count)}");
-            ImGui.PopStyleColor();
-
-            ImGui.SameLine();
-            var countColor = sufficient
-                ? ImGui.ColorConvertFloat4ToU32(new Vector4(0.3f, 0.8f, 0.3f, 1f))
-                : ImGui.ColorConvertFloat4ToU32(new Vector4(0.6f, 0.6f, 0.6f, 1f));
-            ImGui.PushStyleColor(ImGuiCol.Text, countColor);
-            ImGui.Text($"({have}/{cost.Count})");
-            ImGui.PopStyleColor();
-
-            if (breakdown.Count > 0)
-            {
-                ImGui.Indent(20f);
-                ImGui.TextDisabled($"Breakdown: {string.Join(", ", breakdown.Select(kv => $"{kv.Key}: {kv.Value}"))}");
-                ImGui.Unindent(20f);
-            }
-
-            if (showInfoButton && cost.ItemId > 19 && !string.IsNullOrEmpty(cost.Name))
-            {
-                ImGui.SameLine();
-                if (ImGui.SmallButton($"[i]##cost_{sourceIdx}_{costIdx}"))
-                {
-                    _navigateToItemId = cost.ItemId;
-                    _navigateToSourceIdx = sourceIdx;
-                }
-            }
-
-            if (ShouldShowGatherButton(cost.ItemId))
-            {
-                // Check per-cost cooldown (keyed by ItemId, same 2s window as main/material Gather buttons)
-                var now = Environment.TickCount64;
-                var hasCooldown = _lastCostGatherTimestamp.TryGetValue(cost.ItemId, out var ts)
-                    && (now - ts) < GatherButtonCooldownMs;
-
-                ImGui.SameLine();
-
-                if (hasCooldown)
-                {
-                    // Disabled button during cooldown — clicks are ignored
-                    ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.4f, 0.4f, 0.4f, 0.5f));
-                    ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.6f, 0.6f, 0.6f, 1f));
-                    ImGui.SmallButton($"Gathering...##gathering_{sourceIdx}_{costIdx}");
-                    ImGui.PopStyleColor(2);
-                }
-                else
-                {
-                    if (ImGui.SmallButton($"Gather##gather_{sourceIdx}_{costIdx}"))
-                    {
-                        _lastCostGatherTimestamp[cost.ItemId] = now;
-                        TriggerGather(cost.ItemId, cost.Name);
-                    }
-                }
-            }
+            if (hasCooldown && ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                ImGui.SetTooltip("Gathering...");
         }
     }
 
@@ -925,8 +832,8 @@ if (_textureProvider != null && cost.IconId > 0)
         var drawList = ImGui.GetWindowDrawList();
         var pos = ImGui.GetCursorScreenPos();
         var textSize = ImGui.CalcTextSize(label);
-        var padX = 10f;
-        var padY = 3f;
+        var padX = ImGui.GetFontSize() * 0.5f;
+        var padY = ImGui.GetFontSize() * 0.15f;
         var height = textSize.Y + padY * 2;
         var width = textSize.X + padX * 2;
         var radius = height / 2;
@@ -946,23 +853,61 @@ if (_textureProvider != null && cost.IconId > 0)
     }
 
     private void DrawNpcRow(ItemSourceDetail src, int groupIdx, int npcIdx)
+        => DrawNpcTable(new[] { src }, groupIdx * 1000 + npcIdx + 1);
+
+    // ponytail: aligned vendor list \u2014 NPC | zone (x,y) | map button. Right-click a location copies it.
+    private void DrawNpcTable(IReadOnlyList<ItemSourceDetail> npcs, int tableId)
     {
-        ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1f), "👤");
+        if (!ImGui.BeginTable($"##npcs_{tableId}", 3,
+                ImGuiTableFlags.SizingStretchProp | ImGuiTableFlags.RowBg))
+            return;
+        ImGui.TableSetupColumn("npc", ImGuiTableColumnFlags.WidthStretch, 2f);
+        ImGui.TableSetupColumn("loc", ImGuiTableColumnFlags.WidthStretch, 2f);
+        ImGui.TableSetupColumn("map", ImGuiTableColumnFlags.WidthFixed, ImGui.GetFrameHeight());
+
+        for (int i = 0; i < npcs.Count; i++)
+        {
+            var src = npcs[i];
+            ImGui.TableNextRow();
+            ImGui.TableNextColumn();
+            ImGui.AlignTextToFramePadding();
+            ImGui.Text(src.NpcName ?? "Unknown vendor");
+
+            ImGui.TableNextColumn();
+            ImGui.AlignTextToFramePadding();
+            var loc = src.ZoneName ?? "";
+            if (src.MapX.HasValue && src.MapY.HasValue)
+                loc = $"{loc} ({src.MapX:F1}, {src.MapY:F1})".TrimStart();
+            ImGui.TextDisabled(loc);
+            if (loc.Length > 0 && ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("Right-click to copy");
+                if (ImGui.IsMouseClicked(ImGuiMouseButton.Right))
+                    ImGui.SetClipboardText($"{src.NpcName} \u2014 {loc}");
+            }
+
+            ImGui.TableNextColumn();
+            if (src.MapX.HasValue && src.MapY.HasValue)
+            {
+                using (ImRaii.PushId($"map_{tableId}_{i}"))
+                {
+                    if (ImGuiComponents.IconButton(FontAwesomeIcon.MapMarkerAlt))
+                        TryOpenMap(src.NpcName, src.ZoneName, src.TerritoryTypeId, src.MapId, src.MapX.Value, src.MapY.Value);
+                }
+                if (ImGui.IsItemHovered())
+                    ImGui.SetTooltip("Open map");
+            }
+        }
+        ImGui.EndTable();
+    }
+
+    // ponytail: colored FontAwesome glyph + text on one line.
+    private static void IconStatus(FontAwesomeIcon icon, Vector4 color, string text)
+    {
+        using (ImRaii.PushFont(UiBuilder.IconFont))
+            ImGui.TextColored(color, icon.ToIconString());
         ImGui.SameLine();
-        ImGui.Text(src.NpcName ?? "Unknown vendor");
-        if (src.ZoneName != null)
-        {
-            ImGui.SameLine();
-            ImGui.TextDisabled($" \u00b7 {src.ZoneName}");
-        }
-        if (src.MapX.HasValue && src.MapY.HasValue)
-        {
-            ImGui.SameLine();
-            ImGui.TextDisabled($" ({src.MapX:F1}, {src.MapY:F1})");
-            ImGui.SameLine();
-            if (ImGui.SmallButton($"Map##map_{groupIdx}_{npcIdx}"))
-                TryOpenMap(src.NpcName, src.ZoneName, src.TerritoryTypeId, src.MapId, src.MapX.Value, src.MapY.Value);
-        }
+        ImGui.TextColored(color, text);
     }
 
     private void DrawDutyFinderRow(ItemSourceDetail src, int sourceIdx)
@@ -973,7 +918,7 @@ if (_textureProvider != null && cost.IconId > 0)
             return;
         if (CheckUnlockStatus(src.CfcRowId.Value))
         {
-            ImGui.TextColored(new Vector4(0.4f, 1f, 0.4f, 1f), "✓ Unlocked");
+            IconStatus(FontAwesomeIcon.Check, UiStyle.Success, "Unlocked");
         }
         if (ImGui.SmallButton($"Duty Finder##duty_{sourceIdx}"))
         {
@@ -987,22 +932,21 @@ if (_textureProvider != null && cost.IconId > 0)
             return;
         if (src.NpcName != null && src.ZoneName != null)
         {
-            ImGui.SameLine();
             DrawNpcRow(src, sourceIdx, -1);
         }
         var questId = src.QuestForUnlock;
         var questLocked = questId.HasValue && IsQuestLockedByQuestionable(questId.Value);
         if (questLocked)
         {
-            ImGui.TextColored(new Vector4(1f, 0.6f, 0f, 1f), "🔒 Locked (prerequisites incomplete)");
-            if (ImGui.SmallButton($"▶ Start quest chain##quest_{sourceIdx}"))
+            IconStatus(FontAwesomeIcon.Lock, UiStyle.Warning, "Locked (prerequisites incomplete)");
+            if (ImGui.SmallButton($"Start quest chain##quest_{sourceIdx}"))
             {
                 TryStartWithQuestionable(questId!.Value);
             }
         }
         else if (src.QuestForUnlock.HasValue)
         {
-            ImGui.TextColored(new Vector4(0.4f, 1f, 0.4f, 1f), "✓ Quest unlocked");
+            IconStatus(FontAwesomeIcon.Check, UiStyle.Success, "Quest unlocked");
         }
     }
 
@@ -1025,7 +969,7 @@ if (_textureProvider != null && cost.IconId > 0)
             var style = SourceStyles.GetValueOrDefault(first.Type, (Vector4.One, Vector4.One, "UNKNOWN"));
             DrawBadge(style.Item3, style.Item2);
             ImGui.SameLine();
-            TryDrawSourceIcon(itemIconId, 20f);
+            TryDrawSourceIcon(itemIconId, RowIconSize);
 
             var isGilOnly = first.Costs != null && first.Costs.All(c => c.ItemId == 0);
 
@@ -1040,18 +984,17 @@ if (_textureProvider != null && cost.IconId > 0)
 
             ImGui.Spacing();
 
-            DrawNpcRow(first, groupIdx, 0);
-
-            if (vendors.Count > 1)
+            // ponytail: <=4 vendors shown outright; larger lists collapse behind a tree node.
+            if (vendors.Count <= 4)
             {
-                var moreLabel = vendors.Count == 2 ? "1 more vendor" : $"{vendors.Count - 1} more vendors";
-                if (ImGui.TreeNode($"{moreLabel}##vg_{groupIdx}"))
+                DrawNpcTable(vendors, groupIdx);
+            }
+            else
+            {
+                DrawNpcTable(new[] { first }, groupIdx);
+                if (ImGui.TreeNode($"{vendors.Count - 1} more vendors##vg_{groupIdx}"))
                 {
-                    for (int i = 1; i < vendors.Count; i++)
-                    {
-                        DrawNpcRow(vendors[i], groupIdx, i);
-                        ImGui.Spacing();
-                    }
+                    DrawNpcTable(vendors.Skip(1).ToList(), groupIdx + 100000);
                     ImGui.TreePop();
                 }
             }
@@ -1414,7 +1357,7 @@ if (_textureProvider != null && cost.IconId > 0)
             var style = SourceStyles.GetValueOrDefault(first.Type, (Vector4.One, Vector4.One, "UNKNOWN"));
             DrawBadge(style.Item3, style.Item2);
             ImGui.SameLine();
-            TryDrawSourceIcon(itemIconId, 20f);
+            TryDrawSourceIcon(itemIconId, RowIconSize);
 
             var levels = sources.Select(s => ExtractLevel(s.Description)).Where(l => l > 0).Distinct().OrderBy(l => l);
             var jobs = sources.Select(s => ExtractJobName(s.Description)).Where(j => !string.IsNullOrEmpty(j)).Distinct();
