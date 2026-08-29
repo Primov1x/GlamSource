@@ -196,10 +196,15 @@ public sealed class ModelExportService
                     : mtrlName;
                 var (t, colorSetTint) = ResolveMaterialByPath(mtrlPath, pngs, materialCache);
                 texIndex = t;
-                // textured -> real colors, no tint; else colorset average if we found one, else flat fallback
+                // untextured -> colorset average if we found one, else flat fallback
                 if (texIndex < 0) tint = colorSetTint ?? fallbackTint;
             }
-            meshInputs.Add(new GltfMeshInput(m, texIndex, texIndex >= 0 ? null : tint));
+            // ponytail: skin/hair "_base"/"_hir" textures are a neutral grounding layer, not the
+            // final color — the game multiplies them by the character's actual skin/hair color
+            // (set via CustomizeParameter, which we don't have file access to). Always multiply by
+            // our flat approximation, even when a texture was found — a bare base.tex renders as
+            // dull blue-gray, not skin tone.
+            meshInputs.Add(new GltfMeshInput(m, texIndex, tint));
         }
     }
 
