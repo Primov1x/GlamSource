@@ -5,6 +5,15 @@ using Newtonsoft.Json.Linq;
 
 namespace GlamSource.Services;
 
+/// <summary>Skin/hair color from Glamourer's state, each null unless Glamourer's own "Apply" flag
+/// for that parameter is set — meaning the player actually overrode it via Advanced Customization,
+/// not just Glamourer's placeholder for "leave as-is". Reading these unconditionally the first time
+/// (ignoring Apply) is why the IPC path produced the same implausible near-white/near-black values
+/// as our own shader-buffer read: Apply=false rows carry a meaningless placeholder, not the live
+/// color — the swatch-index-based human.cmp read (<see cref="ModelExport.CmpColorReader"/>) is the
+/// correct source for those.</summary>
+public readonly record struct GlamourerAppliedColors(float[]? Skin, float[]? Hair);
+
 /// <summary>
 /// Reads skin/hair diffuse color straight from Glamourer's own state (IPC), instead of GlamSource's
 /// own memory read of the CustomizeParameter shader buffer (which produced implausible near-white/
@@ -34,8 +43,9 @@ public class GlamourerColorIpc
         }
     }
 
-    /// <summary>Skin/hair diffuse color for the given object index, or null if unavailable/failed.</summary>
-    public GlamSource.Services.ModelExport.CustomizeColors? GetColors(int objectIndex)
+    /// <summary>Skin/hair diffuse color for the given object index — each field null unless
+    /// Glamourer's own "Apply" flag says the player actually overrode it. Null on IPC failure.</summary>
+    public GlamourerAppliedColors? GetColors(int objectIndex)
     {
         if (_getState == null) return null;
         try
@@ -46,18 +56,17 @@ public class GlamourerColorIpc
             var parameters = state["Parameters"];
             if (parameters == null) return null;
 
-            var skin = ReadRgb(parameters["SkinDiffuse"]);
-            var hair = ReadRgb(parameters["HairDiffuse"]);
-            if (skin == null || hair == null) return null;
-
-            return new GlamSource.Services.ModelExport.CustomizeColors(skin, hair);
+            var skin = ReadRgbIfApplied(parameters["SkinDiffuse"]);
+            var hair = ReadRgbIfApplied(parameters["HairDiffuse"]);
+            return new GlamourerAppliedColors(skin, hair);
         }
         catch { return null; }
     }
 
-    private static float[]? ReadRgb(JToken? token)
+    private static float[]? ReadRgbIfApplied(JToken? token)
     {
         if (token == null) return null;
+        if (token["Apply"]?.Value<bool>() != true) return null;
         var r = token["Red"]?.Value<float>();
         var g = token["Green"]?.Value<float>();
         var b = token["Blue"]?.Value<float>();

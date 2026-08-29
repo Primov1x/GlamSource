@@ -301,10 +301,16 @@ public sealed class ModelExportService
             pending.Add((new GltfMeshInput(m, texIndex, tint), hadRealSource));
         }
 
+        // ponytail: scoped to "face/" only — the zear (Viera ear) part has the SAME sourceless-
+        // material shape (fac_a has a real texture, the outer ear shell "z0004_a" doesn't) but there
+        // the sourceless submesh is real structural ear geometry, not a decal overlay. Dropping it
+        // there removed the outer ear entirely ("nur das innere ist da" — confirmed by screenshot).
+        // Only face's etc_a/b/c are genuinely optional decal layers.
         var anyRealSource = pending.Exists(p => p.HadRealSource);
+        var dropSourceless = anyRealSource && partFolder.StartsWith("face/", StringComparison.Ordinal);
         foreach (var p in pending)
         {
-            if (!p.HadRealSource && anyRealSource)
+            if (!p.HadRealSource && dropSourceless)
             {
                 LastTrace.Add($"  {partFolder}: dropped sourceless decal submesh (other submeshes have real texture/colorset)");
                 continue;

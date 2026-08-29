@@ -458,17 +458,24 @@ public sealed class WebUiService : IDisposable
                     var skinColorIdx = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.SkinColor];
                     var hairColorIdx = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.HairColor];
                     // ponytail: the game's own character-creation color table (human.cmp), indexed
-                    // by the live swatch selection — authoritative, no memory reverse-engineering.
-                    // Our own shader-buffer reads AND Glamourer's own IPC both kept returning the
-                    // exact same implausible near-white/near-black values (see CustomizeColors.cs),
-                    // so this replaces both as the primary source; they stay as last-resort fallback.
+                    // by the live swatch selection — authoritative base color, no memory reverse-
+                    // engineering. Glamourer's IPC can override per-channel on TOP of this when the
+                    // player actually customized further via Advanced Customization (its own "Apply"
+                    // flag, not just a placeholder — see GlamourerColorIpc's doc comment for why
+                    // blindly trusting IPC without that flag produced garbage before).
                     try { colors = ModelExport.CmpColorReader.Read(_modelExportGameData, tribe, gender, skinColorIdx, hairColorIdx); }
                     catch (Exception ex) { _log.Warning($"[WebUi] human.cmp color read failed: {ex.Message}"); }
-                    if (colors == null)
+                    try
                     {
-                        try { colors = _glamourerColors.GetColors(pc.ObjectIndex); }
-                        catch (Exception ex) { _log.Warning($"[WebUi] Glamourer IPC color read failed: {ex.Message}"); }
+                        var applied = _glamourerColors.GetColors(pc.ObjectIndex);
+                        if (applied is { } a && (a.Skin != null || a.Hair != null))
+                        {
+                            var baseColors = colors ?? new ModelExport.CustomizeColors(
+                                new[] { 0.85f, 0.66f, 0.56f }, new[] { 0.35f, 0.30f, 0.28f });
+                            colors = baseColors with { Skin = a.Skin ?? baseColors.Skin, Hair = a.Hair ?? baseColors.Hair };
+                        }
                     }
+                    catch (Exception ex) { _log.Warning($"[WebUi] Glamourer IPC color read failed: {ex.Message}"); }
                     if (colors == null)
                     {
                         try { colors = ModelExport.CustomizeColorsService.Capture(pc.Address); }
