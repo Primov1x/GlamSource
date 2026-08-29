@@ -126,7 +126,7 @@ async function pollPreview3D(){
     const r=await fetch('/api/preview3d');
     if(r.ok){
       drawPreview3D(await r.arrayBuffer());
-      canvas.style.display='';
+      canvas.style.display='block';
     } else canvas.style.display='none';
   }catch(e){ canvas.style.display='none' }
   if(p3dOn)p3dTimer=setTimeout(pollPreview3D, p3dDragging?100:500);
