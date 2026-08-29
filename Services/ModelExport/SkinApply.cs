@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using Penumbra.GameData.Files.ModelStructs;
 
@@ -7,7 +8,7 @@ namespace GlamSource.Services.ModelExport;
 
 /// <summary>Diagnostics from one Apply() call — how many bone lookups actually hit the live pose,
 /// and how many vertices got rejected as garbage (see Apply's sanity guard).</summary>
-public readonly record struct SkinStats(int Vertices, int SkinnedVertices, int BoneRefsMatched, int BoneRefsTotal, int RejectedVertices);
+public readonly record struct SkinStats(int Vertices, int SkinnedVertices, int BoneRefsMatched, int BoneRefsTotal, int RejectedVertices, string[] UnmatchedBoneNames);
 
 // ponytail: CPU skinning, baked once into final vertex positions — no glTF <skin>/joints needed,
 // the viewer stays a plain static mesh. Normals use the 3x3 rotation+scale part only (no proper
@@ -23,12 +24,15 @@ public static class SkinApply
         var skinCache = new Dictionary<byte, (Matrix4x4 M, bool Matched)>();
         var refsMatched = 0;
         var refsTotal = 0;
+        var unmatchedNames = new SortedSet<string>();
 
         (Matrix4x4 M, bool Matched) SkinFor(byte localIdx)
         {
             if (skinCache.TryGetValue(localIdx, out var cached)) return cached;
-            var matched = localIdx < table.Length && table[localIdx] < mdlBones.Length && pose.HasBone(mdlBones[table[localIdx]]);
-            var m = matched ? pose.SkinMatrix(mdlBones[table[localIdx]]) : Matrix4x4.Identity;
+            var boneName = localIdx < table.Length && table[localIdx] < mdlBones.Length ? mdlBones[table[localIdx]] : null;
+            var matched = boneName != null && pose.HasBone(boneName);
+            if (boneName != null && !matched) unmatchedNames.Add(boneName);
+            var m = matched ? pose.SkinMatrix(boneName!) : Matrix4x4.Identity;
             var result = (m, matched);
             skinCache[localIdx] = result;
             return result;
@@ -78,7 +82,7 @@ public static class SkinApply
                 mesh.Normals[v * 3 + 2] = normalized.Z;
             }
         }
-        return new SkinStats(n, skinnedCount, refsMatched, refsTotal, rejected);
+        return new SkinStats(n, skinnedCount, refsMatched, refsTotal, rejected, unmatchedNames.ToArray());
     }
 
     private static bool IsFinite(Vector3 v) => float.IsFinite(v.X) && float.IsFinite(v.Y) && float.IsFinite(v.Z);
