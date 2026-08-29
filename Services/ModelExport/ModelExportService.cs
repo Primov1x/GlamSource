@@ -89,8 +89,25 @@ public sealed class ModelExportService
             if (setId == 0) { LastTrace.Add($"{slot}:{itemId} setId 0"); continue; }
 
             var info = SlotInfo(slot)!.Value;
-            var mdlPath = $"chara/{info.Category}/{info.Prefix}{setId:D4}/model/{RaceCode}{info.Prefix}{setId:D4}_{info.Suffix}.mdl";
-            if (!_gameData.FileExists(mdlPath)) { LastTrace.Add($"{slot}:{itemId} missing {mdlPath}"); continue; }
+            // ponytail: most gear ships one race-agnostic model (RaceCode, c0101) and the game fits
+            // it via skeleton deform at runtime — but some items only ever got a model for ONE
+            // gender of a race (verified: a hat that only exists as c1801, not c0101 or c1701 male).
+            // Try the generic model first, then the viewer's actual race/gender, then its opposite
+            // gender (same 4-digit race prefix, +100/-100).
+            var raceCandidates = new List<string> { RaceCode };
+            if (chara != null)
+            {
+                raceCandidates.Add(chara.RaceCode);
+                if (int.TryParse(chara.RaceCode.AsSpan(1), out var rc))
+                    raceCandidates.Add($"c{(rc % 200 < 100 ? rc + 100 : rc - 100):D4}");
+            }
+            string? mdlPath = null;
+            foreach (var rc in raceCandidates)
+            {
+                var candidate = $"chara/{info.Category}/{info.Prefix}{setId:D4}/model/{rc}{info.Prefix}{setId:D4}_{info.Suffix}.mdl";
+                if (_gameData.FileExists(candidate)) { mdlPath = candidate; break; }
+            }
+            if (mdlPath == null) { LastTrace.Add($"{slot}:{itemId} missing (tried {string.Join(", ", raceCandidates)})"); continue; }
 
             var raw = _gameData.GetFile(mdlPath);
             if (raw == null) { LastTrace.Add($"{slot}:{itemId} GetFile null"); continue; }
@@ -191,8 +208,12 @@ public sealed class ModelExportService
             if (m.MaterialIndex >= 0 && m.MaterialIndex < mdl.Materials.Length)
             {
                 var mtrlName = mdl.Materials[m.MaterialIndex];
+                // ponytail: body/hair materials sit under a v0001 variant folder, face materials
+                // don't (verified against real files) — try with it first, fall back without.
+                var mtrlPathVariant = $"chara/human/{raceCode}/obj/{partFolder}/material/v0001{mtrlName}";
+                var mtrlPathFlat = $"chara/human/{raceCode}/obj/{partFolder}/material{mtrlName}";
                 var mtrlPath = mtrlName.StartsWith('/')
-                    ? $"chara/human/{raceCode}/obj/{partFolder}/material/v0001{mtrlName}"
+                    ? (_gameData.FileExists(mtrlPathVariant) ? mtrlPathVariant : mtrlPathFlat)
                     : mtrlName;
                 var (t, colorSetTint) = ResolveMaterialByPath(mtrlPath, pngs, materialCache);
                 texIndex = t;
