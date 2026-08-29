@@ -315,6 +315,13 @@ public sealed class WebUiService : IDisposable
             return Json(new { ok = true });
         }
 
+        if (method == "GET" && path == "/api/model3d/debug")
+        {
+            var slots = _shell.DebugSnapshot;
+            _modelExport.BuildGlb(slots);
+            return Json(new { trace = _modelExport.LastTrace });
+        }
+
         if (method == "GET" && path == "/api/model3d.glb")
         {
             // ponytail: pure file parsing (Lumina + vendored Penumbra mdl parser) — no game

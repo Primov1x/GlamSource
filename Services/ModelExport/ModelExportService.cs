@@ -23,18 +23,24 @@ public sealed class ModelExportService
     public ModelExportService(GameData gameData)
         => _gameData = gameData;
 
+    /// <summary>Per-request resolution trace for /api/model3d/debug — why did items drop out?</summary>
+    public List<string> LastTrace { get; } = new();
+
     /// <summary>Build a GLB containing all equipment models for the given slots. Returns null when
     /// nothing could be resolved.</summary>
     public byte[]? BuildGlb(IReadOnlyList<EquipmentSlot> slots)
     {
+        LastTrace.Clear();
+        LastTrace.Add($"slots in: {slots.Count}");
         var items = slots
             .Select(s => (Slot: s.Slot, ItemId: s.GlamourItemId ?? s.ActualItemId))
             .Where(x => x.ItemId > 0 && SlotInfo(x.Slot) != null)
             .ToList();
+        LastTrace.Add($"usable items: {items.Count} [{string.Join(", ", items.Select(x => $"{x.Slot}:{x.ItemId}"))}]");
         if (items.Count == 0) return null;
 
         var key = string.Join(",", items.Select(x => $"{x.Slot}:{x.ItemId}"));
-        if (_cache is { } c && c.Key == key) return c.Glb;
+        if (_cache is { } c && c.Key == key) { LastTrace.Add("cache hit"); return c.Glb; }
 
         var meshInputs = new List<GltfMeshInput>();
         var pngs = new List<byte[]>();
@@ -44,22 +50,22 @@ public sealed class ModelExportService
         foreach (var (slot, itemId) in items)
         {
             var row = itemSheet?.GetRowOrDefault(itemId % 1_000_000);
-            if (row == null) continue;
+            if (row == null) { LastTrace.Add($"{slot}:{itemId} no item row"); continue; }
             var modelMain = row.Value.ModelMain;
             var setId = (ushort)modelMain;
             var itemVariant = (ushort)(modelMain >> 16);
-            if (setId == 0) continue;
+            if (setId == 0) { LastTrace.Add($"{slot}:{itemId} setId 0"); continue; }
 
             var info = SlotInfo(slot)!.Value;
             var mdlPath = $"chara/{info.Category}/{info.Prefix}{setId:D4}/model/{RaceCode}{info.Prefix}{setId:D4}_{info.Suffix}.mdl";
-            if (!_gameData.FileExists(mdlPath)) continue;
+            if (!_gameData.FileExists(mdlPath)) { LastTrace.Add($"{slot}:{itemId} missing {mdlPath}"); continue; }
 
             var raw = _gameData.GetFile(mdlPath);
-            if (raw == null) continue;
+            if (raw == null) { LastTrace.Add($"{slot}:{itemId} GetFile null"); continue; }
             Penumbra.GameData.Files.MdlFile mdl;
             try { mdl = new Penumbra.GameData.Files.MdlFile(raw.Data); }
-            catch { continue; }
-            if (!mdl.Valid) continue;
+            catch (Exception ex) { LastTrace.Add($"{slot}:{itemId} mdl parse: {ex.Message}"); continue; }
+            if (!mdl.Valid) { LastTrace.Add($"{slot}:{itemId} mdl invalid"); continue; }
 
             // imc: item variant -> material variant folder
             byte materialId = 1;
@@ -76,6 +82,7 @@ public sealed class ModelExportService
             catch { /* keep default v0001 */ }
 
             var meshes = MdlGeometry.DecodeLod0(mdl);
+            LastTrace.Add($"{slot}:{itemId} meshes decoded: {meshes.Count}");
             foreach (var m in meshes)
             {
                 var texIndex = -1;
