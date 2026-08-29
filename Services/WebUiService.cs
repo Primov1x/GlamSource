@@ -223,9 +223,20 @@ public sealed class WebUiService : IDisposable
 
         if (method == "GET" && path == "/api/snapshot")
         {
+            var itemSheet = _detail.GameData.GetExcelSheet<Lumina.Excel.Sheets.Item>();
+            uint IconOf(uint id) => id == 0 ? 0u : (uint)(itemSheet?.GetRowOrDefault(id)?.Icon ?? 0);
             return Json(new
             {
-                slots = _shell.DebugSnapshot,
+                slots = _shell.DebugSnapshot.Select(s => new
+                {
+                    s.Slot,
+                    s.ActualItemId,
+                    s.ActualItemName,
+                    s.GlamourItemId,
+                    s.GlamourItemName,
+                    s.IsGlamoured,
+                    iconId = IconOf(s.GlamourItemId ?? s.ActualItemId),
+                }),
                 activeRecentName = _shell.DebugActiveRecentName,
                 isRecentOverrideActive = _shell.DebugIsRecentOverrideActive,
             });

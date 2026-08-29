@@ -10,6 +10,7 @@ internal static class WebUiPage
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GlamSource</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230d0f14'/%3E%3Ctext x='16' y='23' font-size='20' text-anchor='middle' fill='%23d4af5a'%3E✦%3C/text%3E%3C/svg%3E">
 <style>
 :root{
   --bg:#0d0f14; --panel:#161a22; --panel2:#1d222d; --border:#2a3040;
@@ -55,7 +56,10 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 .header img{width:48px;height:48px;border-radius:8px}
 .header .name{font-size:18px;font-weight:600}
 .header .meta{color:var(--muted);font-size:12px}
-.empty{color:var(--muted);margin-top:14px}
+.empty{color:var(--muted);margin-top:14px;display:flex;align-items:center;gap:8px}
+.spinner{width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+.row img,.matrow img,.slot img,.header img{background:var(--panel2);object-fit:contain}
 .snapgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin-top:14px}
 .slot{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:8px 10px;cursor:pointer;transition:.12s}
 .slot:hover{border-color:var(--accent)}
@@ -100,6 +104,9 @@ function toggleMin(){
 }
 const icon=id=>{if(!id)return'';const f=String(Math.floor(id/1000)*1000).padStart(6,'0');const n=String(id).padStart(6,'0');return`https://xivapi.com/i/${f}/${n}.png`};
 const esc=t=>(t??'').toString().replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const img=(id,size)=>`<img src="${icon(id)}" width="${size}" height="${size}" loading="lazy" onerror="this.style.visibility='hidden'">`;
+const TYPE_ICON={craft:'🔨',vendor:'🛒',quest:'❗',duty:'⚔️'};
+function typeIcon(cls){return TYPE_ICON[cls]??'✦'}
 
 function showTab(t){
   for(const x of['lookup','character']){
@@ -116,28 +123,30 @@ $('#q').addEventListener('input',e=>{
     const q=e.target.value.trim();
     const box=$('#results');
     if(q.length<3){box.innerHTML='';return}
+    box.innerHTML='<div class="empty"><span class="spinner"></span>Searching…</div>';
     const r=await fetch('/api/search?q='+encodeURIComponent(q)).then(r=>r.json());
-    box.innerHTML=r.length?r.map(x=>`<div class="row" onclick="openItem(${x.id})"><img src="${icon(x.iconId)}" loading="lazy"><span>${esc(x.name)}</span></div>`).join(''):'<div class="empty">No items found.</div>';
+    box.innerHTML=r.length?r.map(x=>`<div class="row" onclick="openItem(${x.id})">${img(x.iconId,28)}<span>${esc(x.name)}</span></div>`).join(''):'<div class="empty">🔍 No items found.</div>';
   },250);
 });
 
 async function openItem(id){
-  const d=await fetch('/api/item/'+id).then(r=>r.ok?r.json():null);
-  if(!d){$('#detail').innerHTML='<div class="empty">Not found.</div>';return}
   $('#results').innerHTML='';$('#q').value='';
-  let h=`<div class="header"><img src="${icon(d.iconId)}"><div><div class="name">${esc(d.name)}</div><div class="meta">Item ID ${d.itemId} · iLvl ${d.itemLevel}${d.isMarketable?' · marketable':''}</div></div></div><div class="cards">`;
+  $('#detail').innerHTML='<div class="empty"><span class="spinner"></span>Loading…</div>';
+  const d=await fetch('/api/item/'+id).then(r=>r.ok?r.json():null);
+  if(!d){$('#detail').innerHTML='<div class="empty">⚠️ Not found.</div>';return}
+  let h=`<div class="header">${img(d.iconId,48)}<div><div class="name">${esc(d.name)}</div><div class="meta">Item ID ${d.itemId} · iLvl ${d.itemLevel}${d.isMarketable?' · marketable':''}</div></div></div><div class="cards">`;
   for(const s of d.sources??[]){
     h+=renderSource(s,d.itemId);
   }
   h+='</div>';
-  if(!(d.sources??[]).length)h+='<div class="empty">No known source found.</div>';
+  if(!(d.sources??[]).length)h+='<div class="empty">🤷 No known source found.</div>';
   $('#detail').innerHTML=h;
 }
 
 function renderSource(s,itemId){
   const t=(s.type??'').toString();
   const cls=/craft/i.test(t)?'crafted':/vendor|shop/i.test(t)?'vendor':/quest/i.test(t)?'quest':/trial|raid|dungeon/i.test(t)?'duty':'';
-  let h=`<div class="card ${cls}"><h3><span class="badge">${esc(t).toUpperCase()}</span> ${esc(s.description??'')}</h3>`;
+  let h=`<div class="card ${cls}"><h3><span class="badge">${typeIcon(cls)} ${esc(t).toUpperCase()}</span> ${esc(s.description??'')}</h3>`;
   if(/craft/i.test(t))h+=`<button class="act" onclick="post('/api/action/craftlog/${itemId}')">Open Crafting Log</button>`;
   if(s.cfcRowId)h+=` <button class="act" onclick="post('/api/action/dutyfinder/${s.cfcRowId}')">Duty Finder</button>`;
   if(s.npcName){
@@ -150,7 +159,7 @@ function renderSource(s,itemId){
     if(list&&list.length){
       h+=`<div style="margin-top:8px;color:var(--muted);font-size:12px">${key==='materials'?'Materials':'Cost'}</div>`;
       for(const m of list){
-        h+=`<div class="matrow"><img src="${icon(m.iconId)}" loading="lazy"><span>${esc(m.name)||(m.itemId===0?'Gil':'#'+m.itemId)} × ${m.count.toLocaleString()}</span></div>`;
+        h+=`<div class="matrow">${img(m.iconId,22)}<span>${esc(m.name)||(m.itemId===0?'Gil':'#'+m.itemId)} × ${m.count.toLocaleString()}</span></div>`;
       }
     }
   }
@@ -164,13 +173,14 @@ function npcRow(s){
 }
 
 async function loadSnapshot(){
+  $('#snapinfo').innerHTML='<span class="spinner"></span>Loading…';
   const d=await fetch('/api/snapshot').then(r=>r.json());
   $('#snapinfo').textContent=d.activeRecentName?`Viewing: ${d.activeRecentName}`:(d.slots?.length?'Live snapshot':'No snapshot — open the Character tab in-game first.');
   $('#snap').innerHTML=(d.slots??[]).map(s=>{
     const id=s.glamourItemId??s.actualItemId;
     if(!id)return'';
     const name=s.glamourItemName??s.actualItemName??'';
-    return`<div class="slot" onclick="showTab('lookup');openItem(${id})"><div><div>${esc(name)}</div><div class="${s.isGlamoured?'g':'s'}">${esc(s.slot)}${s.isGlamoured?' · glamoured':''}</div></div></div>`;
+    return`<div class="slot" onclick="showTab('lookup');openItem(${id})">${img(s.iconId,32)}<div><div>${esc(name)}</div><div class="${s.isGlamoured?'g':'s'}">${esc(s.slot)}${s.isGlamoured?' · glamoured':''}</div></div></div>`;
   }).join('');
 }
 
