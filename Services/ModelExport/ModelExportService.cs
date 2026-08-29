@@ -68,6 +68,9 @@ public sealed class ModelExportService
             LastTrace.AddRange(pose.DebugLog);
             LastTrace.Add("--- end skeleton capture ---");
         }
+        LastTrace.Add(colors == null
+            ? "customize colors: null (buffer not ready / degenerate read rejected — using flat 0.85/0.66/0.56 skin, 0.35/0.30/0.28 hair fallback)"
+            : $"customize colors: skin={colors.Value.Skin[0]:F2},{colors.Value.Skin[1]:F2},{colors.Value.Skin[2]:F2} hair={colors.Value.Hair[0]:F2},{colors.Value.Hair[1]:F2},{colors.Value.Hair[2]:F2}");
         var items = slots
             .Select(s => (Slot: s.Slot, ItemId: s.GlamourItemId ?? s.ActualItemId, Stain: s.Stain0))
             .Where(x => x.ItemId > 0 && SlotInfo(x.Slot) != null)
@@ -197,6 +200,7 @@ public sealed class ModelExportService
             // see CustomizeColorsService) over the flat guessed approximation whenever we have it.
             var skinTint = colors?.Skin ?? new[] { 0.85f, 0.66f, 0.56f };
             var hairTint = colors?.Hair ?? new[] { 0.35f, 0.30f, 0.28f };
+            LastTrace.Add($"fallback tints in use: skin={skinTint[0]:F2},{skinTint[1]:F2},{skinTint[2]:F2} hair={hairTint[0]:F2},{hairTint[1]:F2},{hairTint[2]:F2}");
             // ponytail: base body model id varies per race (Hyur etc = b0001, Viera male = b0002,
             // ...) — no full per-race table yet, just try the two ids confirmed to exist.
             var bodyId = _gameData.FileExists($"chara/human/{rc}/obj/body/b0001/model/{rc}b0001_top.mdl") ? "b0001" : "b0002";
@@ -271,6 +275,7 @@ public sealed class ModelExportService
                 // (set via CustomizeParameter, which we don't have file access to). Always multiply
                 // by our flat approximation, even when a texture was found — a bare base.tex renders
                 // as dull blue-gray, not skin tone.
+                LastTrace.Add($"  {partFolder} mtrl={mtrlPath} tex={texIndex} normal={normalTex} finalTint={(tint == null ? "null" : $"{tint[0]:F2},{tint[1]:F2},{tint[2]:F2}")}");
                 meshInputs.Add(new GltfMeshInput(m, texIndex, tint, normalTex));
                 continue;
             }
