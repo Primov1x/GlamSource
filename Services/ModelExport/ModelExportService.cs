@@ -62,6 +62,12 @@ public sealed class ModelExportService
         LastTrace.Clear();
         LastTextures.Clear();
         LastTrace.Add($"slots in: {slots.Count}, chara: {chara?.RaceCode ?? "none"}");
+        if (pose != null)
+        {
+            LastTrace.Add("--- skeleton capture ---");
+            LastTrace.AddRange(pose.DebugLog);
+            LastTrace.Add("--- end skeleton capture ---");
+        }
         var items = slots
             .Select(s => (Slot: s.Slot, ItemId: s.GlamourItemId ?? s.ActualItemId, Stain: s.Stain0))
             .Where(x => x.ItemId > 0 && SlotInfo(x.Slot) != null)
@@ -235,7 +241,7 @@ public sealed class ModelExportService
             {
                 var stats = SkinApply.Apply(m, mdl.Bones, mdl.BoneTables, pose);
                 if (stats.Vertices > 0)
-                    LastTrace.Add($"  skin: {stats.SkinnedVertices}/{stats.Vertices} verts, bones matched {stats.BoneRefsMatched}/{stats.BoneRefsTotal}, rejected {stats.RejectedVertices}");
+                    LastTrace.Add($"  skin: {stats.SkinnedVertices}/{stats.Vertices} verts, bones matched {stats.BoneRefsMatched}/{stats.BoneRefsTotal}, rejected {stats.RejectedVertices}, unmatched=[{string.Join(",", stats.UnmatchedBoneNames ?? [])}]");
             }
             var texIndex = -1;
             float[]? tint = fallbackTint;

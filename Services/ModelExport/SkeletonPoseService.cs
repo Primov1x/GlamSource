@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
@@ -16,6 +17,10 @@ public sealed class SkeletonPose
     // bone name -> current model-space matrix, and its bind-pose (reference pose) inverse.
     public Dictionary<string, Matrix4x4> CurrentModel { get; } = new();
     public Dictionary<string, Matrix4x4> BindInverse { get; } = new();
+
+    /// <summary>Per-partial capture log — which partials existed, how many bones each had, whether
+    /// they got skipped. For chasing "bone X isn't in the live skeleton at all" reports.</summary>
+    public List<string> DebugLog { get; } = new();
 
     /// <summary>Final skin matrix for one bone: moves a bind-pose vertex into the current pose.
     /// Identity (rigid, no deform) for any bone we couldn't find — degrades gracefully instead of
@@ -50,15 +55,21 @@ public static unsafe class SkeletonPoseService
         if (skeleton == null || skeleton->PartialSkeletonCount == 0) return null;
 
         var result = new SkeletonPose();
+        result.DebugLog.Add($"PartialSkeletonCount={skeleton->PartialSkeletonCount}");
         Matrix4x4[]? bindModel0 = null; // partial 0 (body/root)'s global bind pose — other partials attach to it
         for (var p = 0; p < skeleton->PartialSkeletonCount; p++)
         {
             var partial = skeleton->PartialSkeletons[p];
             var pose = partial.GetHavokPose(0);
-            if (pose == null || pose->Skeleton == null) continue;
+            if (pose == null || pose->Skeleton == null) { result.DebugLog.Add($"partial {p}: pose or hkSkeleton null"); continue; }
             var hkSkel = pose->Skeleton;
             var boneCount = hkSkel->Bones.Length;
-            if (boneCount == 0 || pose->ModelPose.Length < boneCount) continue;
+            if (boneCount == 0 || pose->ModelPose.Length < boneCount)
+            {
+                result.DebugLog.Add($"partial {p}: boneCount={boneCount} modelPoseLen={pose->ModelPose.Length} — skipped");
+                continue;
+            }
+            result.DebugLog.Add($"partial {p}: boneCount={boneCount} connectedBoneIdx={partial.ConnectedBoneIndex} connectedParentIdx={partial.ConnectedParentBoneIndex} bones=[{string.Join(",", System.Linq.Enumerable.Range(0, boneCount).Select(i => hkSkel->Bones[i].Name.String))}]");
 
             // bind pose: hkSkel->ReferencePose is LOCAL space, walk ParentIndices to model space.
             // Parents always precede children in these arrays, so one forward pass suffices. This
