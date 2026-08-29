@@ -34,6 +34,7 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
     private bool _frameworkHooked;
     private Vector2? _lastDragPos;
     private PreviewMode _mode = PreviewMode.CurrentGear;
+    private bool _weaponDrawn = true;
 
     // ponytail: cache target by EntityId, not ObjectIndex (ObjectIndex is flaky during game updates).
     private uint _targetEntityId = 0;
@@ -320,6 +321,11 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
         if (ImGui.SmallButton("Reload"))
             _framework.RunOnFrameworkThread(ApplyModeState);
         ImGui.SameLine();
+        if (ImGui.Checkbox("Draw Weapon", ref _weaponDrawn))
+        {
+            var drawn = _weaponDrawn;
+            _framework.RunOnFrameworkThread(() => _renderer.ToggleDrawWeapon(drawn));
+        }
         ImGui.TextDisabled("Drag image to rotate");
 
         var zoom = _renderer.Zoom;
@@ -351,7 +357,15 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
             if (wheel != 0f)
             {
                 var newZoom = _renderer.Zoom + wheel * 0.2f;
-                _framework.RunOnFrameworkThread(() => _renderer.SetZoom(newZoom));
+                // ponytail: zoom-to-cursor, same approximation as GlamSourceShellWindow.
+                var mousePos = ImGui.GetMousePos();
+                var offsetX = mousePos.X - (cursor.X + target.X * 0.5f);
+                var offsetY = mousePos.Y - (cursor.Y + target.Y * 0.5f);
+                _framework.RunOnFrameworkThread(() =>
+                {
+                    _renderer.SetZoom(newZoom);
+                    _renderer.PanCamera(offsetX * wheel * 0.02f, offsetY * wheel * 0.02f);
+                });
             }
         }
 

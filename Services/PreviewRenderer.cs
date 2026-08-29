@@ -350,6 +350,24 @@ public sealed unsafe class PreviewRenderer : IDisposable
         agent->CharaView.SetCameraDistance(dist * (current / target - 1f));
     }
 
+    /// <summary>Pan the camera by a screen-space delta. Used for zoom-to-cursor. Framework thread.</summary>
+    public void PanCamera(float deltaX, float deltaY)
+    {
+        if (!_initialized) return;
+        var agent = AgentTryon.Instance();
+        if (agent == null) return;
+        agent->CharaView.SetCameraXAndY(deltaX, deltaY);
+    }
+
+    /// <summary>Show/hide the mainhand weapon model in the preview. Framework thread.</summary>
+    public void ToggleDrawWeapon(bool drawn)
+    {
+        if (!_initialized) return;
+        var agent = AgentTryon.Instance();
+        if (agent == null) return;
+        agent->CharaView.ToggleDrawWeapon(drawn);
+    }
+
     public void Reset()
     {
         if (!_initialized) return;

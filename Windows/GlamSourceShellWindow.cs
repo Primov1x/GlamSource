@@ -759,7 +759,17 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
             if (wheel != 0f)
             {
                 var newZoom = renderer.Zoom + wheel * 0.2f;
-                _framework.RunOnFrameworkThread(() => renderer.SetZoom(newZoom));
+                // ponytail: zoom-to-cursor — pan toward the point under the mouse by its offset
+                // from image center, scaled with the zoom step. Screen-space approximation, not a
+                // true unprojection, but keeps the hovered spot roughly anchored while zooming.
+                var mousePos = ImGui.GetMousePos();
+                var offsetX = mousePos.X - (cursor.X + size.X * 0.5f);
+                var offsetY = mousePos.Y - (cursor.Y + size.Y * 0.5f);
+                _framework.RunOnFrameworkThread(() =>
+                {
+                    renderer.SetZoom(newZoom);
+                    renderer.PanCamera(offsetX * wheel * 0.02f, offsetY * wheel * 0.02f);
+                });
             }
         }
 
