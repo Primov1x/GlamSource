@@ -135,6 +135,8 @@ public sealed class ModelExportService
             LastTrace.Add($"{slot}:{itemId} meshes decoded: {meshes.Count}");
             foreach (var m in meshes)
             {
+                if (m.SubmeshesKept < m.SubmeshesTotal)
+                    LastTrace.Add($"  submeshes: {m.SubmeshesKept}/{m.SubmeshesTotal} kept, dropped attrs=[{string.Join(",", m.DroppedAttributes)}]");
                 if (pose != null)
                 {
                     var stats = SkinApply.Apply(m, mdl.Bones, mdl.BoneTables, pose);
@@ -210,6 +212,8 @@ public sealed class ModelExportService
         LastTrace.Add($"chara part {partFolder}: {meshes.Count} meshes");
         foreach (var m in meshes)
         {
+            if (m.SubmeshesKept < m.SubmeshesTotal)
+                LastTrace.Add($"  submeshes: {m.SubmeshesKept}/{m.SubmeshesTotal} kept, dropped attrs=[{string.Join(",", m.DroppedAttributes)}]");
             if (pose != null)
             {
                 var stats = SkinApply.Apply(m, mdl.Bones, mdl.BoneTables, pose);

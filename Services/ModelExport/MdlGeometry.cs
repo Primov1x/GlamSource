@@ -21,6 +21,13 @@ public sealed class DecodedMesh
     public float[] BlendWeights = []; // 4 per vertex
     public ushort BoneTableIndex;
     public bool HasSkinning;
+
+    // diagnostics: how many of this mesh's submeshes got dropped by the AttributeIndexMask filter,
+    // and which attribute names they were gated on — helps tell "correctly hid a conditional
+    // variant" from "wrongly hid always-visible geometry for this race/body".
+    public int SubmeshesTotal;
+    public int SubmeshesKept;
+    public List<string> DroppedAttributes = [];
 }
 
 // ponytail: LOD0 only, positions/normals/uv0/blend weights — no color/tangent. Enough for a static
@@ -136,7 +143,15 @@ public static class MdlGeometry
             for (var si = mesh.SubMeshIndex; si < mesh.SubMeshIndex + mesh.SubMeshCount; si++)
             {
                 var sub = mdl.SubMeshes[si];
-                if (sub.AttributeIndexMask != 0) continue;
+                outMesh.SubmeshesTotal++;
+                if (sub.AttributeIndexMask != 0)
+                {
+                    for (var bit = 0; bit < 32 && bit < mdl.Attributes.Length; bit++)
+                        if ((sub.AttributeIndexMask & (1u << bit)) != 0)
+                            outMesh.DroppedAttributes.Add(mdl.Attributes[bit]);
+                    continue;
+                }
+                outMesh.SubmeshesKept++;
                 for (var i = 0; i < sub.IndexCount; i++)
                     indices.Add(BitConverter.ToUInt16(data, idxBaseAll + (int)(sub.IndexOffset + i) * 2));
             }

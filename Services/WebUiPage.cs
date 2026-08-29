@@ -283,7 +283,7 @@ async function startViewer(){
     renderer.outputColorSpace=THREE.SRGBColorSpace;
     box.appendChild(renderer.domElement);
     const scene=new THREE.Scene();
-    scene.background=new THREE.Color(0x14161c);
+    scene.background=new THREE.Color(0x555555);
     const camera=new THREE.PerspectiveCamera(45,box.clientWidth/box.clientHeight,0.01,100);
     camera.position.set(0,1.2,2.2);
     const controls=new OrbitControls(camera,renderer.domElement);
