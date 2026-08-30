@@ -495,10 +495,20 @@ public sealed class WebUiService : IDisposable
                         {
                             var baseColors = colors ?? new ModelExport.CustomizeColors(
                                 new[] { 0.85f, 0.66f, 0.56f }, new[] { 0.35f, 0.30f, 0.28f });
+                            // ponytail: SkinDiffuse/HairDiffuse are a MULTIPLIER on top of the base
+                            // swatch color, not a replacement — confirmed by a live trace: Apply=true
+                            // with value ~(1.00,0.96,0.98) (Glamourer's own "untouched" default once
+                            // Advanced Customization is toggled on) is meant to leave the swatch color
+                            // ~unchanged. Replacing outright wiped out the real cmp-derived skin tone
+                            // and left the raw undyed base texture's blue-gray tint showing through —
+                            // the very first bug this whole saga started with.
+                            static float[] Mul(float[] baseC, float[]? f) => f == null
+                                ? baseC
+                                : new[] { baseC[0] * f[0], baseC[1] * f[1], baseC[2] * f[2] };
                             colors = baseColors with
                             {
-                                Skin = a.Skin ?? baseColors.Skin,
-                                Hair = a.Hair ?? baseColors.Hair,
+                                Skin = Mul(baseColors.Skin, a.Skin),
+                                Hair = Mul(baseColors.Hair, a.Hair),
                                 DebugSource = $"{baseColors.DebugSource}+ipc(skinApplied={a.Skin != null},hairApplied={a.Hair != null})",
                             };
                         }
