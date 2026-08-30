@@ -435,6 +435,21 @@ public sealed class WebUiService : IDisposable
             return Json(new { ok = true });
         }
 
+        if (method == "POST" && path == "/api/action/preview3d/freeze" && _configuration.WebUiLive3DPreview
+            && bool.TryParse(query["on"], out var freezeOn))
+        {
+            // ponytail: "ein Modell im Gefrierzustand wäre einfacher... aktuell bewegt er sich ja
+            // alle paar fps" — the idle-capture throttle (0.0.0.158) made the character's own idle
+            // animation (breathing/sway) look like a distracting once-a-second JUMP instead of a
+            // smooth continuous motion, worse than not throttling at all for that specific symptom.
+            // SuspendCharacterCopy already existed (used by the ImGui window's overlay path) — stops
+            // re-copying the live animated character every tick, freezing whatever pose was current
+            // when this was flipped on. Camera (rotate/zoom/pan) keeps working normally either way.
+            _framework.RunOnFrameworkThread(() => _shell.PreviewWindow?.Renderer.SuspendCharacterCopy(freezeOn));
+            _log.Information($"[WebUi] preview3d pose frozen: {freezeOn}");
+            return Json(new { ok = true, frozen = freezeOn });
+        }
+
         if (method == "POST" && path == "/api/action/preview3d/transparent" && _configuration.WebUiLive3DPreview
             && bool.TryParse(query["on"], out var transparentOn))
         {
