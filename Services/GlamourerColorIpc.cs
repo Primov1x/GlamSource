@@ -1,3 +1,5 @@
+using System;
+using System.Linq;
 using Dalamud.Plugin;
 using Glamourer.Api.Enums;
 using Glamourer.Api.IpcSubscribers;
@@ -82,24 +84,35 @@ public class GlamourerColorIpc
     /// Gui/Customization/CustomizationDrawer.Color.cs: "{_customize[index].Value}") shows exactly
     /// this value, so it's what the player actually sees. Null on failure/unavailable.</summary>
     public (byte Clan, byte Gender, byte SkinColor, byte HairColor)? GetCustomizeBytes(int objectIndex)
+        => GetCustomizeBytes(objectIndex, out _);
+
+    /// <summary>Same as above, plus a trace-visible reason string for why it returned null (this
+    /// path failed silently once before — see it in the trace instead of guessing again).</summary>
+    public (byte Clan, byte Gender, byte SkinColor, byte HairColor)? GetCustomizeBytes(int objectIndex, out string reason)
     {
-        if (_getState == null) return null;
+        if (_getState == null) { reason = "no GetState subscriber (ctor failed)"; return null; }
         try
         {
             var (ec, state) = _getState.Invoke(objectIndex);
-            if (ec != GlamourerApiEc.Success || state == null) return null;
+            if (ec != GlamourerApiEc.Success) { reason = $"ec={ec}"; return null; }
+            if (state == null) { reason = "state null"; return null; }
 
-            var customize = state["Customize"];
-            if (customize == null) return null;
+            var customize = state["Customize"] as JObject;
+            if (customize == null) { reason = $"no Customize key, top-level keys=[{string.Join(",", state.Properties().Select(p => p.Name))}]"; return null; }
 
             byte? Value(string key) => customize[key]?["Value"]?.Value<byte>();
             var clan = Value("Clan");
             var gender = Value("Gender");
             var skin = Value("SkinColor");
             var hair = Value("HairColor");
-            if (clan == null || gender == null || skin == null || hair == null) return null;
+            if (clan == null || gender == null || skin == null || hair == null)
+            {
+                reason = $"missing field(s): clan={clan} gender={gender} skin={skin} hair={hair} customizeKeys=[{string.Join(",", customize.Properties().Select(p => p.Name))}]";
+                return null;
+            }
+            reason = "ok";
             return (clan.Value, gender.Value, skin.Value, hair.Value);
         }
-        catch { return null; }
+        catch (Exception ex) { reason = $"exception: {ex.Message}"; return null; }
     }
 }
