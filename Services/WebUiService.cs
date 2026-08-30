@@ -457,71 +457,25 @@ public sealed class WebUiService : IDisposable
                     var gender = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.Gender];
                     var skinColorIdx = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.SkinColor];
                     var hairColorIdx = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.HairColor];
-                    var swatchSrc = "own";
-                    var glamourerReason = "not attempted";
-                    // ponytail: our own memory read (pc.Customize) and Glamourer's own tracked state
-                    // diverged for a real character (skinIdx 127 vs Glamourer's displayed 112) —
-                    // confirmed real, not a UI-translation artifact: Glamourer's color picker button
-                    // literally prints "{_customize[index].Value}" (Gui/Customization/
-                    // CustomizationDrawer.Color.cs), the same raw byte convention we use. Glamourer
-                    // actively manages/reapplies appearance for characters it has a design/state on,
-                    // so ITS tracked byte is what actually got painted — prefer it when available.
-                    try
-                    {
-                        if (_glamourerColors.GetCustomizeBytes(pc.ObjectIndex, out glamourerReason) is { } gb)
-                        {
-                            tribe = gb.Clan; gender = gb.Gender; skinColorIdx = gb.SkinColor; hairColorIdx = gb.HairColor;
-                            swatchSrc = "glamourer";
-                        }
-                    }
-                    catch (Exception ex) { glamourerReason = $"outer exception: {ex.Message}"; _log.Warning($"[WebUi] Glamourer customize-byte read failed: {ex.Message}"); }
-                    // the game's own character-creation color table (human.cmp), indexed by the
-                    // swatch selection above — authoritative base color, no memory reverse-
-                    // engineering. Glamourer's Parameters IPC can override per-channel on TOP of this
-                    // when the player customized further via Advanced Customization (its own "Apply"
-                    // flag, not just a placeholder — see GlamourerColorIpc's doc comment for why
-                    // blindly trusting IPC without that flag produced garbage before).
-                    var debugSrc = $"tribe={tribe} gender={gender} skinIdx={skinColorIdx} hairIdx={hairColorIdx} swatchSrc={swatchSrc} glamourerReason=[{glamourerReason}] rawCustomize=[{string.Join(",", c.ToArray())}]";
+                    // ponytail: the VANILLA customize state is wanted here — explicitly not any
+                    // Glamourer-applied design. Glamourer's IPC only serializes ModelData (the
+                    // applied design; StateApi.Convert(state.ModelData,...)), its vanilla BaseData
+                    // is not IPC-exposed. But pc.Customize IS the vanilla state: proven by three
+                    // consecutive live traces whose rawCustomize stayed byte-identical while a Raen
+                    // design was applied and removed via Glamourer — the applied design never touches
+                    // this array. The earlier 127-vs-112 "mismatch" that sent us down the Glamourer
+                    // path was the applied test design, not a wrong read.
+                    var debugSrc = $"tribe={tribe} gender={gender} skinIdx={skinColorIdx} hairIdx={hairColorIdx} swatchSrc=own(vanilla) rawCustomize=[{string.Join(",", c.ToArray())}]";
                     try
                     {
                         colors = ModelExport.CmpColorReader.Read(_modelExportGameData, tribe, gender, skinColorIdx, hairColorIdx);
                         if (colors != null) colors = colors.Value with { DebugSource = $"cmp:{debugSrc}" };
                     }
                     catch (Exception ex) { _log.Warning($"[WebUi] human.cmp color read failed: {ex.Message}"); }
-                    try
-                    {
-                        var applied = _glamourerColors.GetColors(pc.ObjectIndex);
-                        if (applied is { } a && (a.Skin != null || a.Hair != null))
-                        {
-                            var baseColors = colors ?? new ModelExport.CustomizeColors(
-                                new[] { 0.85f, 0.66f, 0.56f }, new[] { 0.35f, 0.30f, 0.28f });
-                            // ponytail: SkinDiffuse/HairDiffuse are a MULTIPLIER on top of the base
-                            // swatch color, not a replacement — confirmed by a live trace: Apply=true
-                            // with value ~(1.00,0.96,0.98) (Glamourer's own "untouched" default once
-                            // Advanced Customization is toggled on) is meant to leave the swatch color
-                            // ~unchanged. Replacing outright wiped out the real cmp-derived skin tone
-                            // and left the raw undyed base texture's blue-gray tint showing through —
-                            // the very first bug this whole saga started with.
-                            // Second wrinkle, same trace: HairDiffuse came back Apply=true but
-                            // (0,0,0) — multiplying by that blacks out hair entirely. Same tell as
-                            // the near-white skin default: a degenerate multiplier (~0 or ~1 on every
-                            // channel) means "Apply is true but nothing was actually customized", not
-                            // a real value — skip applying it in that case.
-                            static bool IsDegenerate(float[] f) =>
-                                (f[0] < 0.02f && f[1] < 0.02f && f[2] < 0.02f) ||
-                                (f[0] > 0.98f && f[1] > 0.98f && f[2] > 0.98f);
-                            static float[] Mul(float[] baseC, float[]? f) => f == null || IsDegenerate(f)
-                                ? baseC
-                                : new[] { baseC[0] * f[0], baseC[1] * f[1], baseC[2] * f[2] };
-                            colors = baseColors with
-                            {
-                                Skin = Mul(baseColors.Skin, a.Skin),
-                                Hair = Mul(baseColors.Hair, a.Hair),
-                                DebugSource = $"{baseColors.DebugSource}+ipc(skinApplied={a.Skin != null},hairApplied={a.Hair != null})",
-                            };
-                        }
-                    }
-                    catch (Exception ex) { _log.Warning($"[WebUi] Glamourer IPC color read failed: {ex.Message}"); }
+                    // ponytail: NO Glamourer Parameters overlay here either — SkinDiffuse/HairDiffuse
+                    // from GetState belong to the applied design (ModelData), and this viewer shows
+                    // the vanilla character. GlamourerColorIpc stays available if a "show the applied
+                    // design" mode is ever wanted.
                     if (colors == null)
                     {
                         try { colors = ModelExport.CustomizeColorsService.Capture(pc.Address); }

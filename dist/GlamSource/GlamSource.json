@@ -2,7 +2,7 @@
   "Author": "TF",
   "Name": "GlamSource",
   "InternalName": "GlamSource",
-  "AssemblyVersion": "0.0.0.101",
+  "AssemblyVersion": "0.0.0.102",
   "Description": "Hover über ein Item oder Mount und sieh sofort die Quelle — Dungeon, Shop, Craft, Event. Kein Wiki mehr nötig. Befehle: /glamsource",
   "ApplicableVersion": "any",
   "Tags": [
