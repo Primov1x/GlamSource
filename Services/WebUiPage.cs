@@ -392,8 +392,18 @@ async function reloadViewerModel(){
       if(!role||!(o.material instanceof v.THREE.MeshStandardMaterial))return;
       const old=o.material;
       if(upgraded.has(old)){o.material=upgraded.get(old);return}
-      const phys=new v.THREE.MeshPhysicalMaterial();
-      phys.copy(old); // carries over map/normalMap/metalnessMap/color/roughness/etc.
+      // ponytail: "cannot read properties of undefined (reading 'x')" — MeshPhysicalMaterial.copy()
+      // unconditionally copies Vector2/Color sub-props (e.g. clearcoatNormalScale) that only exist
+      // on ANOTHER MeshPhysicalMaterial; `old` here is a plain MeshStandardMaterial from the
+      // loader, so those are undefined and .copy() dies reaching into them. Copy just the fields
+      // that actually exist on a MeshStandardMaterial instead of a blind .copy().
+      const phys=new v.THREE.MeshPhysicalMaterial({
+        map:old.map,normalMap:old.normalMap,normalScale:old.normalScale,
+        metalnessMap:old.metalnessMap,roughnessMap:old.roughnessMap,
+        color:old.color,metalness:old.metalness,roughness:old.roughness,
+        alphaTest:old.alphaTest,alphaMap:old.alphaMap,transparent:old.transparent,
+        side:old.side,
+      });
       if(role==='skin'){phys.sheen=0.35;phys.sheenColor=new v.THREE.Color(0xffe0cc);phys.sheenRoughness=0.6}
       else if(role==='hair'){if('anisotropy' in phys){phys.anisotropy=0.6;phys.anisotropyRotation=Math.PI/2}phys.clearcoat=0.15;phys.clearcoatRoughness=0.4}
       else if(role==='eye'){phys.clearcoat=0.8;phys.clearcoatRoughness=0.05}
