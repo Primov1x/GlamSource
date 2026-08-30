@@ -178,10 +178,12 @@ public sealed class WebUiService : IDisposable
 
             _ = Task.Run(() =>
             {
-                try { HandleClient(client); }
+                try { HandleClient(client, token); }
                 // ponytail: browsers/Browsingway routinely open a probe connection and never send a
                 // full request (keep-alive checks, speculative preconnects) — that's an IOException
-                // from the read timeout, not a real error. Only log genuine failures.
+                // from the read timeout, not a real error. Only log genuine failures. The MJPEG
+                // stream below also exits via IOException (client closed the connection) — same
+                // catch, same reasoning, it's not a real error either.
                 catch (IOException) { }
                 catch (Exception ex) { _log.Error($"[WebUi] request error: {ex.Message}"); }
                 finally { client.Dispose(); }
@@ -189,7 +191,7 @@ public sealed class WebUiService : IDisposable
         }
     }
 
-    private void HandleClient(TcpClient client)
+    private void HandleClient(TcpClient client, CancellationToken token)
     {
         client.ReceiveTimeout = 5000;
         client.SendTimeout = 5000;
@@ -209,6 +211,14 @@ public sealed class WebUiService : IDisposable
         var path = qIdx >= 0 ? rawUrl[..qIdx] : rawUrl;
         var query = HttpUtility.ParseQueryString(qIdx >= 0 ? rawUrl[(qIdx + 1)..] : "");
 
+        // ponytail: long-lived multipart stream, not a single (status, body) response — handled
+        // separately from Route()'s request/response model. See StreamPreviewMjpeg's doc comment.
+        if (method == "GET" && path == "/api/preview3d/stream")
+        {
+            StreamPreviewMjpeg(stream, token);
+            return;
+        }
+
         var (status, contentType, body) = Route(method, path, query);
         // ponytail: no-store — Browsingway's CEF page is long-lived and any caching here means an
         // update ships but the overlay silently keeps serving the old HTML/JS.
@@ -216,6 +226,47 @@ public sealed class WebUiService : IDisposable
         stream.Write(Encoding.ASCII.GetBytes(head));
         stream.Write(body);
         stream.Flush();
+    }
+
+    /// <summary>Serves the live CharaView preview as a standard MJPEG (multipart/x-mixed-replace)
+    /// stream — the browser's &lt;img&gt; element decodes and repaints this natively, replacing the
+    /// old client-side setTimeout+fetch poll loop and raw-pixel JS decode entirely. Runs inline on
+    /// this connection's own pooled thread (see AcceptLoop) for as long as the client stays
+    /// connected; a write failure once the browser closes the connection throws IOException, caught
+    /// by the same handler AcceptLoop already uses for every other request.
+    /// NEVER touches D3D11 itself — only reads PreviewRenderer.LatestWebJpeg, a plain field last
+    /// written from Draw(). An earlier version of this feature called the capture routine via
+    /// Framework.RunOnFrameworkThread from an HTTP worker thread and corrupted D3D11 state badly
+    /// enough to crash the game (an unrelated plugin's own D3D11 hook faulted downstream) — do not
+    /// reintroduce that; capture must stay inline with Draw()/Present().</summary>
+    private void StreamPreviewMjpeg(NetworkStream stream, CancellationToken token)
+    {
+        if (!_configuration.WebUiLive3DPreview)
+        {
+            stream.Write(Encoding.ASCII.GetBytes("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"));
+            return;
+        }
+
+        const string boundary = "glamsourceframe";
+        stream.Write(Encoding.ASCII.GetBytes(
+            $"HTTP/1.1 200 OK\r\nContent-Type: multipart/x-mixed-replace; boundary={boundary}\r\n" +
+            "Cache-Control: no-store\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n"));
+        stream.Flush();
+
+        byte[]? lastSent = null;
+        while (!token.IsCancellationRequested && _configuration.WebUiLive3DPreview)
+        {
+            var jpeg = _shell.PreviewWindow?.Renderer.LatestWebJpeg;
+            if (jpeg != null && !ReferenceEquals(jpeg, lastSent))
+            {
+                lastSent = jpeg;
+                stream.Write(Encoding.ASCII.GetBytes($"--{boundary}\r\nContent-Type: image/jpeg\r\nContent-Length: {jpeg.Length}\r\n\r\n"));
+                stream.Write(jpeg);
+                stream.Write(Encoding.ASCII.GetBytes("\r\n"));
+                stream.Flush();
+            }
+            Thread.Sleep(16); // ~60Hz check of the in-memory latest frame; actual cadence gated by PreviewRenderer's encode rate
+        }
     }
 
     private (string status, string contentType, byte[] body) Route(string method, string path, System.Collections.Specialized.NameValueCollection query)
@@ -274,36 +325,6 @@ public sealed class WebUiService : IDisposable
         {
             _framework.RunOnFrameworkThread(() => ItemDetailWindow.TryOpenDutyFinder(cfcId));
             return Json(new { ok = true });
-        }
-
-        if (method == "GET" && path == "/api/preview3d")
-        {
-            if (!_configuration.WebUiLive3DPreview)
-                return ("404 Not Found", "application/octet-stream", Array.Empty<byte>());
-
-            // ponytail: NEVER call D3D11 readback from here — the immediate context must only be
-            // touched in-line with Present (see PreviewRenderer.CaptureFrameForWeb, called from
-            // Draw()). This just reads the last frame it cached; plain field read, no GPU call,
-            // no Framework-thread hop. An earlier version called TryCapturePixels() via
-            // RunOnFrameworkThread from this HTTP worker thread and corrupted D3D11 state badly
-            // enough to crash the game (unrelated plugin's own D3D11 hook faulted downstream) — do
-            // not reintroduce that.
-            var frame = _shell.PreviewWindow?.Renderer.LatestWebFrame;
-
-            if (frame == null)
-                return ("404 Not Found", "application/octet-stream", Array.Empty<byte>());
-
-            // header: width(4) height(4) rowPitch(4) isBgra(1), then raw pixel bytes
-            var f = frame.Value;
-            var head = new byte[13];
-            BitConverter.GetBytes(f.Width).CopyTo(head, 0);
-            BitConverter.GetBytes(f.Height).CopyTo(head, 4);
-            BitConverter.GetBytes(f.RowPitch).CopyTo(head, 8);
-            head[12] = (byte)(f.IsBgra ? 1 : 0);
-            var payload = new byte[head.Length + f.Pixels.Length];
-            head.CopyTo(payload, 0);
-            f.Pixels.CopyTo(payload, head.Length);
-            return ("200 OK", "application/octet-stream", payload);
         }
 
         if (method == "POST" && path == "/api/action/preview3d/rotate" && _configuration.WebUiLive3DPreview
@@ -436,7 +457,7 @@ public sealed class WebUiService : IDisposable
             error = "unknown endpoint",
             available = new[]
             {
-                "GET /", "GET /api/search?q=", "GET /api/item/{id}", "GET /api/snapshot", "GET /api/preview3d",
+                "GET /", "GET /api/search?q=", "GET /api/item/{id}", "GET /api/snapshot", "GET /api/preview3d/stream",
                 "POST /api/action/craftlog/{id}", "POST /api/action/dutyfinder/{cfc}",
                 "POST /api/action/map?territory=&map=&x=&y=",
             },

@@ -67,7 +67,7 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 .slot img{width:32px;height:32px;border-radius:5px}
 .slot .g{color:var(--success);font-size:12px}
 .slot .s{color:var(--muted);font-size:11px}
-#preview3d{background:var(--panel);border:1px solid var(--border);border-radius:8px;margin-bottom:14px;cursor:grab;display:none;image-rendering:pixelated}
+#preview3d{background:var(--panel);border:1px solid var(--border);border-radius:8px;margin-bottom:14px;cursor:grab;display:none;width:256px;height:256px;object-fit:contain}
 #preview3d.active{cursor:grabbing}
 </style>
 </head>
@@ -93,7 +93,7 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 </section>
 
 <section id="view-character" style="display:none">
-  <canvas id="preview3d" width="256" height="256"></canvas>
+  <img id="preview3d" alt="">
   <div class="empty" id="p3dhint" style="display:none;font-size:12px">Click 🔓 above to lock the overlay, then drag the model to rotate.</div>
   <div class="empty" id="snapinfo">Loading…</div>
   <div class="snapgrid" id="snap"></div>
@@ -132,67 +132,34 @@ function showTab(t){
 }
 
 // --- 3D preview (opt-in, see Settings > 3D Preview) ---
-// Polls raw pixel frames instead of JPEG — no encode cost, loopback bandwidth is free.
-// Faster while dragging/zooming, slow otherwise; a 404 means the feature is off in-game.
-let p3dTimer=null, p3dOn=false, p3dDragging=false, p3dLastX=0, p3dLastY=0;
-function startPreview3D(){ stopPreview3D(); p3dOn=true; pollPreview3D(); }
-function stopPreview3D(){ p3dOn=false; if(p3dTimer)clearTimeout(p3dTimer); }
-
-async function pollPreview3D(){
-  if(!p3dOn)return;
-  const canvas=$('#preview3d');
-  try{
-    const r=await fetch('/api/preview3d');
-    if(r.ok){
-      drawPreview3D(await r.arrayBuffer());
-      canvas.style.display='block';
-      $('#p3dhint').style.display=overlayLocked?'none':'flex';
-    } else { canvas.style.display='none'; $('#p3dhint').style.display='none'; }
-  }catch(e){ canvas.style.display='none' }
-  if(p3dOn)p3dTimer=setTimeout(pollPreview3D, p3dDragging?150:700);
+// Native MJPEG stream (multipart/x-mixed-replace) — the <img> element decodes and repaints itself,
+// no poll loop or raw-pixel JS decode needed anymore (server side: WebUiService.StreamPreviewMjpeg).
+let p3dDragging=false, p3dLastX=0, p3dLastY=0;
+function startPreview3D(){
+  const img=$('#preview3d');
+  img.onerror=()=>{ img.style.display='none'; $('#p3dhint').style.display='none'; };
+  img.style.display='block';
+  $('#p3dhint').style.display=overlayLocked?'none':'flex';
+  img.src='/api/preview3d/stream?_='+Date.now(); // cache-bust: force a fresh connection every tab entry
 }
-
-function drawPreview3D(buf){
-  const dv=new DataView(buf);
-  const w=dv.getInt32(0,true), h=dv.getInt32(4,true), rowPitch=dv.getInt32(8,true), isBgra=dv.getUint8(12)!==0;
-  const canvas=$('#preview3d');
-  if(canvas.width!==w)canvas.width=w;
-  if(canvas.height!==h)canvas.height=h;
-  const ctx=canvas.getContext('2d');
-  const out=ctx.createImageData(w,h);
-  const src=new Uint8Array(buf,13);
-  // Bulk row copy (native memcpy) instead of a per-pixel JS loop — at ~2MB/frame the old
-  // per-pixel/per-channel loop was the actual stutter, not the network transfer.
-  if(rowPitch===w*4){
-    out.data.set(src.subarray(0,w*h*4));
-  } else {
-    for(let y=0;y<h;y++) out.data.set(src.subarray(y*rowPitch,y*rowPitch+w*4), y*w*4);
-  }
-  // One pass over 32-bit words (4x fewer iterations than per-byte) to force full opacity
-  // (CharaView's own alpha channel isn't meaningful here) and swap R/B if the source was BGRA.
-  const words=new Uint32Array(out.data.buffer);
-  if(isBgra){
-    for(let i=0;i<words.length;i++){
-      const v=words[i];
-      words[i]=0xFF000000|((v&0xFF)<<16)|(v&0xFF00)|((v>>>16)&0xFF);
-    }
-  } else {
-    for(let i=0;i<words.length;i++) words[i]|=0xFF000000;
-  }
-  ctx.putImageData(out,0,0);
+function stopPreview3D(){
+  const img=$('#preview3d');
+  img.onerror=null;
+  img.removeAttribute('src'); // aborts the in-flight stream, closing the server-side connection
+  img.style.display='none';
 }
 
 (function initPreview3DDrag(){
-  const canvas=$('#preview3d');
-  canvas.addEventListener('mousedown',e=>{p3dDragging=true;p3dLastX=e.clientX;p3dLastY=e.clientY;canvas.classList.add('active')});
-  window.addEventListener('mouseup',()=>{p3dDragging=false;canvas.classList.remove('active')});
+  const img=$('#preview3d');
+  img.addEventListener('mousedown',e=>{p3dDragging=true;p3dLastX=e.clientX;p3dLastY=e.clientY;img.classList.add('active')});
+  window.addEventListener('mouseup',()=>{p3dDragging=false;img.classList.remove('active')});
   window.addEventListener('mousemove',e=>{
     if(!p3dDragging)return;
     const dx=e.clientX-p3dLastX, dy=e.clientY-p3dLastY;
     p3dLastX=e.clientX;p3dLastY=e.clientY;
     post(`/api/action/preview3d/rotate?dx=${(dx*0.75).toFixed(2)}&dy=${(dy*0.75).toFixed(2)}`);
   });
-  canvas.addEventListener('wheel',e=>{
+  img.addEventListener('wheel',e=>{
     e.preventDefault();
     post(`/api/action/preview3d/zoom?delta=${(-e.deltaY*0.002).toFixed(3)}`);
   },{passive:false});

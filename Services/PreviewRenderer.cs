@@ -1,4 +1,6 @@
 using System;
+using System.IO;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
@@ -390,98 +392,175 @@ public sealed unsafe class PreviewRenderer : IDisposable
         return (nint)tex->D3D11ShaderResourceView;
     }
 
-/// <summary>Raw CPU-readback of the current CharaView frame, for the web-UI 3D preview
-    /// (experimental, opt-in). BGRA byte order per pixel unless <see cref="IsBgra"/> is false.</summary>
-    public readonly record struct CapturedFrame(int Width, int Height, int RowPitch, byte[] Pixels, bool IsBgra);
+// --- web-UI MJPEG preview: async non-blocking readback + JPEG encode ---
+    // The old version did a synchronous CopyResource+Map every capture (a real GPU/CPU stall) and
+    // bounded its cost with a flat 150ms wall-clock throttle (~6-7fps ceiling, chosen arbitrarily to
+    // cap that stall, not because 6-7fps was ever a goal). This version never stalls: Map uses
+    // D3D11_MAP_FLAG_DO_NOT_WAIT, so an unfinished GPU copy is simply skipped and retried next
+    // Draw() instead of blocking the render thread. Real cadence is now "however fast the GPU
+    // actually finishes each copy" (typically 1 frame), only capped by EncodeThrottleMs below since
+    // JPEG-encoding isn't free either and nothing needs it faster.
+    private ComPtr<ID3D11Texture2D> _webStaging;
+    private uint _webStagingWidth, _webStagingHeight;
+    private DXGI_FORMAT _webStagingFormat;
+    private bool _webCopyPending;
+    private byte[]? _latestWebJpeg;
+    private long _lastEncodeTickMs;
+    private const long EncodeThrottleMs = 33; // ~30fps cap on JPEG re-encode cost
 
-    private CapturedFrame? _lastWebFrame;
-    private long _lastCaptureTickMs;
-    private const long CaptureThrottleMs = 150; // ~6-7 fps ceiling — each capture is a GPU stall (CopyResource+Map)
-
-    /// <summary>Last frame captured for the web-UI 3D preview, or null if never captured / feature off.
-    /// Thread-safe to read from anywhere (plain field read) — capture itself only ever runs from
-    /// Draw(), never from here.</summary>
-    public CapturedFrame? LatestWebFrame => _lastWebFrame;
+    /// <summary>Latest JPEG-encoded frame for the web-UI MJPEG stream (see WebUiService's
+    /// /api/preview3d/stream), or null if never captured / feature off. Thread-safe to read from
+    /// anywhere (plain field read) — capture/encode only ever runs from Draw(), never from here.</summary>
+    public byte[]? LatestWebJpeg => _latestWebJpeg;
 
     /// <summary>Call once per UiBuilder.Draw frame (Plugin.cs wires this, unconditionally — not tied
     /// to any window's visibility, so the web UI keeps working with the ImGui window closed) — same
-    /// call context ImGui.Image already uses safely every frame. Throttled internally; cheap to call
-    /// every frame. Returns immediately (no-op) if CharaView was never initialized. Do NOT call this
-    /// from Framework.RunOnFrameworkThread or any other thread — the immediate D3D11 context must
-    /// only be touched here, in-line with the game's own Present.</summary>
+    /// call context ImGui.Image already uses safely every frame. Cheap to call every frame; internally
+    /// throttled/non-blocking. Returns immediately (no-op) if CharaView was never initialized. Do NOT
+    /// call this from Framework.RunOnFrameworkThread or any other thread — the immediate D3D11
+    /// context must only be touched here, in-line with the game's own Present (an earlier version
+    /// that broke this rule corrupted D3D11 state badly enough to crash the game — see
+    /// WebUiService's /api/preview3d/stream doc comment).</summary>
     public void CaptureFrameForWeb(bool enabled)
     {
-        if (!enabled) { _lastWebFrame = null; return; }
-        var now = Environment.TickCount64;
-        if (now - _lastCaptureTickMs < CaptureThrottleMs) return;
-        _lastCaptureTickMs = now;
-        _lastWebFrame = TryCapturePixels();
+        if (!enabled) { _latestWebJpeg = null; ReleaseWebStaging(); return; }
+        try { PumpWebCapture(); }
+        catch { /* best-effort — a bad frame just stalls the stream one tick, not a crash */ }
     }
 
-    /// <summary>Copy the CharaView GPU texture to CPU. MUST be called only from Draw() (the same
-    /// in-line-with-Present context ImGui.Image already reads this SRV from) — never from
-    /// Framework.RunOnFrameworkThread or a background thread. Returns null if not ready or the copy
-    /// failed.</summary>
+    private void ReleaseWebStaging()
+    {
+        _webStaging.Dispose();
+        _webStaging = default;
+        _webCopyPending = false;
+    }
+
     /// <remarks>ponytail: pattern mirrors Dalamud's own TextureManager.GetRawImageAsync (internal,
-    /// not exposed to plugins) — CopyResource into a STAGING texture, Map, read, Unmap. The SRV
-    /// ComPtr below is adopted from a borrowed handle (GetTextureHandle owns nothing) and must
-    /// NEVER be Dispose()'d — TerraFX's raw-pointer ComPtr ctor does not AddRef, so releasing it
-    /// would drop a refcount CharaView still owns. Everything obtained via GetResource/As/GetDevice/
-    /// GetImmediateContext DOES own a ref and must be disposed (all four `using`).</remarks>
-    private CapturedFrame? TryCapturePixels()
+    /// not exposed to plugins) — CopyResource into a STAGING texture, Map, read, Unmap — but with a
+    /// persistent staging texture (recreated only on resize) and DO_NOT_WAIT instead of a fresh
+    /// blocking staging texture every call. The SRV ComPtr below is adopted from a borrowed handle
+    /// (GetTextureHandle owns nothing) and must NEVER be Dispose()'d — TerraFX's raw-pointer ComPtr
+    /// ctor does not AddRef, so releasing it would drop a refcount CharaView still owns. Everything
+    /// obtained via GetResource/As/GetDevice/GetImmediateContext DOES own a ref and must be disposed
+    /// (all four `using`).</remarks>
+    private void PumpWebCapture()
     {
         var srvHandle = GetTextureHandle();
-        if (srvHandle == 0) return null;
+        if (srvHandle == 0) return;
 
         // Adopted, not owned — do not Dispose. See remarks above.
         var srv = new ComPtr<ID3D11ShaderResourceView>((ID3D11ShaderResourceView*)srvHandle);
 
         using ComPtr<ID3D11Resource> res = default;
         srv.Get()->GetResource(res.GetAddressOf());
-        if (res.Get() == null) return null;
+        if (res.Get() == null) return;
 
         using ComPtr<ID3D11Texture2D> tex = default;
-        if (res.As(&tex).FAILED) return null;
+        if (res.As(&tex).FAILED) return;
 
         using ComPtr<ID3D11Device> device = default;
         tex.Get()->GetDevice(device.GetAddressOf());
         using ComPtr<ID3D11DeviceContext> context = default;
         device.Get()->GetImmediateContext(context.GetAddressOf());
-        if (device.Get() == null || context.Get() == null) return null;
+        if (device.Get() == null || context.Get() == null) return;
 
         D3D11_TEXTURE2D_DESC desc;
         tex.Get()->GetDesc(&desc);
 
-        var stagingDesc = desc with
+        // (re)create the staging texture on first use or if the source render target resized
+        if (_webStaging.Get() == null || desc.Width != _webStagingWidth || desc.Height != _webStagingHeight || desc.Format != _webStagingFormat)
         {
-            Usage = D3D11_USAGE.D3D11_USAGE_STAGING,
-            BindFlags = 0u,
-            CPUAccessFlags = (uint)D3D11_CPU_ACCESS_FLAG.D3D11_CPU_ACCESS_READ,
-            MiscFlags = 0u,
-            MipLevels = 1,
-            ArraySize = 1,
-        };
-        using ComPtr<ID3D11Texture2D> staging = default;
-        if (device.Get()->CreateTexture2D(&stagingDesc, null, staging.GetAddressOf()).FAILED) return null;
+            ReleaseWebStaging();
+            var stagingDesc = desc with
+            {
+                Usage = D3D11_USAGE.D3D11_USAGE_STAGING,
+                BindFlags = 0u,
+                CPUAccessFlags = (uint)D3D11_CPU_ACCESS_FLAG.D3D11_CPU_ACCESS_READ,
+                MiscFlags = 0u,
+                MipLevels = 1,
+                ArraySize = 1,
+            };
+            if (device.Get()->CreateTexture2D(&stagingDesc, null, _webStaging.GetAddressOf()).FAILED) return;
+            _webStagingWidth = desc.Width;
+            _webStagingHeight = desc.Height;
+            _webStagingFormat = desc.Format;
+        }
 
-        context.Get()->CopyResource((ID3D11Resource*)staging.Get(), (ID3D11Resource*)tex.Get());
+        if (!_webCopyPending)
+        {
+            context.Get()->CopyResource((ID3D11Resource*)_webStaging.Get(), (ID3D11Resource*)tex.Get());
+            _webCopyPending = true;
+            return; // give the GPU at least one Draw() before polling Map — an instant DO_NOT_WAIT check would just miss every time
+        }
+
+        var now = Environment.TickCount64;
+        if (now - _lastEncodeTickMs < EncodeThrottleMs) return; // copy stays pending; poll again next Draw()
 
         D3D11_MAPPED_SUBRESOURCE mapped;
-        if (context.Get()->Map((ID3D11Resource*)staging.Get(), 0, D3D11_MAP.D3D11_MAP_READ, 0, &mapped).FAILED)
-            return null;
+        var hr = context.Get()->Map((ID3D11Resource*)_webStaging.Get(), 0, D3D11_MAP.D3D11_MAP_READ, (uint)D3D11_MAP_FLAG.D3D11_MAP_FLAG_DO_NOT_WAIT, &mapped);
+        if (hr.Value == DXGI.DXGI_ERROR_WAS_STILL_DRAWING) return; // GPU not done yet — copy stays pending, retry next Draw()
+        if (hr.FAILED) { _webCopyPending = false; return; } // real failure — drop this cycle, next Draw() starts a fresh copy
+
         try
         {
-            var byteCount = (int)(mapped.RowPitch * desc.Height);
-            var bytes = new byte[byteCount];
-            fixed (byte* dst = bytes)
-                Buffer.MemoryCopy((void*)mapped.pData, dst, byteCount, byteCount);
             var isBgra = desc.Format is DXGI_FORMAT.DXGI_FORMAT_B8G8R8A8_UNORM or DXGI_FORMAT.DXGI_FORMAT_B8G8R8X8_UNORM;
-            return new CapturedFrame((int)desc.Width, (int)desc.Height, (int)mapped.RowPitch, bytes, isBgra);
+            _latestWebJpeg = EncodeJpeg((int)desc.Width, (int)desc.Height, (int)mapped.RowPitch, (nint)mapped.pData, isBgra);
+            _lastEncodeTickMs = now;
         }
         finally
         {
-            context.Get()->Unmap((ID3D11Resource*)staging.Get(), 0);
+            context.Get()->Unmap((ID3D11Resource*)_webStaging.Get(), 0);
+            _webCopyPending = false; // next Draw() starts a fresh CopyResource for the following frame
         }
+    }
+
+    /// <summary>D3D11's BGRA formats are byte-identical to GDI+'s Format32bppArgb (same B,G,R,A
+    /// memory order) — construct the Bitmap directly over the mapped GPU memory, no extra copy,
+    /// only for the encode call's duration (Unmap happens right after in the caller).</summary>
+    private static System.Drawing.Bitmap EncodeSourceBitmap(int width, int height, int rowPitch, nint scan0, bool isBgra)
+        => isBgra
+            ? new System.Drawing.Bitmap(width, height, rowPitch, System.Drawing.Imaging.PixelFormat.Format32bppArgb, scan0)
+            : SwapToBgraBitmap(width, height, rowPitch, scan0);
+
+    private static byte[] EncodeJpeg(int width, int height, int rowPitch, nint scan0, bool isBgra)
+    {
+        using var bmp = EncodeSourceBitmap(width, height, rowPitch, scan0, isBgra);
+        using var ms = new MemoryStream();
+        var encoder = System.Drawing.Imaging.ImageCodecInfo.GetImageEncoders()
+            .First(c => c.FormatID == System.Drawing.Imaging.ImageFormat.Jpeg.Guid);
+        using var encParams = new System.Drawing.Imaging.EncoderParameters(1);
+        encParams.Param[0] = new System.Drawing.Imaging.EncoderParameter(System.Drawing.Imaging.Encoder.Quality, 80L);
+        bmp.Save(ms, encoder, encParams);
+        return ms.ToArray();
+    }
+
+    /// <summary>Rare fallback — every CharaView format observed in practice is BGRA — kept as a
+    /// correctness path instead of silently assuming, since a wrong assumption here would swap
+    /// red/blue in the whole preview.</summary>
+    private static System.Drawing.Bitmap SwapToBgraBitmap(int width, int height, int rowPitch, nint scan0)
+    {
+        var bmp = new System.Drawing.Bitmap(width, height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        var rect = new System.Drawing.Rectangle(0, 0, width, height);
+        var data = bmp.LockBits(rect, System.Drawing.Imaging.ImageLockMode.WriteOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        unsafe
+        {
+            var src = (byte*)scan0;
+            var dst = (byte*)data.Scan0;
+            for (var y = 0; y < height; y++)
+            {
+                var srcRow = src + y * rowPitch;
+                var dstRow = dst + y * data.Stride;
+                for (var x = 0; x < width; x++)
+                {
+                    dstRow[x * 4 + 0] = srcRow[x * 4 + 2]; // B
+                    dstRow[x * 4 + 1] = srcRow[x * 4 + 1]; // G
+                    dstRow[x * 4 + 2] = srcRow[x * 4 + 0]; // R
+                    dstRow[x * 4 + 3] = srcRow[x * 4 + 3]; // A
+                }
+            }
+        }
+        bmp.UnlockBits(data);
+        return bmp;
     }
 
     /// <summary>Release CharaView. Must be called on Framework thread.</summary>

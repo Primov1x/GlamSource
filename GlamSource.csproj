@@ -14,8 +14,8 @@
     <IsPackable>false</IsPackable>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <NoWarn>$(NoWarn);CA1416</NoWarn>
-    <Version>0.0.0.128</Version>
-    <AssemblyVersion>0.0.0.128</AssemblyVersion>
+    <Version>0.0.0.129</Version>
+    <AssemblyVersion>0.0.0.129</AssemblyVersion>
     <IconUrl>https://raw.githubusercontent.com/Primov1x/GlamSource/main/images/icon.png</IconUrl>
     <InternalsVisibleTo>GlamSource.Mock</InternalsVisibleTo>
   </PropertyGroup>
@@ -39,6 +39,9 @@
     <!-- ponytail: same D3D11 interop bindings Dalamud itself uses (see Dx11Renderer.cs) — for the
          web-UI 3D preview's GPU texture readback. Version matches what this Dalamud build ships. -->
     <PackageReference Include="TerraFX.Interop.Windows" Version="10.0.26100.5" />
+    <!-- GDI+ JPEG encode for the web-UI MJPEG preview stream (PreviewRenderer.EncodeJpeg) — a
+         Windows-only native wrapper, which matches this project's net10.0-windows7.0 TFM exactly. -->
+    <PackageReference Include="System.Drawing.Common" Version="9.0.0" />
   </ItemGroup>
 
   <ItemGroup>
