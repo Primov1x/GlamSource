@@ -51,7 +51,7 @@ public static class GltfBuilder
                         baseColorTexture = new { index = texIndex },
                         baseColorFactor = f,
                         metallicFactor = 0.0,
-                        roughnessFactor = 0.9,
+                        roughnessFactor = 0.7,
                     },
                     normalTexture = hasNormal ? new { index = normalTexIndex } : null,
                     alphaMode = "MASK",
@@ -65,7 +65,7 @@ public static class GltfBuilder
                     {
                         baseColorFactor = tint is { Length: 3 } ? f : new[] { 0.7, 0.7, 0.75, 1.0 },
                         metallicFactor = 0.0,
-                        roughnessFactor = 0.9,
+                        roughnessFactor = 0.7,
                     },
                     doubleSided = true,
                 });

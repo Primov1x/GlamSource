@@ -212,7 +212,7 @@ public sealed class ModelExportService
             // ...) — no full per-race table yet, just try the two ids confirmed to exist.
             var bodyId = _gameData.FileExists($"chara/human/{rc}/obj/body/b0001/model/{rc}b0001_top.mdl") ? "b0001" : "b0002";
             AddCharaPart($"chara/human/{rc}/obj/body/{bodyId}/model/{rc}{bodyId}_top.mdl", rc, $"body/{bodyId}", skinTint, meshInputs, pngs, materialCache, pose);
-            AddCharaPart($"chara/human/{rc}/obj/face/f{chara.Face:D4}/model/{rc}f{chara.Face:D4}_fac.mdl", rc, $"face/f{chara.Face:D4}", skinTint, meshInputs, pngs, materialCache, pose);
+            AddCharaPart($"chara/human/{rc}/obj/face/f{chara.Face:D4}/model/{rc}f{chara.Face:D4}_fac.mdl", rc, $"face/f{chara.Face:D4}", skinTint, meshInputs, pngs, materialCache, pose, eyeTint: colors?.Eye);
             // ponytail: the equipped hat's EQP flags decide what part of the hair renders — exactly
             // what the game does. HeadHideHair (full helmets) drops the hair part entirely;
             // HeadHideScalp hides only the "atr_kam" scalp/top-hair submeshes, which is what was
@@ -246,7 +246,7 @@ public sealed class ModelExportService
     /// when the path doesn't exist for this race. Untextured meshes get the fallback tint.</summary>
     private void AddCharaPart(string mdlPath, string raceCode, string partFolder, float[] fallbackTint,
         List<GltfMeshInput> meshInputs, List<byte[]> pngs, Dictionary<string, (int, float[]?, int)> materialCache, SkeletonPose? pose,
-        float[]? highlightTint = null, IReadOnlyCollection<string>? hideAttributes = null)
+        float[]? highlightTint = null, IReadOnlyCollection<string>? hideAttributes = null, float[]? eyeTint = null)
     {
         if (!_gameData.FileExists(mdlPath)) { LastTrace.Add($"chara part missing: {mdlPath}"); return; }
         var raw = _gameData.GetFile(mdlPath);
@@ -284,6 +284,9 @@ public sealed class ModelExportService
             if (m.MaterialIndex >= 0 && m.MaterialIndex < mdl.Materials.Length)
             {
                 var mtrlName = mdl.Materials[m.MaterialIndex];
+                // ponytail: the iris material's base texture is neutral grayscale too — needs the
+                // character's actual eye color, not the skin tint every other face material uses.
+                if (eyeTint != null && mtrlName.Contains("_iri_")) tint = eyeTint;
                 // ponytail: some non-Hyur body models (e.g. Viera b0002) reference the shared
                 // Hyur skin material by name (skin_mask.tex etc. is generic across races) instead
                 // of their own race's folder — same misroute the equipment loop already handles,

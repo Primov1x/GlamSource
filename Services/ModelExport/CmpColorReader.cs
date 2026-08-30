@@ -65,6 +65,21 @@ public static class CmpColorReader
         return ReadEntry(HighlightBlockStart, ExtendedDataLength, highlightIdx);
     }
 
+    // ponytail: eye color is common block 0 — verified by ground truth: this user's eyes are
+    // visibly blue in-game, EyeColor swatch index 145, and a scan of human.cmp's common blocks
+    // finds a plausible blue-gray (#8293B8) ONLY at block 0 idx 145 (other blocks give brown/olive/
+    // tan, clearly not this character's eye color).
+    private const uint EyeColorBlockStart = 0;
+
+    /// <summary>Eye color for CustomizeIndex.EyeColor(Right)/EyeColor2(Left)'s swatch index — the
+    /// iris material's own base texture is a neutral grayscale that needs this tint, same as skin's
+    /// base.tex, or it renders white/gray instead of the actual eye color.</summary>
+    public static float[]? ReadEyeColor(GameData gameData, byte eyeIdx)
+    {
+        if (!EnsureLoaded(gameData)) return null;
+        return ReadEntry(EyeColorBlockStart, DataLength, eyeIdx);
+    }
+
     private static float[]? ReadEntry(uint blockStart, int length, byte index)
     {
         if (index >= length) return null;

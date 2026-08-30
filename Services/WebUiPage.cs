@@ -288,7 +288,7 @@ async function startViewer(){
     // — a near-black dyed material (baseColorFactor ~0.12) still rendered as bright vivid color.
     // ACES + realistic light levels is the standard three.js fix for "everything looks washed out".
     renderer.toneMapping=THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure=1.0;
+    renderer.toneMappingExposure=1.25;
     renderer.outputColorSpace=THREE.SRGBColorSpace;
     box.appendChild(renderer.domElement);
     const scene=new THREE.Scene();
@@ -297,14 +297,19 @@ async function startViewer(){
     camera.position.set(0,1.2,2.2);
     const controls=new OrbitControls(camera,renderer.domElement);
     controls.target.set(0,1.0,0);
-    // ponytail: lower ambient + a stronger angled key light + a dim rim light so the normal map
-    // (knee/elbow/seam relief) actually reads as shading contrast instead of getting washed flat
-    // by even, shadowless light from every direction.
-    scene.add(new THREE.AmbientLight(0xffffff,0.35));
-    const key=new THREE.DirectionalLight(0xffffff,1.8);
+    // ponytail: original single-key setup left the face/chin/under-brow in heavy shadow (screenshot
+    // comparison against the real in-game render: ours read dark/muddy, "fitting room" flat) — with
+    // correct diffuse colors now shipped, the remaining gap was pure lighting: too little fill,
+    // exposure too low. Softer key, brighter ambient, an added front fill (real portrait 3-point
+    // setup), and a touch more exposure.
+    scene.add(new THREE.AmbientLight(0xffffff,0.6));
+    const key=new THREE.DirectionalLight(0xffffff,1.3);
     key.position.set(2,3,2.5);
     scene.add(key);
-    const rim=new THREE.DirectionalLight(0xffffff,0.4);
+    const fill=new THREE.DirectionalLight(0xffffff,0.7);
+    fill.position.set(-1.5,1.2,2.5);
+    scene.add(fill);
+    const rim=new THREE.DirectionalLight(0xffffff,0.5);
     rim.position.set(-2,1.5,-2);
     scene.add(rim);
     window._glamViewer={THREE,GLTFLoader,scene,renderer,camera,controls,box,model:null};
