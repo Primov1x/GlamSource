@@ -86,7 +86,11 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
         {
             _renderer.Release();
             var localPlayer = _objectTable.LocalPlayer;
-            if (localPlayer == null) return;
+            if (localPlayer == null)
+            {
+                _log.Warning("[GlamourPreviewWindow] ForceReinitializeForSelf: LocalPlayer not available right now (zoning/loading?) — released but not re-initialized, click reset again once loaded");
+                return;
+            }
             _renderer.Initialize((Character*)localPlayer.Address, 0, () => _objectTable.LocalPlayer?.Address ?? nint.Zero);
         });
         if (!_frameworkHooked)
