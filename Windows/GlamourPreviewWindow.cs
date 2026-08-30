@@ -74,6 +74,28 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
         _clientState.Logout += OnLogout;
     }
 
+    /// <summary>Full Release()+re-Initialize() for self — for when CharaView is stuck showing
+    /// something wrong with no self-recovery (e.g. a native UI grabbed the shared AgentTryon slot
+    /// via a path IsAgentActive() doesn't catch, and never let go). Framework thread. Unlike
+    /// EnsureInitializedForSelf, this always tears down first even if already initialized — that's
+    /// the whole point, "already initialized" is exactly the stuck state this exists to escape.</summary>
+    public void ForceReinitializeForSelf()
+    {
+        _sourceEntityId = 0;
+        _framework.RunOnFrameworkThread(() =>
+        {
+            _renderer.Release();
+            var localPlayer = _objectTable.LocalPlayer;
+            if (localPlayer == null) return;
+            _renderer.Initialize((Character*)localPlayer.Address, 0, () => _objectTable.LocalPlayer?.Address ?? nint.Zero);
+        });
+        if (!_frameworkHooked)
+        {
+            _framework.Update += OnFrameworkTick;
+            _frameworkHooked = true;
+        }
+    }
+
     // ponytail: inline preview lives in the Character tab. Init the renderer + framework tick
     // without flipping IsOpen so the shell can render the texture inside its own BeginChild.
     public void EnsureInitializedForSelf()

@@ -407,6 +407,21 @@ public sealed class WebUiService : IDisposable
             return Json(new { ok = true });
         }
 
+        if (method == "POST" && path == "/api/action/preview3d/reset" && _configuration.WebUiLive3DPreview)
+        {
+            // ponytail: escape hatch for "CharaView is stuck showing the wrong thing and nothing in
+            // the UI un-sticks it" — seen live: a native UI grabbed the shared AgentTryon slot via a
+            // path IsAgentActive() doesn't catch (see PreviewRenderer.Tick()'s doc comment) and never
+            // released it as far as we could tell, leaving self-recovery with nothing to trigger on.
+            // Full Release()+re-Initialize(), not just a recopy — matches what a full plugin reload
+            // was doing as the only prior workaround.
+            _webPreviewGear.Clear();
+            _shell.PreviewWindow?.SetSnapshotProvider(null);
+            _shell.PreviewWindow?.ForceReinitializeForSelf();
+            _log.Information("[WebUi] preview3d/reset — forced Release()+Initialize()");
+            return Json(new { ok = true });
+        }
+
         if (method == "GET" && path == "/api/preview3d/debug")
         {
             // ponytail: mirrors /api/model3d/debug's "don't guess, look at the actual counters"
@@ -556,6 +571,7 @@ public sealed class WebUiService : IDisposable
             {
                 "GET /", "GET /api/search?q=", "GET /api/item/{id}", "GET /api/snapshot", "GET /api/preview3d/stream",
                 "POST /api/action/preview3d/setitem?slot=&itemId=&stain0=&stain1=", "POST /api/action/preview3d/cleargear",
+                "POST /api/action/preview3d/reset",
                 "GET /api/preview3d/debug",
                 "POST /api/action/craftlog/{id}", "POST /api/action/dutyfinder/{cfc}",
                 "POST /api/action/map?territory=&map=&x=&y=",

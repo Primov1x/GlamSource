@@ -97,6 +97,7 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
   <div class="empty" id="p3dhint" style="display:none;font-size:12px">Click 🔓 above to lock the overlay, then drag the model to rotate.</div>
   <div style="margin-top:2px;margin-bottom:10px">
     <a href="#" onclick="loadPreview3DDebug();return false" style="font-size:12px">🩺 Preview-Stream-Debug (fps, Fehler, Frame-Größe)</a>
+    · <a href="#" onclick="resetPreview3D();return false" style="font-size:12px" title="Falls das Bild feststeckt oder was Falsches zeigt (z.B. ein fremdes Portrait)">🔄 Preview zurücksetzen</a>
     <pre id="p3ddebug" style="display:none;font-size:11px;background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:8px;margin-top:6px;white-space:pre-wrap"></pre>
   </div>
   <div class="empty" id="snapinfo">Loading…</div>
@@ -205,6 +206,11 @@ async function runPreview3DStream(signal){
       }
     }
   }catch(e){ if(e.name!=='AbortError'){ console.warn('[preview3d] stream error',e); canvas.style.display='none' } }
+}
+
+async function resetPreview3D(){
+  await post('/api/action/preview3d/reset');
+  startPreview3D(); // reconnect the stream — the old one keeps serving frames until reset lands
 }
 
 async function loadPreview3DDebug(){
