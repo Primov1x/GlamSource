@@ -302,14 +302,19 @@ async function startViewer(){
     // correct diffuse colors now shipped, the remaining gap was pure lighting: too little fill,
     // exposure too low. Softer key, brighter ambient, an added front fill (real portrait 3-point
     // setup), and a touch more exposure.
-    scene.add(new THREE.AmbientLight(0xffffff,0.6));
-    const key=new THREE.DirectionalLight(0xffffff,1.3);
+    // ponytail: "sharp/kein Ingame-Look" — three hard DirectionalLights + a flat AmbientLight give
+    // crisp, unshaded-feeling specular hotspots real in-game portrait lighting doesn't have. A
+    // HemisphereLight (sky/ground gradient) replaces the flat ambient for a softer base, key/fill
+    // get a slight warm/cool split (matches the game's warm key + cool bounce), and key intensity
+    // drops since the hemisphere now carries part of the fill duty.
+    scene.add(new THREE.HemisphereLight(0xfff4e6,0x3a3530,0.7));
+    const key=new THREE.DirectionalLight(0xfff1e0,1.05);
     key.position.set(2,3,2.5);
     scene.add(key);
-    const fill=new THREE.DirectionalLight(0xffffff,0.7);
+    const fill=new THREE.DirectionalLight(0xe6eeff,0.6);
     fill.position.set(-1.5,1.2,2.5);
     scene.add(fill);
-    const rim=new THREE.DirectionalLight(0xffffff,0.5);
+    const rim=new THREE.DirectionalLight(0xffffff,0.4);
     rim.position.set(-2,1.5,-2);
     scene.add(rim);
     window._glamViewer={THREE,GLTFLoader,scene,renderer,camera,controls,box,model:null};

@@ -10,7 +10,7 @@ namespace GlamSource.Services.ModelExport;
 /// <summary>One mesh plus the index of its PNG texture (into the textures list), or -1 for none.
 /// Tint (RGB 0-1) multiplies the base color — rough whole-mesh dye approximation. NormalTextureIndex
 /// is a decoded tangent-space normal map (see NormalMapDecoder), or -1 for none.</summary>
-public sealed record GltfMeshInput(DecodedMesh Geometry, int TextureIndex, float[]? Tint = null, int NormalTextureIndex = -1);
+public sealed record GltfMeshInput(DecodedMesh Geometry, int TextureIndex, float[]? Tint = null, int NormalTextureIndex = -1, int MetallicRoughnessTextureIndex = -1);
 
 // ponytail: hand-rolled GLB (glTF 2.0 binary) writer — the format is just JSON + one binary
 // buffer; a gltf library dependency would be bigger than this file.
@@ -36,13 +36,17 @@ public static class GltfBuilder
 
         // one material per (texture, tint, normal texture) combo — dye multiplies base color
         var materialByKey = new Dictionary<string, int>();
-        int MaterialFor(int texIndex, float[]? tint, int normalTexIndex)
+        int MaterialFor(int texIndex, float[]? tint, int normalTexIndex, int metalRoughTexIndex)
         {
             var f = tint is { Length: 3 } ? new[] { (double)tint[0], tint[1], tint[2], 1.0 } : new[] { 1.0, 1.0, 1.0, 1.0 };
             var hasNormal = normalTexIndex >= 0 && normalTexIndex < pngTextures.Count;
-            var key = $"{texIndex}:{f[0]:F3},{f[1]:F3},{f[2]:F3}:{(hasNormal ? normalTexIndex : -1)}";
+            var hasMetalRough = metalRoughTexIndex >= 0 && metalRoughTexIndex < pngTextures.Count;
+            var key = $"{texIndex}:{f[0]:F3},{f[1]:F3},{f[2]:F3}:{(hasNormal ? normalTexIndex : -1)}:{(hasMetalRough ? metalRoughTexIndex : -1)}";
             if (materialByKey.TryGetValue(key, out var m)) return m;
             m = materials.Count;
+            // ponytail: without a baked metallicRoughness texture, metallicFactor stays 0 — guessing
+            // a flat metalness for every material (no per-pixel data) looked worse than plain diffuse
+            // in earlier testing. With the texture, factors are 1.0 (pure multiplier) per glTF spec.
             if (texIndex >= 0 && texIndex < pngTextures.Count)
                 materials.Add(new
                 {
@@ -50,8 +54,9 @@ public static class GltfBuilder
                     {
                         baseColorTexture = new { index = texIndex },
                         baseColorFactor = f,
-                        metallicFactor = 0.0,
-                        roughnessFactor = 0.7,
+                        metallicRoughnessTexture = hasMetalRough ? new { index = metalRoughTexIndex } : null,
+                        metallicFactor = hasMetalRough ? 1.0 : 0.0,
+                        roughnessFactor = hasMetalRough ? 1.0 : 0.85,
                     },
                     normalTexture = hasNormal ? new { index = normalTexIndex } : null,
                     alphaMode = "MASK",
@@ -65,7 +70,7 @@ public static class GltfBuilder
                     {
                         baseColorFactor = tint is { Length: 3 } ? f : new[] { 0.7, 0.7, 0.75, 1.0 },
                         metallicFactor = 0.0,
-                        roughnessFactor = 0.7,
+                        roughnessFactor = 0.85,
                     },
                     doubleSided = true,
                 });
@@ -112,7 +117,7 @@ public static class GltfBuilder
                     {
                         attributes = attrs,
                         indices = idxAccessor,
-                        material = MaterialFor(input.TextureIndex, input.Tint, input.NormalTextureIndex),
+                        material = MaterialFor(input.TextureIndex, input.Tint, input.NormalTextureIndex, input.MetallicRoughnessTextureIndex),
                     },
                 },
             });

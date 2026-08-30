@@ -83,7 +83,7 @@ public sealed class ModelExportService
 
         var meshInputs = new List<GltfMeshInput>();
         var pngs = new List<byte[]>();
-        var materialCache = new Dictionary<string, (int, float[]?, int)>();
+        var materialCache = new Dictionary<string, (int, float[]?, int, int)>();
 
         var itemSheet = _gameData.GetExcelSheet<Lumina.Excel.Sheets.Item>();
         var stainSheet = _gameData.GetExcelSheet<Lumina.Excel.Sheets.Stain>();
@@ -181,7 +181,7 @@ public sealed class ModelExportService
                         : bodyRefMatch.Success
                             ? $"chara/human/c{bodyRefMatch.Groups[1].Value}/obj/body/b{bodyRefMatch.Groups[2].Value}/material/v0001{mtrlName}"
                             : $"chara/{info.Category}/{info.Prefix}{setId:D4}/material/v{materialId:D4}{mtrlName}";
-                    var (t, colorSetTint, normalTex) = ResolveMaterialByPath(mtrlPath, effectiveTint, pngs, materialCache);
+                    var (t, colorSetTint, normalTex, metalRoughTex) = ResolveMaterialByPath(mtrlPath, effectiveTint, pngs, materialCache);
                     texIndex = t;
                     // ponytail: when a real texture exists, ResolveMaterialByPath already baked
                     // effectiveTint into the PNG pixels directly (see its own comment for why —
@@ -191,7 +191,7 @@ public sealed class ModelExportService
                     if (texIndex >= 0) effectiveTint = null;
                     else if (effectiveTint == null) effectiveTint = colorSetTint;
                     LastTrace.Add($"{slot}:{itemId} mesh mtrl={mtrlPath} tex={texIndex} normal={normalTex} colorSetTint={(colorSetTint == null ? "null" : $"{colorSetTint[0]:F2},{colorSetTint[1]:F2},{colorSetTint[2]:F2}")} stain={(tint == null ? "null" : $"{tint[0]:F2},{tint[1]:F2},{tint[2]:F2}")}");
-                    meshInputs.Add(new GltfMeshInput(m, texIndex, effectiveTint, normalTex));
+                    meshInputs.Add(new GltfMeshInput(m, texIndex, effectiveTint, normalTex, metalRoughTex));
                     continue;
                 }
                 meshInputs.Add(new GltfMeshInput(m, texIndex, effectiveTint));
@@ -245,7 +245,7 @@ public sealed class ModelExportService
     /// <summary>Load one character base-model part (body/face/hair/tail/ears); silently skipped
     /// when the path doesn't exist for this race. Untextured meshes get the fallback tint.</summary>
     private void AddCharaPart(string mdlPath, string raceCode, string partFolder, float[] fallbackTint,
-        List<GltfMeshInput> meshInputs, List<byte[]> pngs, Dictionary<string, (int, float[]?, int)> materialCache, SkeletonPose? pose,
+        List<GltfMeshInput> meshInputs, List<byte[]> pngs, Dictionary<string, (int, float[]?, int, int)> materialCache, SkeletonPose? pose,
         float[]? highlightTint = null, IReadOnlyCollection<string>? hideAttributes = null, float[]? eyeTint = null)
     {
         if (!_gameData.FileExists(mdlPath)) { LastTrace.Add($"chara part missing: {mdlPath}"); return; }
@@ -307,13 +307,13 @@ public sealed class ModelExportService
                 // base.tex renders as dull blue-gray, not skin tone. Baked directly into the PNG
                 // pixels (see ResolveMaterialByPath) — glTF baseColorFactor multiply was confirmed
                 // NOT visually applying in the viewer, so don't also rely on it here.
-                var (t, colorSetTint, normalTex) = ResolveMaterialByPath(mtrlPath, tint, pngs, materialCache, highlightTint);
+                var (t, colorSetTint, normalTex, metalRoughTex) = ResolveMaterialByPath(mtrlPath, tint, pngs, materialCache, highlightTint);
                 texIndex = t;
                 hadRealSource = texIndex >= 0 || colorSetTint != null;
                 if (texIndex >= 0) tint = null;
                 else tint = colorSetTint ?? fallbackTint;
                 LastTrace.Add($"  {partFolder} mtrl={mtrlPath} tex={texIndex} normal={normalTex} finalTint={(tint == null ? "null" : $"{tint[0]:F2},{tint[1]:F2},{tint[2]:F2}")}");
-                pending.Add((new GltfMeshInput(m, texIndex, tint, normalTex), hadRealSource));
+                pending.Add((new GltfMeshInput(m, texIndex, tint, normalTex, metalRoughTex), hadRealSource));
                 continue;
             }
             pending.Add((new GltfMeshInput(m, texIndex, tint), hadRealSource));
@@ -346,12 +346,12 @@ public sealed class ModelExportService
     /// whatever in the load/render path was dropping it. Cache key includes the tint since the same
     /// material path can be requested with a different tint (different stain, different chara-part
     /// skin/hair tint).</summary>
-    private (int Tex, float[]? Tint, int NormalTex) ResolveMaterialByPath(string mtrlPath, float[]? tint, List<byte[]> pngs, Dictionary<string, (int, float[]?, int)> cache, float[]? highlightTint = null)
+    private (int Tex, float[]? Tint, int NormalTex, int MetalRoughTex) ResolveMaterialByPath(string mtrlPath, float[]? tint, List<byte[]> pngs, Dictionary<string, (int, float[]?, int, int)> cache, float[]? highlightTint = null)
     {
         var cacheKey = tint == null ? mtrlPath : $"{mtrlPath}|{tint[0]:F3},{tint[1]:F3},{tint[2]:F3}";
         if (highlightTint != null) cacheKey += $"|hl{highlightTint[0]:F3},{highlightTint[1]:F3},{highlightTint[2]:F3}";
         if (cache.TryGetValue(cacheKey, out var cached)) return cached;
-        (int, float[]?, int) result = (-1, null, -1);
+        (int, float[]?, int, int) result = (-1, null, -1, -1);
         try
         {
             if (!_gameData.FileExists(mtrlPath)) { LastTrace.Add($"  mtrl missing: {mtrlPath}"); cache[cacheKey] = result; return result; }
@@ -388,6 +388,7 @@ public sealed class ModelExportService
             // material's color table, and WHICH row applies per-pixel comes from the id texture
             // (Red = ramp position, Green = A/B blend — see MaterialColorTable.BakeDiffuse). Bake
             // a real diffuse texture when we have an id map; a flat colorset average otherwise.
+            var metalRoughIndex = -1;
             if (texIndex < 0 && mtrlRaw != null)
             {
                 var idPath = MaterialTexturePaths(mtrl).FirstOrDefault(p => p.EndsWith("_id.tex"));
@@ -407,6 +408,15 @@ public sealed class ModelExportService
                         texIndex = pngs.Count;
                         pngs.Add(png);
                         LastTrace.Add($"  colorset BAKED via {idPath} ({idTex.Header.Width}x{idTex.Header.Height})");
+                        // metal trim/buckles have real per-row Metalness/Roughness in the color table
+                        // that was never read before (see MaterialColorTable.BakeMetallicRoughness).
+                        var metalRough = Penumbra.GameData.Files.MaterialColorTable.BakeMetallicRoughness(mtrlRaw.Data, idTex.ImageData, idTex.Header.Width, idTex.Header.Height);
+                        if (metalRough != null)
+                        {
+                            var mrPng = PngEncoder.EncodeRgba(metalRough, idTex.Header.Width, idTex.Header.Height);
+                            metalRoughIndex = pngs.Count;
+                            pngs.Add(mrPng);
+                        }
                     }
                 }
                 // hair.shpk has no colorset at all — it derives strand color from the mask texture
@@ -458,7 +468,7 @@ public sealed class ModelExportService
                 }
             }
 
-            result = (texIndex, colorSetTint, normalIndex);
+            result = (texIndex, colorSetTint, normalIndex, metalRoughIndex);
         }
         catch (Exception ex) { LastTrace.Add($"  mtrl exception: {ex.Message}"); }
         cache[cacheKey] = result;
