@@ -457,13 +457,30 @@ public sealed class WebUiService : IDisposable
                     var gender = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.Gender];
                     var skinColorIdx = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.SkinColor];
                     var hairColorIdx = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.HairColor];
-                    // ponytail: the game's own character-creation color table (human.cmp), indexed
-                    // by the live swatch selection — authoritative base color, no memory reverse-
-                    // engineering. Glamourer's IPC can override per-channel on TOP of this when the
-                    // player actually customized further via Advanced Customization (its own "Apply"
+                    var swatchSrc = "own";
+                    // ponytail: our own memory read (pc.Customize) and Glamourer's own tracked state
+                    // diverged for a real character (skinIdx 127 vs Glamourer's displayed 112) —
+                    // confirmed real, not a UI-translation artifact: Glamourer's color picker button
+                    // literally prints "{_customize[index].Value}" (Gui/Customization/
+                    // CustomizationDrawer.Color.cs), the same raw byte convention we use. Glamourer
+                    // actively manages/reapplies appearance for characters it has a design/state on,
+                    // so ITS tracked byte is what actually got painted — prefer it when available.
+                    try
+                    {
+                        if (_glamourerColors.GetCustomizeBytes(pc.ObjectIndex) is { } gb)
+                        {
+                            tribe = gb.Clan; gender = gb.Gender; skinColorIdx = gb.SkinColor; hairColorIdx = gb.HairColor;
+                            swatchSrc = "glamourer";
+                        }
+                    }
+                    catch (Exception ex) { _log.Warning($"[WebUi] Glamourer customize-byte read failed: {ex.Message}"); }
+                    // the game's own character-creation color table (human.cmp), indexed by the
+                    // swatch selection above — authoritative base color, no memory reverse-
+                    // engineering. Glamourer's Parameters IPC can override per-channel on TOP of this
+                    // when the player customized further via Advanced Customization (its own "Apply"
                     // flag, not just a placeholder — see GlamourerColorIpc's doc comment for why
                     // blindly trusting IPC without that flag produced garbage before).
-                    var debugSrc = $"tribe={tribe} gender={gender} skinIdx={skinColorIdx} hairIdx={hairColorIdx} rawCustomize=[{string.Join(",", c.ToArray())}]";
+                    var debugSrc = $"tribe={tribe} gender={gender} skinIdx={skinColorIdx} hairIdx={hairColorIdx} swatchSrc={swatchSrc} rawCustomize=[{string.Join(",", c.ToArray())}]";
                     try
                     {
                         colors = ModelExport.CmpColorReader.Read(_modelExportGameData, tribe, gender, skinColorIdx, hairColorIdx);

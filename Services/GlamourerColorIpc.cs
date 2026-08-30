@@ -73,4 +73,33 @@ public class GlamourerColorIpc
         if (r == null || g == null || b == null) return null;
         return new[] { r.Value, g.Value, b.Value };
     }
+
+    /// <summary>Raw Customize array bytes (Clan/Gender/SkinColor/HairColor) straight from
+    /// Glamourer's own tracked state, not our own memory read of IPlayerCharacter.Customize.
+    /// Needed because the two diverged for a real character: Glamourer actively manages/reapplies
+    /// appearance for characters it has a design/state on, and its own tracked byte can differ from
+    /// what Dalamud's live read reports at any given moment — Glamourer's own color picker (see
+    /// Gui/Customization/CustomizationDrawer.Color.cs: "{_customize[index].Value}") shows exactly
+    /// this value, so it's what the player actually sees. Null on failure/unavailable.</summary>
+    public (byte Clan, byte Gender, byte SkinColor, byte HairColor)? GetCustomizeBytes(int objectIndex)
+    {
+        if (_getState == null) return null;
+        try
+        {
+            var (ec, state) = _getState.Invoke(objectIndex);
+            if (ec != GlamourerApiEc.Success || state == null) return null;
+
+            var customize = state["Customize"];
+            if (customize == null) return null;
+
+            byte? Value(string key) => customize[key]?["Value"]?.Value<byte>();
+            var clan = Value("Clan");
+            var gender = Value("Gender");
+            var skin = Value("SkinColor");
+            var hair = Value("HairColor");
+            if (clan == null || gender == null || skin == null || hair == null) return null;
+            return (clan.Value, gender.Value, skin.Value, hair.Value);
+        }
+        catch { return null; }
+    }
 }
