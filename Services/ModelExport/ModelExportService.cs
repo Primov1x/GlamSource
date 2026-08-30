@@ -498,14 +498,17 @@ public sealed class ModelExportService
     /// else in this exporter, which always had SOME working reference to check against). This is a
     /// known-approximate stand-in, not a decode: blends the customize main/highlight hair colors by
     /// the mask's green channel, so highlighted strands read as a distinguishable tone from the base
-    /// instead of one flat blob. Output is the mask's resolution, RGBA8, alpha forced opaque.</summary>
+    /// instead of one flat blob. Output is the mask's resolution, RGBA8, alpha forced opaque.
+    /// Weight is inverted (1-green): confirmed via the raw-texture debug view that green-channel-high
+    /// covers most of the background (rendering mostly-highlight/gray) while the actual strand detail
+    /// sits in the low-green regions — backwards from "mostly base color, highlight on the strands".</summary>
     private static byte[] BakeHairMask(byte[] maskRgba, int width, int height, float[] mainTint, float[] highlightTint)
     {
         var result = new byte[width * height * 4];
         for (var p = 0; p < width * height; p++)
         {
             var o = p * 4;
-            var weight = maskRgba[o + 1] / 255f;
+            var weight = 1f - maskRgba[o + 1] / 255f;
             result[o + 0] = (byte)Math.Clamp((mainTint[0] + (highlightTint[0] - mainTint[0]) * weight) * 255f, 0f, 255f);
             result[o + 1] = (byte)Math.Clamp((mainTint[1] + (highlightTint[1] - mainTint[1]) * weight) * 255f, 0f, 255f);
             result[o + 2] = (byte)Math.Clamp((mainTint[2] + (highlightTint[2] - mainTint[2]) * weight) * 255f, 0f, 255f);
