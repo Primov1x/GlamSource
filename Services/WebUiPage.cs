@@ -278,7 +278,7 @@ async function loadPreview3DDebug(){
     if(!p3dDragging&&!p3dPanning)return;
     const dx=e.clientX-p3dLastX, dy=e.clientY-p3dLastY;
     p3dLastX=e.clientX;p3dLastY=e.clientY;
-    if(p3dPanning) post(`/api/action/preview3d/pan?dx=${(dx*0.01).toFixed(4)}&dy=${(dy*0.01).toFixed(4)}`);
+    if(p3dPanning) post(`/api/action/preview3d/pan?dx=${(dx*0.75).toFixed(2)}&dy=${(dy*0.75).toFixed(2)}`);
     else post(`/api/action/preview3d/rotate?dx=${(dx*0.75).toFixed(2)}&dy=${(dy*0.75).toFixed(2)}`);
   });
   canvas.addEventListener('wheel',e=>{
