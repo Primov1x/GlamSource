@@ -54,8 +54,23 @@ public sealed unsafe class PreviewRenderer : IDisposable
     private int _snapshotClearGrace;
     private const int SnapshotClearGraceFrames = 5;
 
-    /// <summary>Suspend/resume per-frame CopyFromCharacter. Set true while direct slot writes own the view.</summary>
-    public void SuspendCharacterCopy(bool suspend) => _suspendCharacterCopy = suspend;
+    /// <summary>Suspend/resume per-frame CopyFromCharacter. Set true while direct slot writes own the view.
+    /// Also flips TryonCharaView.DoUpdate — reported live: suspending our own CopyFromCharacter calls
+    /// alone didn't freeze anything visually, the character kept animating. GetCharacter() likely
+    /// keeps returning a pointer straight at the LIVE, still-animating player object regardless of
+    /// whether WE re-copy from it — Update(counter, ch) then naturally re-syncs from that live object
+    /// every call. DoUpdate is a real field on TryonCharaView (found via reflection against the
+    /// actual FFXIVClientStructs.dll, not guessed) whose name strongly suggests it gates whether
+    /// CharaView advances/re-syncs its own state at all — untested until now whether it actually
+    /// achieves a visual freeze or also freezes camera response; that's exactly what this call is for.</summary>
+    public void SuspendCharacterCopy(bool suspend)
+    {
+        _suspendCharacterCopy = suspend;
+        if (!_initialized) return;
+        var agent = AgentTryon.Instance();
+        if (agent == null) return;
+        agent->CharaView.DoUpdate = !suspend;
+    }
 
     /// <summary>Register a snapshot callback invoked each Tick. Returns EquipmentSlots to overlay on the self body,
     /// or null for pure self view. Framework thread.</summary>
