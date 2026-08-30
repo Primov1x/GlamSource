@@ -67,7 +67,7 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 .slot img{width:32px;height:32px;border-radius:5px}
 .slot .g{color:var(--success);font-size:12px}
 .slot .s{color:var(--muted);font-size:11px}
-#preview3d{background:transparent;border:1px solid var(--border);border-radius:8px;margin-bottom:14px;cursor:grab;display:none;width:100%;max-width:480px;height:auto;object-fit:contain}
+#preview3d{background:transparent;border:0;margin-bottom:14px;cursor:grab;display:none;width:100%;height:70vh;object-fit:contain}
 #preview3d.active{cursor:grabbing}
 #preview3d.panning{cursor:ns-resize}
 #p3dspin.active{color:var(--accent);font-weight:600}
