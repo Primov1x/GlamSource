@@ -457,10 +457,19 @@ public sealed class WebUiService : IDisposable
             // first live run is diagnosable here instead of squinting at the video feed.
             var renderer = _shell.PreviewWindow?.Renderer;
             var stats = renderer?.GetWebCaptureStats();
+            // ponytail: "nicht ganz nah... stopp wie vanilla?" — reads live camera distance
+            // (touches game memory, so it goes through the framework thread like ResolveModelInputs
+            // does, same established pattern) to tell "hit MY 20.0 zoom clamp" from "native camera
+            // distance floor, same as vanilla Examine/Fitting Room" apart.
+            float? cameraDistance = null;
+            try { cameraDistance = _framework.RunOnFrameworkThread(() => renderer?.GetCameraDistance()).GetAwaiter().GetResult(); }
+            catch { /* best-effort diagnostic field */ }
             return Json(new
             {
                 enabled = _configuration.WebUiLive3DPreview,
                 rendererInitialized = renderer?.IsInitialized ?? false,
+                zoom = renderer?.Zoom,
+                cameraDistance,
                 stagingReady = stats?.StagingReady ?? false,
                 stagingWidth = stats?.StagingWidth ?? 0,
                 stagingHeight = stats?.StagingHeight ?? 0,

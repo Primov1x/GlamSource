@@ -399,6 +399,20 @@ public sealed unsafe class PreviewRenderer : IDisposable
         agent->CharaView.SetCameraDistance(dist * (current / target - 1f));
     }
 
+    /// <summary>Live camera distance (world units) and whether the last SetZoom actually moved it —
+    /// for diagnosing "does it stop at MY 20.0 clamp or hit some native floor first" (reported live:
+    /// "nicht ganz nah... stopp wie vanilla?"). Framework thread. Null if not ready to read.</summary>
+    public float? GetCameraDistance()
+    {
+        if (!_initialized) return null;
+        var agent = AgentTryon.Instance();
+        if (agent == null) return null;
+        var cam = agent->CharaView.Camera;
+        if (cam == null) return null;
+        var d = cam->Position - cam->LookAtVector;
+        return MathF.Sqrt(d.X * d.X + d.Y * d.Y + d.Z * d.Z);
+    }
+
     /// <summary>Pan the camera by a screen-space delta. Used for zoom-to-cursor. Framework thread.</summary>
     public void PanCamera(float deltaX, float deltaY)
     {
