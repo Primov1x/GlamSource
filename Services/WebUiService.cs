@@ -39,6 +39,12 @@ public sealed class WebUiService : IDisposable
     // dictionary because writes happen on the framework thread while reads happen on arbitrary
     // HTTP worker threads. In-memory only, resets on plugin reload (re-populates within seconds).
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, ModelExport.SkeletonPose> _savedPoses = new();
+    // ponytail: web-driven hypothetical gear preview for the CharaView MJPEG stream — separate from
+    // the live "whatever you're actually wearing" default (empty = show that, existing behavior).
+    // Reuses GlamourPreviewWindow's existing SetSnapshotProvider/SetEquipmentSnapshot plumbing
+    // (already used by the ImGui window's hover-preview) instead of inventing a second path —
+    // CharaView reads real per-slot overlay data the same way either caller feeds it.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<EquipmentSlotType, EquipmentSlot> _webPreviewGear = new();
     private TcpListener? _listener;
     private TcpListener? _listener6;
     private CancellationTokenSource? _cts;
@@ -346,6 +352,29 @@ public sealed class WebUiService : IDisposable
             return Json(new { ok = true });
         }
 
+        if (method == "POST" && path == "/api/action/preview3d/setitem" && _configuration.WebUiLive3DPreview
+            && Enum.TryParse<EquipmentSlotType>(query["slot"], out var setSlot)
+            && uint.TryParse(query["itemId"], out var setItemId))
+        {
+            byte.TryParse(query["stain0"], out var setStain0);
+            byte.TryParse(query["stain1"], out var setStain1);
+            // ponytail: display names are cosmetic-only for CharaView (it renders from ItemId/stains,
+            // not the strings) — empty is fine, nothing here reads EquipmentSlot.ActualItemName back.
+            _webPreviewGear[setSlot] = new EquipmentSlot(setSlot, setItemId, "", null, null, Stain0: setStain0, Stain1: setStain1);
+            // Re-register every call instead of once at construction — GlamourPreviewWindow may not
+            // be fully wired yet at WebUiService construction time, and SetSnapshotProvider itself
+            // handles "already registered" cheaply (ensures init, then a plain field write).
+            _shell.PreviewWindow?.SetSnapshotProvider(() => _webPreviewGear.IsEmpty ? null : _webPreviewGear.Values.ToList());
+            return Json(new { ok = true, slots = _webPreviewGear.Count });
+        }
+
+        if (method == "POST" && path == "/api/action/preview3d/cleargear" && _configuration.WebUiLive3DPreview)
+        {
+            _webPreviewGear.Clear();
+            _shell.PreviewWindow?.SetSnapshotProvider(null);
+            return Json(new { ok = true });
+        }
+
         if (method == "GET" && path == "/api/model3d/debug")
         {
             var (dbgSlots, dbgChara, dbgPose, dbgColors) = ResolveModelInputs();
@@ -458,6 +487,7 @@ public sealed class WebUiService : IDisposable
             available = new[]
             {
                 "GET /", "GET /api/search?q=", "GET /api/item/{id}", "GET /api/snapshot", "GET /api/preview3d/stream",
+                "POST /api/action/preview3d/setitem?slot=&itemId=&stain0=&stain1=", "POST /api/action/preview3d/cleargear",
                 "POST /api/action/craftlog/{id}", "POST /api/action/dutyfinder/{cfc}",
                 "POST /api/action/map?territory=&map=&x=&y=",
             },
