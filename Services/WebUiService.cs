@@ -502,7 +502,15 @@ public sealed class WebUiService : IDisposable
                             // ~unchanged. Replacing outright wiped out the real cmp-derived skin tone
                             // and left the raw undyed base texture's blue-gray tint showing through —
                             // the very first bug this whole saga started with.
-                            static float[] Mul(float[] baseC, float[]? f) => f == null
+                            // Second wrinkle, same trace: HairDiffuse came back Apply=true but
+                            // (0,0,0) — multiplying by that blacks out hair entirely. Same tell as
+                            // the near-white skin default: a degenerate multiplier (~0 or ~1 on every
+                            // channel) means "Apply is true but nothing was actually customized", not
+                            // a real value — skip applying it in that case.
+                            static bool IsDegenerate(float[] f) =>
+                                (f[0] < 0.02f && f[1] < 0.02f && f[2] < 0.02f) ||
+                                (f[0] > 0.98f && f[1] > 0.98f && f[2] > 0.98f);
+                            static float[] Mul(float[] baseC, float[]? f) => f == null || IsDegenerate(f)
                                 ? baseC
                                 : new[] { baseC[0] * f[0], baseC[1] * f[1], baseC[2] * f[2] };
                             colors = baseColors with
