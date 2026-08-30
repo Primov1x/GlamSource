@@ -495,6 +495,20 @@ public sealed unsafe class PreviewRenderer : IDisposable
     // eaten too. Known, accepted limitation — this is for looking at, not a finished feature.
     private bool _transparentBackdropEnabled;
 
+    // ponytail: "es reicht auch eine Standaufnahme, der Char muss sich nicht aktiv bewegen" —
+    // don't spend GPU/CPU capturing a smooth video nobody's watching. Full-rate (EncodeThrottleMs)
+    // only for a short window after an actual camera action (rotate/pan/zoom/auto-spin); otherwise
+    // a static, occasionally-refreshed frame is all that's needed. Auto-spin re-touches this every
+    // ~50ms while running, so it naturally stays full-rate throughout a spin.
+    private long _lastInteractionMs;
+    private const long InteractionWindowMs = 600;
+    private const long IdleEncodeThrottleMs = 1000; // ~1fps while nobody's touching the camera
+
+    /// <summary>Call from any camera-changing web action (rotate/pan/zoom/setitem/auto-spin tick) to
+    /// keep the capture rate at full speed for a bit — see the fields above for why idle otherwise
+    /// drops to ~1fps instead of running a live video nobody asked for.</summary>
+    public void NotifyInteraction() => _lastInteractionMs = Environment.TickCount64;
+
     /// <summary>Toggle the experimental transparent-backdrop chroma-key. See the field's own comment
     /// for why it's naive and what it'll get wrong. Thread-safe plain bool write.</summary>
     public void SetTransparentBackdrop(bool enabled) => _transparentBackdropEnabled = enabled;
@@ -658,7 +672,8 @@ public sealed unsafe class PreviewRenderer : IDisposable
 
         // 1) drain whichever pending buffer's GPU copy has actually finished — at most one encode
         // per Draw() call (matches EncodeThrottleMs's intent: cap encode cost, not skip it entirely).
-        if (now - _lastEncodeTickMs >= EncodeThrottleMs)
+        var effectiveThrottleMs = now - _lastInteractionMs < InteractionWindowMs ? EncodeThrottleMs : IdleEncodeThrottleMs;
+        if (now - _lastEncodeTickMs >= effectiveThrottleMs)
         {
             for (var i = 0; i < WebStagingBufferCount; i++)
             {

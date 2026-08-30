@@ -275,6 +275,10 @@ public sealed class WebUiService : IDisposable
         _streamActive = true;
         _streamSessionStartMs = swStart;
         _streamSessionFrames = 0;
+        // ponytail: full-rate capture right away instead of waiting up to IdleEncodeThrottleMs for
+        // the first frame — opening the Character tab should feel instant, not laggy-until-idle-
+        // window-expires.
+        _shell.PreviewWindow?.Renderer.NotifyInteraction();
         _log.Information("[WebUi] preview3d/stream connected");
         try
         {
@@ -372,6 +376,7 @@ public sealed class WebUiService : IDisposable
             && float.TryParse(query["dx"], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var dyaw)
             && float.TryParse(query["dy"], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var dpitch))
         {
+            _shell.PreviewWindow?.Renderer.NotifyInteraction();
             _framework.RunOnFrameworkThread(() => _shell.PreviewWindow?.Renderer.SetYawPitch(dyaw, dpitch));
             return Json(new { ok = true });
         }
@@ -379,6 +384,7 @@ public sealed class WebUiService : IDisposable
         if (method == "POST" && path == "/api/action/preview3d/zoom" && _configuration.WebUiLive3DPreview
             && float.TryParse(query["delta"], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var zoomDelta))
         {
+            _shell.PreviewWindow?.Renderer.NotifyInteraction();
             _framework.RunOnFrameworkThread(() =>
             {
                 var renderer = _shell.PreviewWindow?.Renderer;
@@ -401,6 +407,7 @@ public sealed class WebUiService : IDisposable
             // — direct PanCamera call, independent of zoomat's zoom-triggered pan. Right-click-drag
             // on the client (see WebUiPage.cs) — makes sense mainly once zoomed in, since yaw/pitch
             // alone can't look at a DIFFERENT point on the model without re-centering first.
+            _shell.PreviewWindow?.Renderer.NotifyInteraction();
             _framework.RunOnFrameworkThread(() => _shell.PreviewWindow?.Renderer.PanCamera(panDx, panDy));
             return Json(new { ok = true });
         }
@@ -417,6 +424,7 @@ public sealed class WebUiService : IDisposable
             // back toward center, not keep pushing further off-axis. Pan scale is untuned/guessed,
             // same as the existing rotate/zoom handlers' own constants — tune live if it feels off.
             // Multiplicative zoom step — see /zoom's comment just above for why.
+            _shell.PreviewWindow?.Renderer.NotifyInteraction();
             _framework.RunOnFrameworkThread(() =>
             {
                 var renderer = _shell.PreviewWindow?.Renderer;
@@ -451,6 +459,7 @@ public sealed class WebUiService : IDisposable
             // be fully wired yet at WebUiService construction time, and SetSnapshotProvider itself
             // handles "already registered" cheaply (ensures init, then a plain field write).
             _shell.PreviewWindow?.SetSnapshotProvider(() => _webPreviewGear.IsEmpty ? null : _webPreviewGear.Values.ToList());
+            _shell.PreviewWindow?.Renderer.NotifyInteraction(); // show the new item promptly, don't wait for the idle throttle
             _log.Information($"[WebUi] preview3d setitem: slot={setSlot} itemId={setItemId} stain0={setStain0} stain1={setStain1} (now {_webPreviewGear.Count} slot(s) overridden)");
             return Json(new { ok = true, slots = _webPreviewGear.Count });
         }
@@ -459,6 +468,7 @@ public sealed class WebUiService : IDisposable
         {
             _webPreviewGear.Clear();
             _shell.PreviewWindow?.SetSnapshotProvider(null);
+            _shell.PreviewWindow?.Renderer.NotifyInteraction();
             _log.Information("[WebUi] preview3d cleargear — back to live self-worn gear");
             return Json(new { ok = true });
         }
@@ -474,6 +484,7 @@ public sealed class WebUiService : IDisposable
             _webPreviewGear.Clear();
             _shell.PreviewWindow?.SetSnapshotProvider(null);
             _shell.PreviewWindow?.ForceReinitializeForSelf();
+            _shell.PreviewWindow?.Renderer.NotifyInteraction();
             _log.Information("[WebUi] preview3d/reset — forced Release()+Initialize()");
             return Json(new { ok = true });
         }
