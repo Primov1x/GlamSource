@@ -343,7 +343,8 @@ public sealed class WebUiService : IDisposable
             for (var i = 0; i < _modelExport.LastTextures.Count; i++)
             {
                 var b64 = Convert.ToBase64String(_modelExport.LastTextures[i]);
-                sb.Append($"<div style='margin-bottom:12px'>tex={i}<br><img src='data:image/png;base64,{b64}' style='max-width:400px;image-rendering:pixelated;border:1px solid #666'></div>");
+                var label = i < _modelExport.LastTextureLabels.Count ? System.Net.WebUtility.HtmlEncode(_modelExport.LastTextureLabels[i]) : "";
+                sb.Append($"<div style='margin-bottom:12px'>tex={i} — {label}<br><img src='data:image/png;base64,{b64}' style='max-width:400px;image-rendering:pixelated;border:1px solid #666'></div>");
             }
             return ("200 OK", "text/html; charset=utf-8", Encoding.UTF8.GetBytes(sb.ToString()));
         }
@@ -498,6 +499,20 @@ public sealed class WebUiService : IDisposable
                             }
                         }
                         catch (Exception ex) { _log.Warning($"[WebUi] highlight color read failed: {ex.Message}"); }
+                    }
+                    // ponytail: the iris material's own base texture is a neutral grayscale — same
+                    // situation as skin's base.tex — and needs this tint or it renders white/gray
+                    // instead of the character's actual eye color. Right eye only for now (left can
+                    // differ via EyeColor2, but the model's two eye submeshes share one material).
+                    if (colors != null)
+                    {
+                        try
+                        {
+                            var eyeIdx = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.EyeColor];
+                            var eye = ModelExport.CmpColorReader.ReadEyeColor(_modelExportGameData, eyeIdx);
+                            if (eye != null) colors = colors.Value with { Eye = eye };
+                        }
+                        catch (Exception ex) { _log.Warning($"[WebUi] eye color read failed: {ex.Message}"); }
                     }
                     var face = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.FaceType];
                     var hair = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.HairStyle];

@@ -54,6 +54,11 @@ public sealed class ModelExportService
     /// render or a lossy screenshot when a color looks wrong.</summary>
     public List<byte[]> LastTextures { get; } = new();
 
+    /// <summary>Parallel to <see cref="LastTextures"/> — a short human-readable label (material path
+    /// + what was baked) for each texture, so the raw-texture debug view doesn't leave the user
+    /// cross-referencing "tex=N" against the trace by hand.</summary>
+    public List<string> LastTextureLabels { get; } = new();
+
     /// <summary>Build a GLB containing all equipment models for the given slots. Returns null when
     /// nothing could be resolved.</summary>
     public byte[]? BuildGlb(IReadOnlyList<EquipmentSlot> slots, CharacterModelInfo? chara = null, bool bypassCache = false, SkeletonPose? pose = null, CustomizeColors? colors = null)
@@ -61,6 +66,7 @@ public sealed class ModelExportService
         bypassCache = bypassCache || pose != null; // live pose changes every capture — never cache it
         LastTrace.Clear();
         LastTextures.Clear();
+        LastTextureLabels.Clear();
         LastTrace.Add($"slots in: {slots.Count}, chara: {chara?.RaceCode ?? "none"}");
         if (pose != null)
         {
@@ -383,6 +389,7 @@ public sealed class ModelExportService
                     var png = PngEncoder.EncodeRgba(pixels, tex.Header.Width, tex.Header.Height);
                     texIndex = pngs.Count;
                     pngs.Add(png);
+                    LastTextureLabels.Add($"{mtrlPath} (picked diffuse: {texPath})");
                 }
                 else LastTrace.Add($"  tex GetFile null: {texPath}");
             }
@@ -423,6 +430,7 @@ public sealed class ModelExportService
                         var png = PngEncoder.EncodeRgba(baked, idTex!.Header.Width, idTex.Header.Height);
                         texIndex = pngs.Count;
                         pngs.Add(png);
+                        LastTextureLabels.Add($"{mtrlPath} (colorset baked via {idPath})");
                         LastTrace.Add($"  colorset BAKED via {idPath} ({idTex.Header.Width}x{idTex.Header.Height})");
                         // metal trim/buckles have real per-row Metalness/Roughness in the color table
                         // that was never read before (see MaterialColorTable.BakeMetallicRoughness).
@@ -432,6 +440,7 @@ public sealed class ModelExportService
                             var mrPng = PngEncoder.EncodeRgba(metalRough, idTex.Header.Width, idTex.Header.Height);
                             metalRoughIndex = pngs.Count;
                             pngs.Add(mrPng);
+                            LastTextureLabels.Add($"{mtrlPath} (metal/roughness)");
                         }
                     }
                 }
@@ -459,6 +468,7 @@ public sealed class ModelExportService
                                 var png = PngEncoder.EncodeRgba(baked, hairNormTex.Header.Width, hairNormTex.Header.Height);
                                 texIndex = pngs.Count;
                                 pngs.Add(png);
+                                LastTextureLabels.Add($"{mtrlPath} (hair strand bake)");
                                 LastTrace.Add($"  hair strand BAKED via {hairNormPath}+{maskPath} ({hairNormTex.Header.Width}x{hairNormTex.Header.Height})");
                             }
                         }
@@ -487,6 +497,7 @@ public sealed class ModelExportService
                                 var png = PngEncoder.EncodeRgba(baked, decalNormTex.Header.Width, decalNormTex.Header.Height);
                                 texIndex = pngs.Count;
                                 pngs.Add(png);
+                                LastTextureLabels.Add($"{mtrlPath} (decal bake)");
                                 LastTrace.Add($"  decal BAKED via {decalNormPath} ({decalNormTex.Header.Width}x{decalNormTex.Header.Height})");
                             }
                         }
@@ -513,6 +524,7 @@ public sealed class ModelExportService
                     var png = PngEncoder.EncodeRgba(decoded, nTex.Header.Width, nTex.Header.Height);
                     normalIndex = pngs.Count;
                     pngs.Add(png);
+                    LastTextureLabels.Add($"{mtrlPath} (normal map: {normalPath})");
                 }
             }
 
