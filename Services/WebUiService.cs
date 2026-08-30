@@ -388,6 +388,18 @@ public sealed class WebUiService : IDisposable
             return Json(new { ok = true });
         }
 
+        if (method == "POST" && path == "/api/action/preview3d/pan" && _configuration.WebUiLive3DPreview
+            && float.TryParse(query["dx"], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var panDx)
+            && float.TryParse(query["dy"], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var panDy))
+        {
+            // ponytail: "wenn man ranzoomt will ich mit rechtsklick die Höhe der Kamera verstellen"
+            // — direct PanCamera call, independent of zoomat's zoom-triggered pan. Right-click-drag
+            // on the client (see WebUiPage.cs) — makes sense mainly once zoomed in, since yaw/pitch
+            // alone can't look at a DIFFERENT point on the model without re-centering first.
+            _framework.RunOnFrameworkThread(() => _shell.PreviewWindow?.Renderer.PanCamera(panDx, panDy));
+            return Json(new { ok = true });
+        }
+
         if (method == "POST" && path == "/api/action/preview3d/zoomat" && _configuration.WebUiLive3DPreview
             && float.TryParse(query["delta"], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var zoomAtDelta)
             && float.TryParse(query["px"], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var zoomAtPx)

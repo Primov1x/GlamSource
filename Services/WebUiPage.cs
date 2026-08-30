@@ -67,8 +67,9 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 .slot img{width:32px;height:32px;border-radius:5px}
 .slot .g{color:var(--success);font-size:12px}
 .slot .s{color:var(--muted);font-size:11px}
-#preview3d{background:var(--panel);border:1px solid var(--border);border-radius:8px;margin-bottom:14px;cursor:grab;display:none;width:100%;max-width:480px;height:auto;object-fit:contain}
+#preview3d{background:transparent;border:1px solid var(--border);border-radius:8px;margin-bottom:14px;cursor:grab;display:none;width:100%;max-width:480px;height:auto;object-fit:contain}
 #preview3d.active{cursor:grabbing}
+#preview3d.panning{cursor:ns-resize}
 #p3dspin.active{color:var(--accent);font-weight:600}
 </style>
 </head>
@@ -96,10 +97,10 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 <section id="view-character" style="display:none">
   <canvas id="preview3d"></canvas>
   <div class="empty" id="p3dhint" style="display:none;font-size:12px">Click 🔓 above to lock the overlay, then drag the model to rotate.</div>
-  <div style="margin-top:2px;margin-bottom:10px">
-    <a href="#" id="p3dspin" onclick="toggleAutoSpin();return false" style="font-size:12px" title="Wie bei Online-Shops — dreht das Model automatisch. Ziehen mit der Maus stoppt es wieder.">🎠 Auto-Drehen</a>
-    · <a href="#" onclick="loadPreview3DDebug();return false" style="font-size:12px">🩺 Preview-Stream-Debug (fps, Fehler, Frame-Größe)</a>
-    · <a href="#" onclick="resetPreview3D();return false" style="font-size:12px" title="Falls das Bild feststeckt oder was Falsches zeigt (z.B. ein fremdes Portrait)">🔄 Preview zurücksetzen</a>
+  <div class="row" style="margin-top:6px;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+    <button id="p3dspin" onclick="toggleAutoSpin()" title="Wie bei Online-Shops — dreht das Model automatisch. Ziehen mit der Maus oder Zurücksetzen stoppt es wieder.">🎠 Auto-Drehen</button>
+    <button onclick="resetPreview3D()" title="Falls das Bild feststeckt oder was Falsches zeigt (z.B. ein fremdes Portrait) — stoppt auch Auto-Drehen">🔄 Preview zurücksetzen</button>
+    <a href="#" onclick="loadPreview3DDebug();return false" style="font-size:12px">🩺 Preview-Stream-Debug (fps, Fehler, Frame-Größe)</a>
     <pre id="p3ddebug" style="display:none;font-size:11px;background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:8px;margin-top:6px;white-space:pre-wrap"></pre>
   </div>
   <div class="empty" id="snapinfo">Loading…</div>
@@ -166,12 +167,17 @@ let p3dSpinTimer=null;
 function toggleAutoSpin(){ p3dSpinTimer?stopAutoSpin():startAutoSpin() }
 function startAutoSpin(){
   stopAutoSpin();
-  $('#p3dspin').classList.add('active');
+  const btn=$('#p3dspin');
+  btn.classList.add('active');
+  btn.textContent='⏹️ Drehen stoppen';
   p3dSpinTimer=setInterval(()=>post('/api/action/preview3d/rotate?dx=3&dy=0'),50);
 }
 function stopAutoSpin(){
   if(p3dSpinTimer){clearInterval(p3dSpinTimer);p3dSpinTimer=null}
-  $('#p3dspin')?.classList.remove('active');
+  const btn=$('#p3dspin');
+  if(!btn)return;
+  btn.classList.remove('active');
+  btn.textContent='🎠 Auto-Drehen';
 }
 
 function findBytes(hay,needle,from){
@@ -225,6 +231,7 @@ async function runPreview3DStream(signal){
 }
 
 async function resetPreview3D(){
+  stopAutoSpin();
   await post('/api/action/preview3d/reset');
   startPreview3D(); // reconnect the stream — the old one keeps serving frames until reset lands
 }
@@ -239,13 +246,24 @@ async function loadPreview3DDebug(){
 
 (function initPreview3DDrag(){
   const canvas=$('#preview3d');
-  canvas.addEventListener('mousedown',e=>{stopAutoSpin();p3dDragging=true;p3dLastX=e.clientX;p3dLastY=e.clientY;canvas.classList.add('active')});
-  window.addEventListener('mouseup',()=>{p3dDragging=false;canvas.classList.remove('active')});
+  let p3dPanning=false;
+  // right-click-drag = pan (move where the camera looks, useful once zoomed in — orbiting alone
+  // can't shift to a different point on the model); left-drag stays rotate. Suppress the browser's
+  // own right-click menu on the canvas, it'd otherwise fire on every pan attempt.
+  canvas.addEventListener('contextmenu',e=>e.preventDefault());
+  canvas.addEventListener('mousedown',e=>{
+    stopAutoSpin();
+    p3dLastX=e.clientX;p3dLastY=e.clientY;
+    if(e.button===2){p3dPanning=true;canvas.classList.add('panning')}
+    else{p3dDragging=true;canvas.classList.add('active')}
+  });
+  window.addEventListener('mouseup',()=>{p3dDragging=false;p3dPanning=false;canvas.classList.remove('active','panning')});
   window.addEventListener('mousemove',e=>{
-    if(!p3dDragging)return;
+    if(!p3dDragging&&!p3dPanning)return;
     const dx=e.clientX-p3dLastX, dy=e.clientY-p3dLastY;
     p3dLastX=e.clientX;p3dLastY=e.clientY;
-    post(`/api/action/preview3d/rotate?dx=${(dx*0.75).toFixed(2)}&dy=${(dy*0.75).toFixed(2)}`);
+    if(p3dPanning) post(`/api/action/preview3d/pan?dx=${(dx*0.01).toFixed(4)}&dy=${(dy*0.01).toFixed(4)}`);
+    else post(`/api/action/preview3d/rotate?dx=${(dx*0.75).toFixed(2)}&dy=${(dy*0.75).toFixed(2)}`);
   });
   canvas.addEventListener('wheel',e=>{
     e.preventDefault();
