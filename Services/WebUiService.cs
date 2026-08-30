@@ -427,6 +427,7 @@ public sealed class WebUiService : IDisposable
                 lastFrameBytes = stats?.LastFrameBytes ?? 0,
                 lastEncodeDurationMs = stats?.LastEncodeDurationMs ?? 0,
                 lastError = stats?.LastError,
+                nativeUiOwnsSlot = stats?.NativeUiOwnsSlot ?? false,
                 latestFrameAvailable = renderer?.LatestWebJpeg != null,
                 previewGearOverrideSlots = _webPreviewGear.Keys.Select(s => s.ToString()).ToArray(),
                 // the actual "is it smooth" answer, no /xllog needed — live while a stream is

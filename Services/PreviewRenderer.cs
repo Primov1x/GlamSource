@@ -38,6 +38,9 @@ public sealed unsafe class PreviewRenderer : IDisposable
     // ponytail: when true, Tick() skips CopyFromCharacter so direct ModelData writes
     // drive the CharaView render. Cleared on Recent revert.
     private bool _suspendCharacterCopy;
+    // ponytail: true while a native UI (Fitting Room/Glamour Plate editor) owns the shared
+    // AgentTryon/CharaView slot instead of us — see the IsAgentActive() check in Tick().
+    private bool _nativeUiOwnsSlot;
     // ponytail: pending warmup — Initialize(0) queues it; Tick() resolves a real equipped
     // ItemId from the live source's DrawData each frame until AgentTryon activates.
     private bool _retryWarmup;
@@ -244,6 +247,28 @@ public sealed unsafe class PreviewRenderer : IDisposable
         var agent = AgentTryon.Instance();
         if (agent == null) return;
 
+        // Real conflict, seen live: the game's own Glamour Plate editor (and Fitting Room) drive
+        // this SAME AgentTryon instance/CharaView slot. We deliberately keep our own usage
+        // INACTIVE (see DoInitialize's comment) specifically so IsAgentActive() staying true means
+        // "something else — a native UI — has taken this over". When that happens, back off
+        // entirely: don't write ModelData/items (would fight the native UI's own writes) and don't
+        // Update/Render (it's already driving that). Otherwise our web capture just keeps serving
+        // whatever that native UI put in the shared texture — reported live as "the Character tab
+        // showed a stranger's Glamour Plate" with no repro (it's not ours, it's just an honest
+        // capture of a slot someone else briefly owns).
+        if (agent->AgentInterface.IsAgentActive())
+        {
+            if (!_nativeUiOwnsSlot) _log.Info("[PreviewRenderer] native UI (Fitting Room/Glamour Plate) took over the CharaView slot — pausing our render/capture until it releases it");
+            _nativeUiOwnsSlot = true;
+            return;
+        }
+        if (_nativeUiOwnsSlot)
+        {
+            _log.Info("[PreviewRenderer] native UI released the CharaView slot — resuming");
+            _nativeUiOwnsSlot = false;
+            RequestRecopy(3); // force a few re-copies so our own state fully overwrites whatever it left behind
+        }
+
         // ponytail: grace countdown — hold snapshot for N frames after null-set, absorb hover-switch 0-blip
         if (_snapshotClearGrace > 0 && --_snapshotClearGrace == 0) _equipmentSnapshot = null;
 
@@ -421,13 +446,15 @@ public sealed unsafe class PreviewRenderer : IDisposable
 
     public readonly record struct WebCaptureStats(
         bool StagingReady, long FramesEncoded, long FramesSkipped, long CaptureErrors,
-        long LastFrameBytes, long LastEncodeDurationMs, string? LastError, int StagingWidth, int StagingHeight);
+        long LastFrameBytes, long LastEncodeDurationMs, string? LastError, int StagingWidth, int StagingHeight,
+        bool NativeUiOwnsSlot);
 
     /// <summary>Snapshot of the web MJPEG capture pipeline's health — thread-safe plain field reads,
     /// same as LatestWebJpeg.</summary>
     public WebCaptureStats GetWebCaptureStats() => new(
         _webStaging.Get() != null, _webFramesEncoded, _webFramesSkipped, _webCaptureErrors,
-        _lastFrameBytes, _lastEncodeDurationMs, _lastCaptureError, (int)_webStagingWidth, (int)_webStagingHeight);
+        _lastFrameBytes, _lastEncodeDurationMs, _lastCaptureError, (int)_webStagingWidth, (int)_webStagingHeight,
+        _nativeUiOwnsSlot);
 
     /// <summary>Latest JPEG-encoded frame for the web-UI MJPEG stream (see WebUiService's
     /// /api/preview3d/stream), or null if never captured / feature off. Thread-safe to read from
@@ -445,6 +472,12 @@ public sealed unsafe class PreviewRenderer : IDisposable
     public void CaptureFrameForWeb(bool enabled)
     {
         if (!enabled) { _latestWebJpeg = null; ReleaseWebStaging(); return; }
+        // Native UI (Fitting Room/Glamour Plate) currently owns the shared CharaView slot (see
+        // Tick()'s IsAgentActive() check) — capturing it would just serve their content over our
+        // stream. Stop pushing new frames (the MJPEG stream just freezes on our last real frame
+        // instead of switching to theirs); RequestRecopy(3) in Tick() catches the display back up
+        // to our own state once the native UI releases it.
+        if (_nativeUiOwnsSlot) return;
         try { PumpWebCapture(); }
         catch (Exception ex)
         {
