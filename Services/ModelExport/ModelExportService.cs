@@ -335,8 +335,13 @@ public sealed class ModelExportService
                 if (texIndex >= 0) tint = null;
                 else tint = colorSetTint ?? fallbackTint;
                 LastTrace.Add($"  {partFolder} mtrl={mtrlPath} tex={texIndex} normal={normalTex} finalTint={(tint == null ? "null" : $"{tint[0]:F2},{tint[1]:F2},{tint[2]:F2}")}");
+                // ponytail: ear outer shell is hair-tinted (see outerTint above) but was still
+                // tagged role="skin" — the skin material's warm peachy sheen dominated on the thin,
+                // mostly-edge-on ear geometry, reading as brownish even though the base color was
+                // correctly near-black. Tag it "hair" like its actual tint source.
+                var isEarShell = partFolder.StartsWith("zear/", StringComparison.Ordinal) && !mtrlName.Contains("_fac_");
                 var role = mtrlName.Contains("_iri_") ? "eye"
-                    : partFolder.StartsWith("hair/", StringComparison.Ordinal) ? "hair"
+                    : partFolder.StartsWith("hair/", StringComparison.Ordinal) || isEarShell ? "hair"
                     : partFolder.StartsWith("body/", StringComparison.Ordinal) || partFolder.StartsWith("face/", StringComparison.Ordinal) || partFolder.StartsWith("zear/", StringComparison.Ordinal) ? "skin"
                     : null;
                 pending.Add((new GltfMeshInput(m, texIndex, tint, normalTex, metalRoughTex, role), hadRealSource));
