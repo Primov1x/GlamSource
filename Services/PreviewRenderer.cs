@@ -379,7 +379,10 @@ public sealed unsafe class PreviewRenderer : IDisposable
     /// <summary>Set camera distance. 1.0 = CharaView default distance. Must be called on the Framework thread.</summary>
     public void SetZoom(float zoom)
     {
-        var target = Math.Clamp(zoom, 0.5f, 6.0f);
+        // ponytail: was capped at 6 — raised for "inspect a tiny detail" use (a 2cm zipper etc.).
+        // Untested how close is actually useful before hitting the near clip plane or the model's
+        // own polygon density becomes visibly blocky — tune this number based on how it feels live.
+        var target = Math.Clamp(zoom, 0.5f, 20.0f);
         var current = _zoom;
         _zoom = target;
         if (!_initialized || target == current) return;

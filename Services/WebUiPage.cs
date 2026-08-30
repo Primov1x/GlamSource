@@ -233,7 +233,10 @@ async function loadPreview3DDebug(){
   });
   canvas.addEventListener('wheel',e=>{
     e.preventDefault();
-    post(`/api/action/preview3d/zoom?delta=${(-e.deltaY*0.002).toFixed(3)}`);
+    const rect=canvas.getBoundingClientRect();
+    const px=((e.clientX-rect.left)/rect.width*2-1).toFixed(3); // -1..1, canvas-center-relative
+    const py=((e.clientY-rect.top)/rect.height*2-1).toFixed(3);
+    post(`/api/action/preview3d/zoomat?delta=${(-e.deltaY*0.002).toFixed(3)}&px=${px}&py=${py}`);
   },{passive:false});
 })();
 

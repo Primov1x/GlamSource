@@ -382,6 +382,27 @@ public sealed class WebUiService : IDisposable
             return Json(new { ok = true });
         }
 
+        if (method == "POST" && path == "/api/action/preview3d/zoomat" && _configuration.WebUiLive3DPreview
+            && float.TryParse(query["delta"], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var zoomAtDelta)
+            && float.TryParse(query["px"], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var zoomAtPx)
+            && float.TryParse(query["py"], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var zoomAtPy))
+        {
+            // ponytail: "zoom to a specific point" — PanCamera already existed for exactly this
+            // (its own doc comment says "used for zoom-to-cursor") but nothing ever called it. px/py
+            // are the cursor's position relative to canvas CENTER, -1..1 each axis. Only pan toward
+            // the cursor while actually zooming IN (delta>0) — zooming back out should pull the view
+            // back toward center, not keep pushing further off-axis. Pan scale is untuned/guessed,
+            // same as the existing rotate/zoom handlers' own constants — tune live if it feels off.
+            _framework.RunOnFrameworkThread(() =>
+            {
+                var renderer = _shell.PreviewWindow?.Renderer;
+                if (renderer == null) return;
+                renderer.SetZoom(renderer.Zoom + zoomAtDelta);
+                if (zoomAtDelta > 0) renderer.PanCamera(zoomAtPx * zoomAtDelta * 2f, zoomAtPy * zoomAtDelta * 2f);
+            });
+            return Json(new { ok = true });
+        }
+
         if (method == "POST" && path == "/api/action/preview3d/setitem" && _configuration.WebUiLive3DPreview
             && Enum.TryParse<EquipmentSlotType>(query["slot"], out var setSlot)
             && uint.TryParse(query["itemId"], out var setItemId))
