@@ -74,6 +74,49 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
         _clientState.Logout += OnLogout;
     }
 
+    // ponytail: CharaView._items slot ordering — mirrors GlamSourceShellWindow's own
+    // MapToCharaViewItemSlot (duplicated per that method's own comment: "to keep Renderer
+    // standalone" — same reasoning applies here). -1 = unmapped, caller skips.
+    private static int MapToCharaViewItemSlot(EquipmentSlotType s) => s switch
+    {
+        EquipmentSlotType.MainHand => 0,
+        EquipmentSlotType.OffHand => 1,
+        EquipmentSlotType.Head => 2,
+        EquipmentSlotType.Body => 3,
+        EquipmentSlotType.Hands => 4,
+        EquipmentSlotType.Legs => 6,
+        EquipmentSlotType.Feet => 7,
+        EquipmentSlotType.Earrings => 8,
+        EquipmentSlotType.Necklace => 9,
+        EquipmentSlotType.Bracelets => 10,
+        EquipmentSlotType.RingRight => 11,
+        EquipmentSlotType.RingLeft => 12,
+        _ => -1,
+    };
+
+    /// <summary>One-time direct write of the player's real worn gear into CharaView's _items array
+    /// via the canonical SetItemSlotData path — NOT SetEquipmentSnapshot (that would permanently
+    /// enable overlay mode, which stops Tick()'s per-frame ModelData.CopyFromCharacter for body/face
+    /// sync, a bigger behavior change than this fix needs). CopyFromCharacter (already called by
+    /// Initialize() right before this) only populates ModelData, never _items — the field the render
+    /// pipeline actually reads for worn gear — so a fresh Initialize() alone shows the right body/
+    /// face but stale-from-native-default (usually empty) clothes. Reported live exactly like that:
+    /// "ist mein char aber die kleidung ist nicht meine" right after a reset. Framework thread.</summary>
+    private void SeedSelfEquipmentOnce()
+    {
+        try
+        {
+            foreach (var slot in _glamour.GetSelfEquipment())
+            {
+                var slotId = MapToCharaViewItemSlot(slot.Slot);
+                if (slotId < 0) continue;
+                var itemId = slot.GlamourItemId ?? slot.ActualItemId;
+                _renderer.SetCharaViewItemSlot((byte)slotId, itemId, slot.Stain0, slot.Stain1);
+            }
+        }
+        catch (Exception ex) { _log.Warning($"[GlamourPreviewWindow] SeedSelfEquipmentOnce failed: {ex.Message}"); }
+    }
+
     /// <summary>Full Release()+re-Initialize() for self — for when CharaView is stuck showing
     /// something wrong with no self-recovery (e.g. a native UI grabbed the shared AgentTryon slot
     /// via a path IsAgentActive() doesn't catch, and never let go). Framework thread. Unlike
@@ -92,6 +135,7 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
                 return;
             }
             _renderer.Initialize((Character*)localPlayer.Address, 0, () => _objectTable.LocalPlayer?.Address ?? nint.Zero);
+            SeedSelfEquipmentOnce();
         });
         if (!_frameworkHooked)
         {
@@ -125,6 +169,7 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
         _framework.RunOnFrameworkThread(() =>
         {
             _renderer.Initialize((Character*)selfAddr, 0, () => _objectTable.LocalPlayer?.Address ?? nint.Zero);
+            SeedSelfEquipmentOnce();
         });
 
         if (!_frameworkHooked)
