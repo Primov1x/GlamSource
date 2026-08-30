@@ -288,7 +288,7 @@ async function startViewer(){
     // — a near-black dyed material (baseColorFactor ~0.12) still rendered as bright vivid color.
     // ACES + realistic light levels is the standard three.js fix for "everything looks washed out".
     renderer.toneMapping=THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure=1.25;
+    renderer.toneMappingExposure=1.55;
     renderer.outputColorSpace=THREE.SRGBColorSpace;
     box.appendChild(renderer.domElement);
     const scene=new THREE.Scene();
@@ -307,11 +307,16 @@ async function startViewer(){
     // HemisphereLight (sky/ground gradient) replaces the flat ambient for a softer base, key/fill
     // get a slight warm/cool split (matches the game's warm key + cool bounce), and key intensity
     // drops since the hemisphere now carries part of the fill duty.
-    scene.add(new THREE.HemisphereLight(0xfff4e6,0x3a3530,0.7));
-    const key=new THREE.DirectionalLight(0xfff1e0,1.05);
+    // ponytail: the previous pass overcorrected — HemisphereLight's dark ground color (0x3a3530)
+    // plus a weaker key/fill crushed the face into near-black at this close camera angle ("Horror
+    // game aus den 80ern" vs the real screenshot). Softness came from ditching hard multi-light
+    // specular, not from starving overall brightness — keep the hemisphere for the gradient feel,
+    // but lift its ground floor and put key/fill intensity back near the original working levels.
+    scene.add(new THREE.HemisphereLight(0xfff4e6,0x6b6058,0.9));
+    const key=new THREE.DirectionalLight(0xfff1e0,1.3);
     key.position.set(2,3,2.5);
     scene.add(key);
-    const fill=new THREE.DirectionalLight(0xe6eeff,0.6);
+    const fill=new THREE.DirectionalLight(0xe6eeff,0.75);
     fill.position.set(-1.5,1.2,2.5);
     scene.add(fill);
     const rim=new THREE.DirectionalLight(0xffffff,0.4);
