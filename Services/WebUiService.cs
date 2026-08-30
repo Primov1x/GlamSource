@@ -463,7 +463,7 @@ public sealed class WebUiService : IDisposable
                     // player actually customized further via Advanced Customization (its own "Apply"
                     // flag, not just a placeholder — see GlamourerColorIpc's doc comment for why
                     // blindly trusting IPC without that flag produced garbage before).
-                    var debugSrc = $"tribe={tribe} gender={gender} skinIdx={skinColorIdx} hairIdx={hairColorIdx}";
+                    var debugSrc = $"tribe={tribe} gender={gender} skinIdx={skinColorIdx} hairIdx={hairColorIdx} rawCustomize=[{string.Join(",", c.ToArray())}]";
                     try
                     {
                         colors = ModelExport.CmpColorReader.Read(_modelExportGameData, tribe, gender, skinColorIdx, hairColorIdx);
