@@ -14,8 +14,8 @@
     <IsPackable>false</IsPackable>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <NoWarn>$(NoWarn);CA1416</NoWarn>
-    <Version>0.0.0.112</Version>
-    <AssemblyVersion>0.0.0.112</AssemblyVersion>
+    <Version>0.0.0.113</Version>
+    <AssemblyVersion>0.0.0.113</AssemblyVersion>
     <IconUrl>https://raw.githubusercontent.com/Primov1x/GlamSource/main/images/icon.png</IconUrl>
     <InternalsVisibleTo>GlamSource.Mock</InternalsVisibleTo>
   </PropertyGroup>

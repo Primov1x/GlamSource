@@ -442,11 +442,26 @@ public sealed class ModelExportService
                 if (baked == null && highlightTint != null)
                 {
                     var maskPath = MaterialTexturePaths(mtrl).FirstOrDefault(p => p.EndsWith("_mask.tex"));
+                    var hairNormPath = MaterialTexturePaths(mtrl).FirstOrDefault(p => p.EndsWith("_norm.tex"));
+                    // ponytail: diagnostic only — Penumbra's own exporter (BuildHair) reads strand
+                    // color weight from the NORMAL texture's Blue channel and cutout alpha from its
+                    // Alpha channel, not from the mask at all. Our normal maps are assumed BC5 (2
+                    // real channels, no alpha) everywhere else in this file — if hair's norm.tex is
+                    // actually a different format (BC7 etc, real alpha), that assumption is wrong
+                    // specifically for hair. Log the real pixel format before changing the bake
+                    // formula a third time on a guess.
+                    if (hairNormPath != null && _gameData.FileExists(hairNormPath))
+                    {
+                        var hairNormTex = _gameData.GetFile<TexFile>(hairNormPath);
+                        if (hairNormTex != null)
+                            LastTrace.Add($"  hair norm tex format: {hairNormTex.Header.Format} ({hairNormTex.Header.Width}x{hairNormTex.Header.Height})");
+                    }
                     if (maskPath != null && _gameData.FileExists(maskPath) && tint != null)
                     {
                         var maskTex = _gameData.GetFile<TexFile>(maskPath);
                         if (maskTex != null)
                         {
+                            LastTrace.Add($"  hair mask tex format: {maskTex.Header.Format}");
                             baked = BakeHairMask(maskTex.ImageData, maskTex.Header.Width, maskTex.Header.Height, tint, highlightTint);
                             if (baked != null)
                             {
