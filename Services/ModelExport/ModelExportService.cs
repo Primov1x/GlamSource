@@ -433,42 +433,31 @@ public sealed class ModelExportService
                         }
                     }
                 }
-                // hair.shpk has no colorset at all — it derives strand color from the mask texture
-                // via a shader we don't have a reference implementation for (checked Penumbra,
-                // Brio, Ktisis, TexTools — none composite it either, only the game itself does).
-                // Rough approximation: blend the customize main/highlight hair colors by the mask's
-                // green channel instead of a single flat fill, so highlighted strands read as a
-                // different tone from the base — better than a single flat blob, not a real decode.
+                // hair.shpk has no colorset — ported directly from Penumbra's own exporter
+                // (Import/Models/Export/MaterialExporter.cs, BuildHair): strand color is
+                // Lerp(mainTint, highlightTint, normal.B/255), cutout alpha is normal.A, and the
+                // result is multiplied by mask.A/255. Confirmed via a format trace that hair's
+                // norm.tex/mask.tex are BC7 (real 4-channel data, Lumina fully decodes it — unlike
+                // BC5 body/face normal maps, no X/Y-remap-plus-reconstructed-Z here), so these are
+                // genuine stored channels, not guessed ones.
                 if (baked == null && highlightTint != null)
                 {
                     var maskPath = MaterialTexturePaths(mtrl).FirstOrDefault(p => p.EndsWith("_mask.tex"));
                     var hairNormPath = MaterialTexturePaths(mtrl).FirstOrDefault(p => p.EndsWith("_norm.tex"));
-                    // ponytail: diagnostic only — Penumbra's own exporter (BuildHair) reads strand
-                    // color weight from the NORMAL texture's Blue channel and cutout alpha from its
-                    // Alpha channel, not from the mask at all. Our normal maps are assumed BC5 (2
-                    // real channels, no alpha) everywhere else in this file — if hair's norm.tex is
-                    // actually a different format (BC7 etc, real alpha), that assumption is wrong
-                    // specifically for hair. Log the real pixel format before changing the bake
-                    // formula a third time on a guess.
-                    if (hairNormPath != null && _gameData.FileExists(hairNormPath))
-                    {
-                        var hairNormTex = _gameData.GetFile<TexFile>(hairNormPath);
-                        if (hairNormTex != null)
-                            LastTrace.Add($"  hair norm tex format: {hairNormTex.Header.Format} ({hairNormTex.Header.Width}x{hairNormTex.Header.Height})");
-                    }
-                    if (maskPath != null && _gameData.FileExists(maskPath) && tint != null)
+                    if (maskPath != null && _gameData.FileExists(maskPath) && hairNormPath != null && _gameData.FileExists(hairNormPath) && tint != null)
                     {
                         var maskTex = _gameData.GetFile<TexFile>(maskPath);
-                        if (maskTex != null)
+                        var hairNormTex = _gameData.GetFile<TexFile>(hairNormPath);
+                        if (maskTex != null && hairNormTex != null)
                         {
-                            LastTrace.Add($"  hair mask tex format: {maskTex.Header.Format}");
-                            baked = BakeHairMask(maskTex.ImageData, maskTex.Header.Width, maskTex.Header.Height, tint, highlightTint);
+                            baked = BakeHairMask(hairNormTex.ImageData, hairNormTex.Header.Width, hairNormTex.Header.Height,
+                                maskTex.ImageData, maskTex.Header.Width, maskTex.Header.Height, tint, highlightTint);
                             if (baked != null)
                             {
-                                var png = PngEncoder.EncodeRgba(baked, maskTex.Header.Width, maskTex.Header.Height);
+                                var png = PngEncoder.EncodeRgba(baked, hairNormTex.Header.Width, hairNormTex.Header.Height);
                                 texIndex = pngs.Count;
                                 pngs.Add(png);
-                                LastTrace.Add($"  hair mask blend BAKED via {maskPath} ({maskTex.Header.Width}x{maskTex.Header.Height})");
+                                LastTrace.Add($"  hair strand BAKED via {hairNormPath}+{maskPath} ({hairNormTex.Header.Width}x{hairNormTex.Header.Height})");
                             }
                         }
                     }
@@ -559,32 +548,29 @@ public sealed class ModelExportService
         return result;
     }
 
-    /// <summary>Rough approximation of hair.shpk's strand coloring: hair.shpk has no colorset, only
-    /// a mask texture whose channel semantics we couldn't reverse-engineer (no reference formula
-    /// found in Penumbra, Brio, Ktisis, or TexTools — genuinely undocumented, unlike everything
-    /// else in this exporter, which always had SOME working reference to check against). This is a
-    /// known-approximate stand-in, not a decode: blends the customize main/highlight hair colors by
-    /// the mask's green channel, so highlighted strands read as a distinguishable tone from the base
-    /// instead of one flat blob. Output is the mask's resolution, RGBA8, alpha forced opaque.
-    /// Weight is inverted (1-green): confirmed via the raw-texture debug view that green-channel-high
-    /// covers most of the background (rendering mostly-highlight/gray) while the actual strand detail
-    /// sits in the low-green regions — backwards from "mostly base color, highlight on the strands".</summary>
-    private static byte[] BakeHairMask(byte[] maskRgba, int width, int height, float[] mainTint, float[] highlightTint)
+    /// <summary>Hair strand coloring, ported directly from Penumbra's own exporter
+    /// (Import/Models/Export/MaterialExporter.cs, BuildHair — real production code, not a guess):
+    /// <c>color = Lerp(mainTint, highlightTint, normal.B/255)</c>, multiplied by
+    /// <c>mask.A/255</c>, with <c>alpha = normal.A</c> for the strand cutout shape. Output is at the
+    /// normal texture's resolution; mask is nearest-sampled since the two can differ in size.</summary>
+    private static byte[] BakeHairMask(byte[] normalRgba, int width, int height, byte[] maskRgba, int maskWidth, int maskHeight, float[] mainTint, float[] highlightTint)
     {
+        if (maskWidth <= 0 || maskHeight <= 0) return normalRgba.Length == 0 ? [] : new byte[width * height * 4];
         var result = new byte[width * height * 4];
-        for (var p = 0; p < width * height; p++)
+        for (var y = 0; y < height; y++)
         {
-            var o = p * 4;
-            var weight = 1f - maskRgba[o + 1] / 255f;
-            result[o + 0] = (byte)Math.Clamp((mainTint[0] + (highlightTint[0] - mainTint[0]) * weight) * 255f, 0f, 255f);
-            result[o + 1] = (byte)Math.Clamp((mainTint[1] + (highlightTint[1] - mainTint[1]) * weight) * 255f, 0f, 255f);
-            result[o + 2] = (byte)Math.Clamp((mainTint[2] + (highlightTint[2] - mainTint[2]) * weight) * 255f, 0f, 255f);
-            // ponytail: alpha forced fully opaque here was the "solid blob, no strands" bug — the
-            // hair mesh's alphaMode is already MASK/cutoff 0.5 (see GltfBuilder), but with every
-            // pixel opaque nothing ever gets cut out, so the whole card renders solid instead of
-            // per-strand cutout shapes. Use the mask texture's own alpha channel — FFXIV hair cards
-            // are alpha-tested, so the real strand silhouette should live there.
-            result[o + 3] = maskRgba[o + 3];
+            var my = Math.Min(maskHeight - 1, y * maskHeight / height);
+            for (var x = 0; x < width; x++)
+            {
+                var o = (y * width + x) * 4;
+                var weight = normalRgba[o + 2] / 255f; // normal.B
+                var mx = Math.Min(maskWidth - 1, x * maskWidth / width);
+                var maskAlpha = maskRgba[(my * maskWidth + mx) * 4 + 3] / 255f; // mask.A
+                result[o + 0] = (byte)Math.Clamp((mainTint[0] + (highlightTint[0] - mainTint[0]) * weight) * maskAlpha * 255f, 0f, 255f);
+                result[o + 1] = (byte)Math.Clamp((mainTint[1] + (highlightTint[1] - mainTint[1]) * weight) * maskAlpha * 255f, 0f, 255f);
+                result[o + 2] = (byte)Math.Clamp((mainTint[2] + (highlightTint[2] - mainTint[2]) * weight) * maskAlpha * 255f, 0f, 255f);
+                result[o + 3] = normalRgba[o + 3]; // normal.A — real strand cutout shape
+            }
         }
         return result;
     }
