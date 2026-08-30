@@ -5,15 +5,23 @@ using Penumbra.GameData.Files.ModelStructs;
 
 namespace GlamSource.Services.ModelExport;
 
-// ponytail: most equipment only ships a Hyur (c0101) model; the real game deforms it onto other
-// races' skeletons at load time using chara/xls/bonedeformer/human.pbd (see PdbReader). Without
-// this, Hyur-sized gear sits at Hyur bind-pose positions on a race with different proportions —
-// confirmed root cause of "Lücke zwischen Ober- und Unterarm" (Viera has no full-arm body model to
-// fill the gap the mismatch creates). Static per-bone correction data, independent of any live
-// pose — applies the same in the default bind-pose view as in a live-posed one.
+// most equipment only ships a Hyur (c0101) model; the real game deforms it onto other races'
+// skeletons at load time using chara/xls/bonedeformer/human.pbd (see PdbReader). Without this,
+// Hyur-sized gear sits at Hyur bind-pose positions on a race with different proportions — confirmed
+// root cause of "Lücke zwischen Ober- und Unterarm/Knie" (verified against real game files: Viera's
+// own "nude" body/legs patches are ALSO plain Hyur c0101 models — even bare skin relies on this same
+// runtime deform, there's no separate always-correct-shape body).
 public static class RacialDeform
 {
-    public static void Apply(DecodedMesh mesh, string[] mdlBones, BoneTableStruct[] boneTables, IReadOnlyDictionary<string, Matrix4x4> deforms)
+    /// <param name="parentOf">Bone name -> parent bone name (null = root), from the live Havok
+    /// skeleton (SkeletonPoseService). Used to walk up to the nearest ancestor with a direct PBD
+    /// entry — real algorithm ported from TexTools' xivModdingFramework (PDB.BuildNewTransfromMatrices,
+    /// decompiled from the shipped xivModdingFramework.dll, not guessed). TexTools sources this
+    /// hierarchy from a bundled per-race .sklb dump; we reuse the same ParentIndices data
+    /// SkeletonPoseService already reads for bind-pose composition instead of writing a .sklb parser.
+    /// Null (no live pose captured) means no hierarchy available — falls back to direct-lookup-only,
+    /// same degraded behavior as before this was implemented.</param>
+    public static void Apply(DecodedMesh mesh, string[] mdlBones, BoneTableStruct[] boneTables, IReadOnlyDictionary<string, Matrix4x4> deforms, IReadOnlyDictionary<string, string?>? parentOf = null)
     {
         if (!mesh.HasSkinning || mesh.BoneTableIndex >= boneTables.Length) return;
         var table = boneTables[mesh.BoneTableIndex].BoneIndex;
@@ -24,10 +32,7 @@ public static class RacialDeform
         {
             if (cache.TryGetValue(localIdx, out var cached)) return cached;
             var boneName = localIdx < table.Length && table[localIdx] < mdlBones.Length ? mdlBones[table[localIdx]] : null;
-            // ponytail: a bone with no direct PBD entry for this race falls back to Identity (no
-            // correction) rather than a guessed inherited transform — see PdbReader's doc comment,
-            // the real inheritance walk needs a .sklb skeleton parser we don't have.
-            var m = boneName != null && deforms.TryGetValue(boneName, out var dm) ? dm : Matrix4x4.Identity;
+            var m = boneName != null ? ResolveDeform(boneName, deforms, parentOf) : Matrix4x4.Identity;
             cache[localIdx] = m;
             return m;
         }
@@ -68,4 +73,20 @@ public static class RacialDeform
     }
 
     private static bool IsFinite(Vector3 v) => float.IsFinite(v.X) && float.IsFinite(v.Y) && float.IsFinite(v.Z);
+
+    /// <summary>Direct PBD entry if this bone has one; otherwise walk up the live skeleton to the
+    /// nearest ancestor that does (TexTools' BuildNewTransfromMatrices); Identity if none of them do
+    /// or no hierarchy is available. Capped walk depth as a guard against malformed/cyclic parent
+    /// data — real skeletons are well under 64 bones deep.</summary>
+    private static Matrix4x4 ResolveDeform(string boneName, IReadOnlyDictionary<string, Matrix4x4> deforms, IReadOnlyDictionary<string, string?>? parentOf)
+    {
+        string? current = boneName;
+        for (var steps = 0; current != null && steps < 64; steps++)
+        {
+            if (deforms.TryGetValue(current, out var m)) return m;
+            if (parentOf == null || !parentOf.TryGetValue(current, out var parent)) break;
+            current = parent;
+        }
+        return Matrix4x4.Identity;
+    }
 }

@@ -134,14 +134,17 @@ public sealed class ModelExportService
             }
             if (mdlPath == null) { LastTrace.Add($"{slot}:{itemId} missing (tried {string.Join(", ", raceCandidates)})"); continue; }
 
-            // ponytail: REVERTED (0.0.0.126) — shipped in 0.0.0.125, made things actively worse
-            // ("jetzt ist alles deformt", visible distortion across the whole outfit, not just the
-            // arm gap) and didn't even close the original gap. The direct per-bone lookup (no
-            // inheritance-walk, see PdbReader's doc comment) was too big a simplification of the
-            // real algorithm to trust blind — needs real verification against known-good vertex
-            // positions before trying again, not another guess under time pressure. Keeping
-            // PdbReader/RacialDeform as infrastructure, just not wired live.
+            // Re-enabled with the real algorithm (see RacialDeform's doc comment) — the 0.0.0.125
+            // attempt that made things worse was a direct-lookup-only simplification with no
+            // ancestor-inheritance walk. Only wired when we actually fell back to the generic Hyur
+            // model (usedRace == RaceCode) for a non-Hyur viewer, and only when a live pose is
+            // captured — that's currently our only source for the skeleton hierarchy the walk needs
+            // (see SkeletonPoseService.ParentOf). Static bind-pose view still shows the un-deformed
+            // gap until we have a hierarchy source that doesn't need a live capture.
             IReadOnlyDictionary<string, System.Numerics.Matrix4x4>? racialDeforms = null;
+            if (usedRace == RaceCode && chara != null && chara.RaceCode != RaceCode && pose != null
+                && int.TryParse(chara.RaceCode.AsSpan(1), out var charaRaceId))
+                racialDeforms = PdbReader.GetDeforms(_gameData, (ushort)charaRaceId);
 
             var raw = _gameData.GetFile(mdlPath);
             if (raw == null) { LastTrace.Add($"{slot}:{itemId} GetFile null"); continue; }
@@ -178,8 +181,8 @@ public sealed class ModelExportService
                     LastTrace.Add($"  submeshes: {m.SubmeshesKept}/{m.SubmeshesTotal} kept, dropped attrs=[{string.Join(",", m.DroppedAttributes)}]");
                 if (racialDeforms != null)
                 {
-                    RacialDeform.Apply(m, mdl.Bones, mdl.BoneTables, racialDeforms);
-                    LastTrace.Add($"  racial deform applied ({usedRace}->{chara!.RaceCode}, {racialDeforms.Count} bone entries)");
+                    RacialDeform.Apply(m, mdl.Bones, mdl.BoneTables, racialDeforms, pose!.ParentOf);
+                    LastTrace.Add($"  racial deform applied ({usedRace}->{chara!.RaceCode}, {racialDeforms.Count} direct bone entries, {pose.ParentOf.Count} skeleton bones for ancestor walk)");
                 }
                 if (pose != null)
                 {
@@ -432,14 +435,35 @@ public sealed class ModelExportService
                 }
                 else LastTrace.Add($"  tex GetFile null: {texPath}");
             }
+            // metal trim/buckles have real per-row Metalness/Roughness in the color table — this is
+            // independent of whether a diffuse texture was already picked above (a hat can ship both
+            // a _d.tex AND an _id.tex; the old code only ever baked this inside the no-diffuse
+            // branch, so every diffuse-textured item rendered flat metallicFactor=0 regardless of
+            // its actual metal trim — "Hut-Textur ohne Glanz").
+            var metalRoughIndex = -1;
+            var idPathForMetalRough = mtrlRaw != null ? MaterialTexturePaths(mtrl).FirstOrDefault(p => p.EndsWith("_id.tex")) : null;
+            if (idPathForMetalRough != null && _gameData.FileExists(idPathForMetalRough))
+            {
+                var idTexForMetalRough = _gameData.GetFile<TexFile>(idPathForMetalRough);
+                if (idTexForMetalRough != null)
+                {
+                    var metalRough = Penumbra.GameData.Files.MaterialColorTable.BakeMetallicRoughness(mtrlRaw!.Data, idTexForMetalRough.ImageData, idTexForMetalRough.Header.Width, idTexForMetalRough.Header.Height);
+                    if (metalRough != null)
+                    {
+                        var mrPng = PngEncoder.EncodeRgba(metalRough, idTexForMetalRough.Header.Width, idTexForMetalRough.Header.Height);
+                        metalRoughIndex = pngs.Count;
+                        pngs.Add(mrPng);
+                        LastTextureLabels.Add($"{mtrlPath} (metal/roughness)");
+                    }
+                }
+            }
             // Dawntrail-era gear commonly has no diffuse texture at all — color lives in the
             // material's color table, and WHICH row applies per-pixel comes from the id texture
             // (Red = ramp position, Green = A/B blend — see MaterialColorTable.BakeDiffuse). Bake
             // a real diffuse texture when we have an id map; a flat colorset average otherwise.
-            var metalRoughIndex = -1;
             if (texIndex < 0 && mtrlRaw != null)
             {
-                var idPath = MaterialTexturePaths(mtrl).FirstOrDefault(p => p.EndsWith("_id.tex"));
+                var idPath = idPathForMetalRough;
                 byte[]? baked = null;
                 if (idPath != null && _gameData.FileExists(idPath))
                 {
@@ -471,16 +495,7 @@ public sealed class ModelExportService
                         pngs.Add(png);
                         LastTextureLabels.Add($"{mtrlPath} (colorset baked via {idPath})");
                         LastTrace.Add($"  colorset BAKED via {idPath} ({idTex.Header.Width}x{idTex.Header.Height})");
-                        // metal trim/buckles have real per-row Metalness/Roughness in the color table
-                        // that was never read before (see MaterialColorTable.BakeMetallicRoughness).
-                        var metalRough = Penumbra.GameData.Files.MaterialColorTable.BakeMetallicRoughness(mtrlRaw.Data, idTex.ImageData, idTex.Header.Width, idTex.Header.Height);
-                        if (metalRough != null)
-                        {
-                            var mrPng = PngEncoder.EncodeRgba(metalRough, idTex.Header.Width, idTex.Header.Height);
-                            metalRoughIndex = pngs.Count;
-                            pngs.Add(mrPng);
-                            LastTextureLabels.Add($"{mtrlPath} (metal/roughness)");
-                        }
+                        // metal/roughness already baked above (runs regardless of diffuse source)
                     }
                 }
                 // hair.shpk has no colorset — ported directly from Penumbra's own exporter
@@ -620,14 +635,24 @@ public sealed class ModelExportService
     /// <summary>Bake a flat tint into a real texture, multiplied by the mask's occlusion channel
     /// (byte 0 — see <see cref="ApplyMaskOcclusion"/>) — for structural geometry with no diffuse or
     /// colorset (e.g. the Viera outer ear shell) that would otherwise render as one flat, detail-
-    /// less color. Fully opaque; this is solid geometry, not a cutout.</summary>
+    /// less color. Fully opaque; this is solid geometry, not a cutout.
+    /// "Ohren-Klumpen": byte 0 = Occlusion was verified against Penumbra's exporter only for the
+    /// Dawntrail "multi" mask family (materials that also ship an _id.tex — see the ApplyMaskOcclusion
+    /// call site). This bake only ever runs when NO _id.tex was found, i.e. the older "legacy" mask
+    /// family, where byte 0 encodes something else entirely — on the Viera z0004 ear shell it reads
+    /// ~0 across the whole texture, baking the shell solid black instead of tinted. Guard against
+    /// that degenerate case and fall back to a flat, undarkened tint rather than rendering black.</summary>
     private static byte[] BakeTintWithOcclusion(byte[] maskBgra, int width, int height, float[] tint)
     {
         var result = new byte[width * height * 4];
+        long occlusionSum = 0;
+        for (var p = 0; p < width * height; p++) occlusionSum += maskBgra[p * 4];
+        var avgOcclusion = width * height > 0 ? occlusionSum / (double)(width * height) / 255.0 : 1.0;
+        var usable = avgOcclusion > 0.05;
         for (var p = 0; p < width * height; p++)
         {
             var o = p * 4;
-            var occlusion = maskBgra[o] / 255f;
+            var occlusion = usable ? maskBgra[o] / 255f : 1f;
             result[o + 0] = (byte)Math.Clamp(tint[0] * occlusion * 255f, 0f, 255f);
             result[o + 1] = (byte)Math.Clamp(tint[1] * occlusion * 255f, 0f, 255f);
             result[o + 2] = (byte)Math.Clamp(tint[2] * occlusion * 255f, 0f, 255f);

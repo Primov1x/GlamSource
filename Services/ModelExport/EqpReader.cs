@@ -23,14 +23,19 @@ public static class EqpReader
     private static bool _loadFailed;
 
     /// <summary>Hair-mesh attribute names this head gear hides (for MdlGeometry.DecodeLod0's
-    /// hideAttributes), or empty when none/unknown. "atr_kam" = scalp/top hair (HeadHideScalp),
-    /// full hide handled via <see cref="HidesHair"/> instead.</summary>
+    /// hideAttributes), or empty when none/unknown. Both "atr_kam" (scalp/top hair) and "atr_bak"
+    /// (back hair/ponytail) are gated by the SAME HeadHideScalp bit — verified against real data:
+    /// e6084's EQP has HeadHideScalp=true and hair h0003's only non-base attributes are exactly
+    /// atr_bak/atr_kam (see MdlGeometry.DecodeLod0's doc comment), i.e. one flag hides the whole
+    /// scalp/back-hair group together, not two separate flags. Only atr_kam was wired before —
+    /// hats clipped through any hairstyle whose ponytail/back-hair was its own atr_bak submesh.
+    /// Full hide handled via <see cref="HidesHair"/> instead.</summary>
     public static IReadOnlyCollection<string> HiddenHairAttributes(GameData gameData, ushort headSetId)
     {
         var e = Entry(gameData, headSetId);
         if (e == null) return Array.Empty<string>();
         var result = new List<string>(2);
-        if ((e.Value >> 40 & 0x02) != 0) result.Add("atr_kam"); // HeadHideScalp
+        if ((e.Value >> 40 & 0x02) != 0) { result.Add("atr_kam"); result.Add("atr_bak"); } // HeadHideScalp
         return result;
     }
 

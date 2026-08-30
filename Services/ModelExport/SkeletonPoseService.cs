@@ -18,6 +18,12 @@ public sealed class SkeletonPose
     public Dictionary<string, Matrix4x4> CurrentModel { get; } = new();
     public Dictionary<string, Matrix4x4> BindInverse { get; } = new();
 
+    /// <summary>Bone name -> parent bone name (null = skeleton root), read straight from the live
+    /// Havok skeleton's ParentIndices — the real skeleton hierarchy the game itself uses. Lets
+    /// RacialDeform walk "no direct PBD entry for this bone? use the nearest ancestor's" exactly
+    /// like TexTools' PDB.BuildNewTransfromMatrices, without needing our own .sklb parser.</summary>
+    public Dictionary<string, string?> ParentOf { get; } = new();
+
     /// <summary>Per-partial capture log — which partials existed, how many bones each had, whether
     /// they got skipped. For chasing "bone X isn't in the live skeleton at all" reports.</summary>
     public List<string> DebugLog { get; } = new();
@@ -75,6 +81,7 @@ public static unsafe class SkeletonPoseService
         var result = new SkeletonPose();
         result.DebugLog.Add($"PartialSkeletonCount={skeleton->PartialSkeletonCount}");
         Matrix4x4[]? bindModel0 = null; // partial 0 (body/root)'s global bind pose — other partials attach to it
+        string[]? names0 = null; // partial 0's bone names, for cross-partial parent links below
         for (var p = 0; p < skeleton->PartialSkeletonCount; p++)
         {
             var partial = skeleton->PartialSkeletons[p];
@@ -106,8 +113,14 @@ public static unsafe class SkeletonPoseService
             // THIS partial = ConnectedParentBoneIndex on partial 0) — the live pose we read below is
             // already correctly composed by the engine either way, only the bind pose needs this to
             // match; skipping it is exactly what made attached geometry (fingers) explode/stretch.
+            var boneNames = new string[boneCount];
+            for (var i = 0; i < boneCount; i++) boneNames[i] = hkSkel->Bones[i].Name.String;
+
             if (p == 0)
+            {
                 bindModel0 = bindModel;
+                names0 = boneNames;
+            }
             else if (bindModel0 != null && partial.ConnectedBoneIndex >= 0 && partial.ConnectedBoneIndex < boneCount
                      && partial.ConnectedParentBoneIndex >= 0 && partial.ConnectedParentBoneIndex < bindModel0.Length
                      && Matrix4x4.Invert(bindModel[partial.ConnectedBoneIndex], out var attachLocalInv))
@@ -118,12 +131,22 @@ public static unsafe class SkeletonPoseService
 
             for (var i = 0; i < boneCount; i++)
             {
-                var name = hkSkel->Bones[i].Name.String;
+                var name = boneNames[i];
                 if (string.IsNullOrEmpty(name)) continue;
                 if (!Matrix4x4.Invert(bindModel[i], out var bindInv)) continue;
                 // first (body, index 0) partial wins on name collisions across partials
                 result.BindInverse.TryAdd(name, bindInv);
                 result.CurrentModel.TryAdd(name, ToMatrix(pose->ModelPose[i]));
+
+                // parent bone name, for RacialDeform's ancestor walk: within-partial parent if this
+                // bone has one; otherwise (this partial's local root) the OTHER partial it attaches
+                // to, same ConnectedBoneIndex/ConnectedParentBoneIndex link used for bindModel above.
+                var parentIdx = hkSkel->ParentIndices[i];
+                string? parentName = parentIdx >= 0 && parentIdx < boneCount ? boneNames[parentIdx] : null;
+                if (parentName == null && p != 0 && names0 != null
+                    && partial.ConnectedParentBoneIndex >= 0 && partial.ConnectedParentBoneIndex < names0.Length)
+                    parentName = names0[partial.ConnectedParentBoneIndex];
+                result.ParentOf.TryAdd(name, parentName);
             }
         }
         return result.CurrentModel.Count > 0 ? result : null;
