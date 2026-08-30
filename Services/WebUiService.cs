@@ -377,7 +377,13 @@ public sealed class WebUiService : IDisposable
             _framework.RunOnFrameworkThread(() =>
             {
                 var renderer = _shell.PreviewWindow?.Renderer;
-                if (renderer != null) renderer.SetZoom(renderer.Zoom + zoomDelta);
+                // ponytail: multiplicative, not additive. Camera DISTANCE is inversely proportional
+                // to the zoom value (SetZoom's own math), so a fixed +delta per scroll tick means
+                // each tick moves the camera a shrinking absolute distance the further in you already
+                // are — "umso näher, umso langsamer", reported live, worse the higher the zoom range
+                // goes (which raising the cap to 20 made much more noticeable). A percentage step
+                // keeps the FELT zoom speed constant across the whole range instead.
+                if (renderer != null) renderer.SetZoom(renderer.Zoom * (1f + zoomDelta));
             });
             return Json(new { ok = true });
         }
@@ -393,11 +399,12 @@ public sealed class WebUiService : IDisposable
             // the cursor while actually zooming IN (delta>0) — zooming back out should pull the view
             // back toward center, not keep pushing further off-axis. Pan scale is untuned/guessed,
             // same as the existing rotate/zoom handlers' own constants — tune live if it feels off.
+            // Multiplicative zoom step — see /zoom's comment just above for why.
             _framework.RunOnFrameworkThread(() =>
             {
                 var renderer = _shell.PreviewWindow?.Renderer;
                 if (renderer == null) return;
-                renderer.SetZoom(renderer.Zoom + zoomAtDelta);
+                renderer.SetZoom(renderer.Zoom * (1f + zoomAtDelta));
                 if (zoomAtDelta > 0) renderer.PanCamera(zoomAtPx * zoomAtDelta * 2f, zoomAtPy * zoomAtDelta * 2f);
             });
             return Json(new { ok = true });
