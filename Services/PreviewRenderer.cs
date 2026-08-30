@@ -463,17 +463,30 @@ public sealed unsafe class PreviewRenderer : IDisposable
     private long _lastEncodeDurationMs;
     private string? _lastCaptureError;
 
+    // ponytail: counts every CaptureFrameForWeb call regardless of outcome — i.e. how often Draw()
+    // itself fires. If (drawCalls / elapsed seconds) is already well under the game's real FPS, the
+    // ceiling is Dalamud/ImGui's own Draw() cadence (out of our control), not anything downstream
+    // of it (encode throttle, GPU copy readiness, etc.) — settles "can we get more fps" definitively
+    // instead of continuing to tune knobs that were never the actual limiter.
+    private long _drawCallCount;
+    private long _drawCallWindowStartMs;
+
     public readonly record struct WebCaptureStats(
         bool StagingReady, long FramesEncoded, long FramesSkipped, long CaptureErrors,
         long LastFrameBytes, long LastEncodeDurationMs, string? LastError, int StagingWidth, int StagingHeight,
-        bool NativeUiOwnsSlot);
+        bool NativeUiOwnsSlot, double DrawCallsPerSecond);
 
     /// <summary>Snapshot of the web MJPEG capture pipeline's health — thread-safe plain field reads,
     /// same as LatestWebJpeg.</summary>
-    public WebCaptureStats GetWebCaptureStats() => new(
-        _webStaging.Get() != null, _webFramesEncoded, _webFramesSkipped, _webCaptureErrors,
-        _lastFrameBytes, _lastEncodeDurationMs, _lastCaptureError, (int)_webStagingWidth, (int)_webStagingHeight,
-        _nativeUiOwnsSlot);
+    public WebCaptureStats GetWebCaptureStats()
+    {
+        var elapsedS = (Environment.TickCount64 - _drawCallWindowStartMs) / 1000.0;
+        var drawCallsPerSecond = elapsedS > 0 ? _drawCallCount / elapsedS : 0;
+        return new(
+            _webStaging.Get() != null, _webFramesEncoded, _webFramesSkipped, _webCaptureErrors,
+            _lastFrameBytes, _lastEncodeDurationMs, _lastCaptureError, (int)_webStagingWidth, (int)_webStagingHeight,
+            _nativeUiOwnsSlot, drawCallsPerSecond);
+    }
 
     /// <summary>Latest JPEG-encoded frame for the web-UI MJPEG stream (see WebUiService's
     /// /api/preview3d/stream), or null if never captured / feature off. Thread-safe to read from
@@ -490,6 +503,8 @@ public sealed unsafe class PreviewRenderer : IDisposable
     /// WebUiService's /api/preview3d/stream doc comment).</summary>
     public void CaptureFrameForWeb(bool enabled)
     {
+        if (_drawCallWindowStartMs == 0) _drawCallWindowStartMs = Environment.TickCount64;
+        _drawCallCount++;
         if (!enabled) { _latestWebJpeg = null; ReleaseWebStaging(); return; }
         // Native UI (Fitting Room/Glamour Plate) currently owns the shared CharaView slot (see
         // Tick()'s IsAgentActive() check) — capturing it would just serve their content over our
