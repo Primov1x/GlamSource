@@ -45,6 +45,15 @@ public sealed class WebUiService : IDisposable
     // (already used by the ImGui window's hover-preview) instead of inventing a second path —
     // CharaView reads real per-slot overlay data the same way either caller feeds it.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<EquipmentSlotType, EquipmentSlot> _webPreviewGear = new();
+    // ponytail: MJPEG stream session stats — was only logged (see StreamPreviewMjpeg's finally
+    // block), meaning "is it smooth" required opening /xllog. Exposed here too so /api/preview3d/debug
+    // answers it directly, live while streaming or from the last completed session.
+    private volatile bool _streamActive;
+    private long _streamSessionStartMs;
+    private long _streamSessionFrames;
+    private long _lastStreamFrames;
+    private double _lastStreamDurationS;
+    private double _lastStreamAvgFps;
     private TcpListener? _listener;
     private TcpListener? _listener6;
     private CancellationTokenSource? _cts;
@@ -263,6 +272,9 @@ public sealed class WebUiService : IDisposable
         var swStart = Environment.TickCount64;
         var framesSent = 0;
         byte[]? lastSent = null;
+        _streamActive = true;
+        _streamSessionStartMs = swStart;
+        _streamSessionFrames = 0;
         _log.Information("[WebUi] preview3d/stream connected");
         try
         {
@@ -277,14 +289,19 @@ public sealed class WebUiService : IDisposable
                     stream.Write(Encoding.ASCII.GetBytes("\r\n"));
                     stream.Flush();
                     framesSent++;
+                    _streamSessionFrames = framesSent; // live progress, readable via /api/preview3d/debug while still connected
                 }
                 Thread.Sleep(16); // ~60Hz check of the in-memory latest frame; actual cadence gated by PreviewRenderer's encode rate
             }
         }
         finally
         {
+            _streamActive = false;
             var elapsedS = (Environment.TickCount64 - swStart) / 1000.0;
-            _log.Information($"[WebUi] preview3d/stream disconnected — sent {framesSent} frame(s) over {elapsedS:F1}s ({(elapsedS > 0 ? framesSent / elapsedS : 0):F1} fps avg)");
+            _lastStreamFrames = framesSent;
+            _lastStreamDurationS = elapsedS;
+            _lastStreamAvgFps = elapsedS > 0 ? framesSent / elapsedS : 0;
+            _log.Information($"[WebUi] preview3d/stream disconnected — sent {framesSent} frame(s) over {elapsedS:F1}s ({_lastStreamAvgFps:F1} fps avg)");
         }
     }
 
@@ -412,6 +429,16 @@ public sealed class WebUiService : IDisposable
                 lastError = stats?.LastError,
                 latestFrameAvailable = renderer?.LatestWebJpeg != null,
                 previewGearOverrideSlots = _webPreviewGear.Keys.Select(s => s.ToString()).ToArray(),
+                // the actual "is it smooth" answer, no /xllog needed — live while a stream is
+                // connected (Character tab open), else the last completed session's numbers.
+                streamActive = _streamActive,
+                streamCurrentFrames = _streamActive ? _streamSessionFrames : (long?)null,
+                streamCurrentSeconds = _streamActive ? Math.Round((Environment.TickCount64 - _streamSessionStartMs) / 1000.0, 1) : (double?)null,
+                streamCurrentAvgFps = _streamActive && Environment.TickCount64 > _streamSessionStartMs
+                    ? Math.Round(_streamSessionFrames / ((Environment.TickCount64 - _streamSessionStartMs) / 1000.0), 1) : (double?)null,
+                lastStreamFrames = _lastStreamFrames,
+                lastStreamDurationSeconds = Math.Round(_lastStreamDurationS, 1),
+                lastStreamAvgFps = Math.Round(_lastStreamAvgFps, 1),
             });
         }
 

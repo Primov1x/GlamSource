@@ -3,7 +3,7 @@
     "Author": "TF",
     "Name": "GlamSource",
     "InternalName": "GlamSource",
-    "AssemblyVersion": "0.0.0.131",
+    "AssemblyVersion": "0.0.0.132",
     "Description": "Hover über ein Item oder Mount und sieh sofort die Quelle — Dungeon, Shop, Craft, Event. Kein Wiki mehr nötig. Befehle: /glamsource",
     "ApplicableVersion": "any",
     "Tags": ["glamour", "mounts", "source", "qol"],
@@ -20,7 +20,7 @@
     "DownloadLinkUpdate": "https://github.com/Primov1x/GlamSource/releases/download/LATEST/latest.zip",
     "DownloadLinkTesting": "https://github.com/Primov1x/GlamSource/releases/download/LATEST/latest.zip",
     "DownloadCount": 0,
-    "LastUpdated": "1788105812",
+    "LastUpdated": "1788106191",
     "IsHide": false,
     "IsTestingExclusive": false
   }
