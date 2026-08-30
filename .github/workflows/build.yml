@@ -7,6 +7,17 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Fixes a real race hit live: two quick pushes to main started two concurrent runs, both uploading
+# to the same LATEST release with --clobber — whichever run's upload finished last won, but since
+# each run's build (and the version baked into its DLL) came from a different commit, the result
+# could be a mismatched set (e.g. repo.json's AssemblyVersion from the newer commit, zip contents
+# still from the older one). Dalamud's installer caught it: "Distributed plugin version does not
+# match repo version". Cancelling the older in-flight run when a newer push lands guarantees the
+# release always ends up as one consistent commit's build, never a mix of two.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
