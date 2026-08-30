@@ -8,7 +8,7 @@ namespace GlamSource.Services.ModelExport;
 /// <summary>Real live skin/hair color read from the character's shader constant buffer — replaces
 /// the flat approximated tints for anyone whose customize colors actually differ from the average
 /// we were guessing. Framework thread only.</summary>
-public readonly record struct CustomizeColors(float[] Skin, float[] Hair, float[]? Highlight = null, float[]? Eye = null, string? DebugSource = null);
+public readonly record struct CustomizeColors(float[] Skin, float[] Hair, float[]? Highlight = null, float[]? Eye = null, float[]? Feature = null, byte FaceFeatures = 0, string? DebugSource = null);
 
 // ponytail: previous attempt went through FFXIVClientStructs' Human.CustomizeParameterCBuffer +
 // ConstantBuffer.TryGetSourcePointer() (a "(Flags & 0x4003) == 0 ? ptr : null" gate) and kept

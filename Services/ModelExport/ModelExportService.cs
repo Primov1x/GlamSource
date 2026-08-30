@@ -218,7 +218,18 @@ public sealed class ModelExportService
             // ...) — no full per-race table yet, just try the two ids confirmed to exist.
             var bodyId = _gameData.FileExists($"chara/human/{rc}/obj/body/b0001/model/{rc}b0001_top.mdl") ? "b0001" : "b0002";
             AddCharaPart($"chara/human/{rc}/obj/body/{bodyId}/model/{rc}{bodyId}_top.mdl", rc, $"body/{bodyId}", skinTint, meshInputs, pngs, materialCache, pose);
-            AddCharaPart($"chara/human/{rc}/obj/face/f{chara.Face:D4}/model/{rc}f{chara.Face:D4}_fac.mdl", rc, $"face/f{chara.Face:D4}", skinTint, meshInputs, pngs, materialCache, pose, eyeTint: colors?.Eye, decalTint: hairTint);
+            // ponytail: face decal submeshes are named atr_fv_a..atr_fv_g — verified directly against
+            // real game files (D:\FF\game via a standalone MDL-attribute probe, not guessed): 7
+            // letters matching the 7 CustomizeIndex.FaceFeatures bits in alphabetical/bit order.
+            // Without this, EVERY feature decal (moles/scars/tattoo lines) rendered overlaid at once
+            // regardless of which the player actually toggled on ("das ist nicht mein Gesicht").
+            // Hide whichever bit ISN'T set — a character with zero features toggled hides all 7.
+            var faceHideAttrs = new List<string>();
+            var featureBits = colors?.FaceFeatures ?? 0;
+            for (var bit = 0; bit < 7; bit++)
+                if ((featureBits & (1 << bit)) == 0)
+                    faceHideAttrs.Add($"atr_fv_{(char)('a' + bit)}");
+            AddCharaPart($"chara/human/{rc}/obj/face/f{chara.Face:D4}/model/{rc}f{chara.Face:D4}_fac.mdl", rc, $"face/f{chara.Face:D4}", skinTint, meshInputs, pngs, materialCache, pose, eyeTint: colors?.Eye, decalTint: colors?.Feature, hideAttributes: faceHideAttrs);
             // ponytail: the equipped hat's EQP flags decide what part of the hair renders — exactly
             // what the game does. HeadHideHair (full helmets) drops the hair part entirely;
             // HeadHideScalp hides only the "atr_kam" scalp/top-hair submeshes, which is what was

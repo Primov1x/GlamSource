@@ -514,6 +514,27 @@ public sealed class WebUiService : IDisposable
                         }
                         catch (Exception ex) { _log.Warning($"[WebUi] eye color read failed: {ex.Message}"); }
                     }
+                    // ponytail: face decals (moles/scars/tattoo lines — CustomizeIndex.FaceFeatures,
+                    // a bitmask of which are toggled on) get tinted by FaceFeaturesColor, NOT hair
+                    // color — first guess used hairTint, wrong per a real Glamourer readout showing
+                    // Feature Color as a distinct value from Hair Color. Only set Feature when the
+                    // bitmask is actually nonzero — a character with zero features toggled should
+                    // render none, not a guessed fallback.
+                    if (colors != null)
+                    {
+                        try
+                        {
+                            var featureBits = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.FaceFeatures];
+                            colors = colors.Value with { FaceFeatures = featureBits };
+                            if (featureBits != 0)
+                            {
+                                var featureColorIdx = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.FaceFeaturesColor];
+                                var feature = ModelExport.CmpColorReader.ReadFeatureColor(_modelExportGameData, featureColorIdx);
+                                if (feature != null) colors = colors.Value with { Feature = feature };
+                            }
+                        }
+                        catch (Exception ex) { _log.Warning($"[WebUi] feature color read failed: {ex.Message}"); }
+                    }
                     var face = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.FaceType];
                     var hair = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.HairStyle];
                     var tail = c[(int)Dalamud.Game.ClientState.Objects.Enums.CustomizeIndex.RaceFeatureType];

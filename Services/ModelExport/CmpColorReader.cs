@@ -80,6 +80,25 @@ public static class CmpColorReader
         return ReadEntry(EyeColorBlockStart, DataLength, eyeIdx);
     }
 
+    // ponytail: "Feature Color" (Glamourer's label) tints face decals — moles/tattoos/scars selected
+    // by CustomizeIndex.FacialFeatureN bits — NOT hair color as first guessed (visibly different
+    // values in a real Glamourer readout: Hair Color 18,18,18 vs Feature Color a totally separate
+    // swatch). Block position derived from Ktisis's own verified reader (GameData/Chara/
+    // CharaCmpReader.cs, ReadCommon): common blocks run eyeColors(0) -> highlightColors(1) -> 5
+    // skipped blocks(2-6) -> lipColors(7) -> raceFeatColors(8) -> facePaintColors(9). Our own block 0
+    // (eye) and block 1 (highlight) already matched Ktisis's relative order exactly against real
+    // ground truth, so block 8 = 8*256 = 2048 for this. NOT independently re-verified against a real
+    // hex value the way eye/highlight/skin were — flag if it renders implausibly.
+    private const uint FeatureColorBlockStart = 2048;
+
+    /// <summary>Face-feature/tattoo tint for CustomizeIndex.TattooColor's swatch index — used for
+    /// whichever FacialFeatureN decals are toggled on (moles, scars, tattoo lines), not hair color.</summary>
+    public static float[]? ReadFeatureColor(GameData gameData, byte featureColorIdx)
+    {
+        if (!EnsureLoaded(gameData)) return null;
+        return ReadEntry(FeatureColorBlockStart, ExtendedDataLength, featureColorIdx);
+    }
+
     private static float[]? ReadEntry(uint blockStart, int length, byte index)
     {
         if (index >= length) return null;
