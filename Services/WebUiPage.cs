@@ -406,7 +406,10 @@ async function reloadViewerModel(){
       });
       if(role==='skin'){phys.sheen=0.35;phys.sheenColor=new v.THREE.Color(0xffe0cc);phys.sheenRoughness=0.6}
       else if(role==='hair'){if('anisotropy' in phys){phys.anisotropy=0.6;phys.anisotropyRotation=Math.PI/2}phys.clearcoat=0.15;phys.clearcoatRoughness=0.4}
-      else if(role==='eye'){phys.clearcoat=0.8;phys.clearcoatRoughness=0.05}
+      // ponytail: clearcoat=0.8/roughness=0.05 (near-mirror) blew the iris out to solid white under
+      // the key light — "Gläser" complaint, eyes read as glass marbles instead of colored irises.
+      // Much lower clearcoat keeps a wet-eye highlight without drowning the underlying color.
+      else if(role==='eye'){phys.clearcoat=0.25;phys.clearcoatRoughness=0.2}
       upgraded.set(old,phys);
       o.material=phys;
     });

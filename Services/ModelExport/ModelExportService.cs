@@ -518,6 +518,29 @@ public sealed class ModelExportService
                         }
                     }
                 }
+                // structural geometry with no diffuse/colorset/decal source (e.g. the Viera outer
+                // ear shell — real always-visible shape, not a toggleable decal) still has a mask
+                // texture. A flat single-color fill ("Ohren fixen" — read as flat plastic, no
+                // surface detail) loses all the shading the mask's occlusion channel would give it.
+                // Bake tint * mask.B (same AO convention as ApplyMaskOcclusion) as a real texture,
+                // fully opaque — no cutout, this is solid geometry.
+                if (baked == null && tint is { Length: 3 })
+                {
+                    var occMaskPath = MaterialTexturePaths(mtrl).FirstOrDefault(p => p.EndsWith("_mask.tex"));
+                    if (occMaskPath != null && _gameData.FileExists(occMaskPath))
+                    {
+                        var occMaskTex = _gameData.GetFile<TexFile>(occMaskPath);
+                        if (occMaskTex != null)
+                        {
+                            baked = BakeTintWithOcclusion(occMaskTex.ImageData, occMaskTex.Header.Width, occMaskTex.Header.Height, tint);
+                            var png = PngEncoder.EncodeRgba(baked, occMaskTex.Header.Width, occMaskTex.Header.Height);
+                            texIndex = pngs.Count;
+                            pngs.Add(png);
+                            LastTextureLabels.Add($"{mtrlPath} (tint+occlusion bake)");
+                            LastTrace.Add($"  tint+occlusion BAKED via {occMaskPath} ({occMaskTex.Header.Width}x{occMaskTex.Header.Height})");
+                        }
+                    }
+                }
                 if (baked == null)
                 {
                     colorSetTint = Penumbra.GameData.Files.MaterialColorTable.AverageDiffuse(mtrlRaw.Data);
@@ -570,6 +593,25 @@ public sealed class ModelExportService
     /// Blue in that layout (same convention BgraToRgba compensates for on diffuse textures), so no
     /// swap is needed to read it directly. Nearest-neighbor sampled since mask and id/diffuse
     /// textures aren't always the same resolution.</summary>
+    /// <summary>Bake a flat tint into a real texture, multiplied by the mask's occlusion channel
+    /// (byte 0 — see <see cref="ApplyMaskOcclusion"/>) — for structural geometry with no diffuse or
+    /// colorset (e.g. the Viera outer ear shell) that would otherwise render as one flat, detail-
+    /// less color. Fully opaque; this is solid geometry, not a cutout.</summary>
+    private static byte[] BakeTintWithOcclusion(byte[] maskBgra, int width, int height, float[] tint)
+    {
+        var result = new byte[width * height * 4];
+        for (var p = 0; p < width * height; p++)
+        {
+            var o = p * 4;
+            var occlusion = maskBgra[o] / 255f;
+            result[o + 0] = (byte)Math.Clamp(tint[0] * occlusion * 255f, 0f, 255f);
+            result[o + 1] = (byte)Math.Clamp(tint[1] * occlusion * 255f, 0f, 255f);
+            result[o + 2] = (byte)Math.Clamp(tint[2] * occlusion * 255f, 0f, 255f);
+            result[o + 3] = 255;
+        }
+        return result;
+    }
+
     private static void ApplyMaskOcclusion(byte[] rgba, int width, int height, byte[] maskBgra, int maskWidth, int maskHeight)
     {
         if (maskWidth <= 0 || maskHeight <= 0) return;
