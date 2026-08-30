@@ -350,7 +350,15 @@ public sealed class ModelExportService
                 var tex = _gameData.GetFile<TexFile>(texPath);
                 if (tex != null)
                 {
-                    var pixels = tex.ImageData;
+                    // Lumina decodes to BGRA (byte0=B, byte2=R — the exact channel-order quirk the
+                    // colorset bake already compensates for, see MaterialColorTable's header), but
+                    // this picked-texture path was feeding ImageData straight into the RGBA PNG
+                    // encoder with R and B swapped. THAT was the "blue-gray skin" from day one:
+                    // base.tex is verified to be a warm tan (156,126,110) in real data — swapped it
+                    // renders as (110,126,156), the blue-gray every screenshot showed. Colorset-baked
+                    // gear was unaffected (compensated); every picked texture (skin, face, eyes,
+                    // ears, hair accessory) was swapped.
+                    var pixels = BgraToRgba(tex.ImageData);
                     if (tint != null) pixels = ApplyTint(pixels, tint);
                     var png = PngEncoder.EncodeRgba(pixels, tex.Header.Width, tex.Header.Height);
                     texIndex = pngs.Count;
@@ -436,6 +444,21 @@ public sealed class ModelExportService
         }
         catch (Exception ex) { LastTrace.Add($"  mtrl exception: {ex.Message}"); }
         cache[cacheKey] = result;
+        return result;
+    }
+
+    /// <summary>Swap Lumina's decoded BGRA byte order into the RGBA the PNG encoder expects.
+    /// Returns a new array — never mutates Lumina's cached TexFile.ImageData.</summary>
+    private static byte[] BgraToRgba(byte[] bgra)
+    {
+        var result = new byte[bgra.Length];
+        for (var i = 0; i < bgra.Length; i += 4)
+        {
+            result[i] = bgra[i + 2];
+            result[i + 1] = bgra[i + 1];
+            result[i + 2] = bgra[i];
+            result[i + 3] = bgra[i + 3];
+        }
         return result;
     }
 
