@@ -739,18 +739,36 @@ public sealed unsafe class PreviewRenderer : IDisposable
     /// color, not a fixed reference, so it tolerates the backdrop's gradient.
     /// EncodeSourceBitmap already normalizes to Format32bppArgb regardless of source BGRA-ness, so
     /// this can just work in that one format without re-deriving isBgra logic itself.</summary>
-    private static byte[] EncodeChromaKeyedPng(int width, int height, int rowPitch, nint scan0, bool isBgra)
+    // ponytail: reused across frames instead of a fresh `new bool[width*height]` + `new Stack<int>`
+    // every single call — real GC pressure at 15-60fps for a ~550k-element array. Cleared, not
+    // reallocated, unless the source resized (matches the width/height fields' own resize check).
+    private bool[]? _chromaVisited;
+    private Stack<int>? _chromaStack;
+
+    private byte[] EncodeChromaKeyedPng(int width, int height, int rowPitch, nint scan0, bool isBgra)
     {
         using var bmp = EncodeSourceBitmap(width, height, rowPitch, scan0, isBgra);
         var rect = new System.Drawing.Rectangle(0, 0, width, height);
         var data = bmp.LockBits(rect, System.Drawing.Imaging.ImageLockMode.ReadWrite, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
         const int thresholdSq = 18 * 18; // untuned — per-step tolerance now, not a global one; raise/lower based on how it looks live
+
+        if (_chromaVisited == null || _chromaVisited.Length != width * height)
+        {
+            _chromaVisited = new bool[width * height];
+            _chromaStack = new Stack<int>(width * height / 4);
+        }
+        else
+        {
+            Array.Clear(_chromaVisited);
+            _chromaStack!.Clear();
+        }
+        var visited = _chromaVisited;
+        var stack = _chromaStack!;
+
         unsafe
         {
             var basePtr = (byte*)data.Scan0;
             var stride = data.Stride;
-            var visited = new bool[width * height];
-            var stack = new Stack<int>(width * height / 4);
 
             void Seed(int x, int y)
             {
