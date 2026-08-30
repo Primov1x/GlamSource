@@ -212,7 +212,7 @@ public sealed class ModelExportService
             // ...) — no full per-race table yet, just try the two ids confirmed to exist.
             var bodyId = _gameData.FileExists($"chara/human/{rc}/obj/body/b0001/model/{rc}b0001_top.mdl") ? "b0001" : "b0002";
             AddCharaPart($"chara/human/{rc}/obj/body/{bodyId}/model/{rc}{bodyId}_top.mdl", rc, $"body/{bodyId}", skinTint, meshInputs, pngs, materialCache, pose);
-            AddCharaPart($"chara/human/{rc}/obj/face/f{chara.Face:D4}/model/{rc}f{chara.Face:D4}_fac.mdl", rc, $"face/f{chara.Face:D4}", skinTint, meshInputs, pngs, materialCache, pose, eyeTint: colors?.Eye);
+            AddCharaPart($"chara/human/{rc}/obj/face/f{chara.Face:D4}/model/{rc}f{chara.Face:D4}_fac.mdl", rc, $"face/f{chara.Face:D4}", skinTint, meshInputs, pngs, materialCache, pose, eyeTint: colors?.Eye, decalTint: hairTint);
             // ponytail: the equipped hat's EQP flags decide what part of the hair renders — exactly
             // what the game does. HeadHideHair (full helmets) drops the hair part entirely;
             // HeadHideScalp hides only the "atr_kam" scalp/top-hair submeshes, which is what was
@@ -246,7 +246,7 @@ public sealed class ModelExportService
     /// when the path doesn't exist for this race. Untextured meshes get the fallback tint.</summary>
     private void AddCharaPart(string mdlPath, string raceCode, string partFolder, float[] fallbackTint,
         List<GltfMeshInput> meshInputs, List<byte[]> pngs, Dictionary<string, (int, float[]?, int, int)> materialCache, SkeletonPose? pose,
-        float[]? highlightTint = null, IReadOnlyCollection<string>? hideAttributes = null, float[]? eyeTint = null)
+        float[]? highlightTint = null, IReadOnlyCollection<string>? hideAttributes = null, float[]? eyeTint = null, float[]? decalTint = null)
     {
         if (!_gameData.FileExists(mdlPath)) { LastTrace.Add($"chara part missing: {mdlPath}"); return; }
         var raw = _gameData.GetFile(mdlPath);
@@ -307,7 +307,8 @@ public sealed class ModelExportService
                 // base.tex renders as dull blue-gray, not skin tone. Baked directly into the PNG
                 // pixels (see ResolveMaterialByPath) — glTF baseColorFactor multiply was confirmed
                 // NOT visually applying in the viewer, so don't also rely on it here.
-                var (t, colorSetTint, normalTex, metalRoughTex) = ResolveMaterialByPath(mtrlPath, tint, pngs, materialCache, highlightTint);
+                var (t, colorSetTint, normalTex, metalRoughTex) = ResolveMaterialByPath(mtrlPath, tint, pngs, materialCache, highlightTint,
+                    decalTint: mtrlName.Contains("_etc_") ? decalTint : null);
                 texIndex = t;
                 hadRealSource = texIndex >= 0 || colorSetTint != null;
                 if (texIndex >= 0) tint = null;
@@ -346,10 +347,11 @@ public sealed class ModelExportService
     /// whatever in the load/render path was dropping it. Cache key includes the tint since the same
     /// material path can be requested with a different tint (different stain, different chara-part
     /// skin/hair tint).</summary>
-    private (int Tex, float[]? Tint, int NormalTex, int MetalRoughTex) ResolveMaterialByPath(string mtrlPath, float[]? tint, List<byte[]> pngs, Dictionary<string, (int, float[]?, int, int)> cache, float[]? highlightTint = null)
+    private (int Tex, float[]? Tint, int NormalTex, int MetalRoughTex) ResolveMaterialByPath(string mtrlPath, float[]? tint, List<byte[]> pngs, Dictionary<string, (int, float[]?, int, int)> cache, float[]? highlightTint = null, float[]? decalTint = null)
     {
         var cacheKey = tint == null ? mtrlPath : $"{mtrlPath}|{tint[0]:F3},{tint[1]:F3},{tint[2]:F3}";
         if (highlightTint != null) cacheKey += $"|hl{highlightTint[0]:F3},{highlightTint[1]:F3},{highlightTint[2]:F3}";
+        if (decalTint != null) cacheKey += $"|dc{decalTint[0]:F3},{decalTint[1]:F3},{decalTint[2]:F3}";
         if (cache.TryGetValue(cacheKey, out var cached)) return cached;
         (int, float[]?, int, int) result = (-1, null, -1, -1);
         try
@@ -462,6 +464,34 @@ public sealed class ModelExportService
                         }
                     }
                 }
+                // face decal layers (eyebrows/lashes — "etc_a"/"etc_b", no diffuse/colorset, only
+                // norm+mask) were previously always dropped as "nothing to show" ("etc.mtrl... only
+                // norm+mask, the game derives their look from the mask via a shader we don't
+                // replicate" — turned out true for hair too, and the hair fix (normal.A = cutout
+                // alpha) generalizes: tint everything the normal map's alpha marks as covered with
+                // decalTint (hair color — eyebrows/lashes are hair-colored in FFXIV), instead of
+                // dropping. Diagnostic format trace included since this is an optimistic port, not
+                // independently verified for THIS material family yet.
+                if (baked == null && decalTint != null)
+                {
+                    var decalNormPath = MaterialTexturePaths(mtrl).FirstOrDefault(p => p.EndsWith("_norm.tex"));
+                    if (decalNormPath != null && _gameData.FileExists(decalNormPath))
+                    {
+                        var decalNormTex = _gameData.GetFile<TexFile>(decalNormPath);
+                        if (decalNormTex != null)
+                        {
+                            LastTrace.Add($"  decal norm tex format: {decalNormTex.Header.Format}");
+                            baked = BakeDecalAlphaCutout(decalNormTex.ImageData, decalNormTex.Header.Width, decalNormTex.Header.Height, decalTint);
+                            if (baked != null)
+                            {
+                                var png = PngEncoder.EncodeRgba(baked, decalNormTex.Header.Width, decalNormTex.Header.Height);
+                                texIndex = pngs.Count;
+                                pngs.Add(png);
+                                LastTrace.Add($"  decal BAKED via {decalNormPath} ({decalNormTex.Header.Width}x{decalNormTex.Header.Height})");
+                            }
+                        }
+                    }
+                }
                 if (baked == null)
                 {
                     colorSetTint = Penumbra.GameData.Files.MaterialColorTable.AverageDiffuse(mtrlRaw.Data);
@@ -544,6 +574,26 @@ public sealed class ModelExportService
             result[i + 1] = (byte)(rgba[i + 1] * tint[1]);
             result[i + 2] = (byte)(rgba[i + 2] * tint[2]);
             result[i + 3] = rgba[i + 3];
+        }
+        return result;
+    }
+
+    /// <summary>Flat-tint an alpha-cutout decal (face etc_a/etc_b — eyebrows/lashes) using the same
+    /// normal.A-as-cutout-shape convention verified for hair (<see cref="BakeHairMask"/>). No weight
+    /// blend — just solid tint everywhere the shape covers.</summary>
+    private static byte[] BakeDecalAlphaCutout(byte[] normalRgba, int width, int height, float[] tint)
+    {
+        var result = new byte[width * height * 4];
+        var r = (byte)Math.Clamp(tint[0] * 255f, 0f, 255f);
+        var g = (byte)Math.Clamp(tint[1] * 255f, 0f, 255f);
+        var b = (byte)Math.Clamp(tint[2] * 255f, 0f, 255f);
+        for (var p = 0; p < width * height; p++)
+        {
+            var o = p * 4;
+            result[o + 0] = r;
+            result[o + 1] = g;
+            result[o + 2] = b;
+            result[o + 3] = normalRgba[o + 3];
         }
         return result;
     }
