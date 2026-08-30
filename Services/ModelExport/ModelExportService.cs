@@ -404,6 +404,20 @@ public sealed class ModelExportService
                         baked = Penumbra.GameData.Files.MaterialColorTable.BakeDiffuse(mtrlRaw.Data, idTex.ImageData, idTex.Header.Width, idTex.Header.Height, tint);
                     if (baked != null)
                     {
+                        // ponytail: fine surface detail (emblems, panel-line shadowing — "das
+                        // silberne X fehlt", confirmed absent from the raw id-map bake itself) comes
+                        // from an AO pass baked into the mask texture, not the color table — verified
+                        // against Penumbra's own exporter (MaterialExporter.cs, BuildCharacter:
+                        // "MultiplyOperation.Execute(baseColor, maskOperation.Occlusion)", Occlusion
+                        // = mask.B). Multiply it in the same way, nearest-sampled since mask and id
+                        // textures aren't always the same resolution.
+                        var maskPath = MaterialTexturePaths(mtrl).FirstOrDefault(p => p.EndsWith("_mask.tex"));
+                        if (maskPath != null && _gameData.FileExists(maskPath))
+                        {
+                            var maskTex = _gameData.GetFile<TexFile>(maskPath);
+                            if (maskTex != null)
+                                ApplyMaskOcclusion(baked, idTex!.Header.Width, idTex.Header.Height, maskTex.ImageData, maskTex.Header.Width, maskTex.Header.Height);
+                        }
                         var png = PngEncoder.EncodeRgba(baked, idTex!.Header.Width, idTex.Header.Height);
                         texIndex = pngs.Count;
                         pngs.Add(png);
@@ -488,6 +502,31 @@ public sealed class ModelExportService
             result[i + 3] = bgra[i + 3];
         }
         return result;
+    }
+
+    /// <summary>Multiply <paramref name="rgba"/>'s RGB in-place by a mask texture's Blue channel
+    /// (Penumbra's "Occlusion" — see caller). maskBgra is Lumina's raw undecoded bytes: byte 0 is
+    /// Blue in that layout (same convention BgraToRgba compensates for on diffuse textures), so no
+    /// swap is needed to read it directly. Nearest-neighbor sampled since mask and id/diffuse
+    /// textures aren't always the same resolution.</summary>
+    private static void ApplyMaskOcclusion(byte[] rgba, int width, int height, byte[] maskBgra, int maskWidth, int maskHeight)
+    {
+        if (maskWidth <= 0 || maskHeight <= 0) return;
+        for (var y = 0; y < height; y++)
+        {
+            var my = Math.Min(maskHeight - 1, y * maskHeight / height);
+            for (var x = 0; x < width; x++)
+            {
+                var mx = Math.Min(maskWidth - 1, x * maskWidth / width);
+                var maskOffset = (my * maskWidth + mx) * 4;
+                if (maskOffset + 0 >= maskBgra.Length) continue;
+                var occlusion = maskBgra[maskOffset] / 255f;
+                var o = (y * width + x) * 4;
+                rgba[o] = (byte)(rgba[o] * occlusion);
+                rgba[o + 1] = (byte)(rgba[o + 1] * occlusion);
+                rgba[o + 2] = (byte)(rgba[o + 2] * occlusion);
+            }
+        }
     }
 
     /// <summary>Multiply an RGBA8 pixel buffer's RGB by a tint (0-1 each); alpha untouched. Returns
