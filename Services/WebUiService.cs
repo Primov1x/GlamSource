@@ -370,12 +370,18 @@ public sealed class WebUiService : IDisposable
             try
             {
                 var (glbSlots, glbChara, glbPose, glbColors) = ResolveModelInputs();
-                // ponytail: default view is the self-maintained "idle" snapshot, not raw live pose
-                // — whatever the character happens to be doing right now (crafting, sitting, ...)
-                // shouldn't be what opens by default. ?pose=live forces the raw live capture,
-                // ?pose=weapon the other snapshot; either falls back to live if not saved yet.
+                // ponytail: default view is the model's own bind pose — no live skeleton capture at
+                // all. The self-maintained "idle" snapshot (first-seen-standing, frozen) still
+                // inherited every live-capture flakiness (missing physics bones on a transient
+                // frame, mid-animation finger curl — "Klauen-Hand" traced back to exactly this).
+                // Bind pose needs zero game-memory reads, so none of that can happen: the .mdl's own
+                // vertices are already posed, see ModelExportService's own top-of-file comment.
+                // ?pose=live forces the raw live capture, ?pose=weapon the saved weapon-drawn
+                // snapshot; both still fall back to live if not saved yet.
                 var poseName = query["pose"] ?? "idle";
-                if (poseName != "live" && _savedPoses.TryGetValue(poseName, out var saved))
+                if (poseName == "idle")
+                    glbPose = null;
+                else if (poseName != "live" && _savedPoses.TryGetValue(poseName, out var saved))
                     glbPose = saved;
                 var glb = _modelExport.BuildGlb(glbSlots, glbChara, bypassCache: true, pose: glbPose, colors: glbColors);
                 return glb == null
