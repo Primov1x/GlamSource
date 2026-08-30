@@ -38,7 +38,13 @@ public static class CmpColorReader
         // hrothgar (13 Helions, 14 Lost) don't have extended hair colors
         var isHairExtended = tribe is not (13 or 14);
 
-        var skin = ReadEntry(4608 + tribeGenderIdx * 1280 + 3 * (uint)BlockLength, DataLength, skinIdx);
+        // ponytail: skin lives in BLOCK 0 of the tribe/gender area, not block 3 as Ktisis' reader
+        // suggested — verified against ground truth: Glamourer displays #A99B98 for this user's
+        // skin swatch (Veena male idx 127), and a full scan of human.cmp finds that exact color
+        // ONLY at block 0 idx 127 of the matching tribe/gender blocks (block 3 gives a warm tan
+        // that is NOT what the game shows). Hair stays at block 4: its value there matches both
+        // the classic white-to-black hair swatch ramp and the user's visually dark hair.
+        var skin = ReadEntry(4608 + tribeGenderIdx * 1280 + 0 * (uint)BlockLength, DataLength, skinIdx);
         var hair = ReadEntry(4608 + tribeGenderIdx * 1280 + 4 * (uint)BlockLength, isHairExtended ? ExtendedDataLength : DataLength, hairIdx);
         if (skin == null || hair == null) return null;
         return new CustomizeColors(skin, hair);
