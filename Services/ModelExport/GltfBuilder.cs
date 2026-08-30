@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace GlamSource.Services.ModelExport;
 
@@ -139,7 +140,14 @@ public static class GltfBuilder
             materials,
             samplers = Array.Empty<object>(),
         };
-        var json = JsonSerializer.SerializeToUtf8Bytes(gltf);
+        // ponytail: "cannot read properties of null (reading 'index')" — normalTexture/
+        // metallicRoughnessTexture are set to C# null when absent (e.g. "hasMetalRough ? ... : null"),
+        // which serializes to JSON `null`, not an omitted key. three.js's GLTFLoader checks
+        // `!== undefined` (true for null) then reads `.index` off it — crashes. glTF spec wants the
+        // key left out entirely for "no texture", so drop nulls at serialize time instead of hand-
+        // building two near-identical anonymous objects per optional field.
+        var jsonOpts = new JsonSerializerOptions { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
+        var json = JsonSerializer.SerializeToUtf8Bytes(gltf, jsonOpts);
 
         return WrapGlb(json, bin.ToArray());
     }
