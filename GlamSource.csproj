@@ -41,7 +41,7 @@
     <PackageReference Include="TerraFX.Interop.Windows" Version="10.0.26100.5" />
     <!-- GDI+ JPEG encode for the web-UI MJPEG preview stream (PreviewRenderer.EncodeJpeg) — a
          Windows-only native wrapper, which matches this project's net10.0-windows7.0 TFM exactly. -->
-    <PackageReference Include="System.Drawing.Common" Version="9.0.0" />
+    <PackageReference Include="System.Drawing.Common" Version="10.0.0" />
   </ItemGroup>
 
   <ItemGroup>

@@ -114,7 +114,7 @@ public static unsafe class SkeletonPoseService
             // already correctly composed by the engine either way, only the bind pose needs this to
             // match; skipping it is exactly what made attached geometry (fingers) explode/stretch.
             var boneNames = new string[boneCount];
-            for (var i = 0; i < boneCount; i++) boneNames[i] = hkSkel->Bones[i].Name.String;
+            for (var i = 0; i < boneCount; i++) boneNames[i] = hkSkel->Bones[i].Name.String ?? "";
 
             if (p == 0)
             {
