@@ -195,6 +195,18 @@ public class Plugin : IAsyncDalamudPlugin
         _log.Info("[Plugin] DisposeAsync() entered");
         try
         {
+            // ponytail: "beim Disablen vom Plugin auch Browsingway das Overlay disablen" — verified
+            // via decompile (Browsingway.Settings) that "/bw overlay <name> disabled on|off|toggle"
+            // is a real command, not guessed. Best-effort: Browsingway might already be gone by the
+            // time we're unloading (e.g. it got disabled first), so don't let this throw and skip
+            // the rest of cleanup.
+            try
+            {
+                if (PluginInterface.InstalledPlugins.Any(p => p.InternalName == "Browsingway" && p.IsLoaded))
+                    CommandManager.ProcessCommand("/bw overlay glamsource disabled on");
+            }
+            catch (Exception ex) { _log.Warning($"[Plugin] disabling Browsingway overlay on unload failed: {ex.Message}"); }
+
             PluginInterface.UiBuilder.Draw -= WindowSystem.Draw;
             PluginInterface.UiBuilder.OpenConfigUi -= OpenConfigUi;
             PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUi;
@@ -262,6 +274,11 @@ public class Plugin : IAsyncDalamudPlugin
                 // stale in an already-open overlay until the user manually reloads it. Force one here.
                 CommandManager.ProcessCommand("/bw overlay glamsource reload toggle");
                 CommandManager.ProcessCommand("/bw overlay glamsource hidden on");
+                // ponytail: "beim Disablen vom Plugin auch Browsingway disablen, beim Anschalten
+                // wieder enablen" — mirrors DisposeAsync's "disabled on" call, so a plugin that got
+                // disabled last session (leaving its Browsingway overlay disabled too) comes back up
+                // clean on next load instead of staying invisible with no obvious reason why.
+                CommandManager.ProcessCommand("/bw overlay glamsource disabled off");
                 _bwHideDone = true;
             }
         }

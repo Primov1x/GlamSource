@@ -280,11 +280,16 @@ public sealed class WebUiService : IDisposable
         {
             while (!token.IsCancellationRequested && _configuration.WebUiLive3DPreview)
             {
-                var jpeg = _shell.PreviewWindow?.Renderer.LatestWebJpeg;
+                var renderer = _shell.PreviewWindow?.Renderer;
+                var jpeg = renderer?.LatestWebJpeg;
                 if (jpeg != null && !ReferenceEquals(jpeg, lastSent))
                 {
                     lastSent = jpeg;
-                    stream.Write(Encoding.ASCII.GetBytes($"--{boundary}\r\nContent-Type: image/jpeg\r\nContent-Length: {jpeg.Length}\r\n\r\n"));
+                    // ponytail: per-part Content-Type — the experimental transparent-backdrop mode
+                    // (see PreviewRenderer.SetTransparentBackdrop) switches individual frames to PNG,
+                    // multipart/x-mixed-replace allows each part to declare its own type.
+                    var contentType = renderer!.LatestWebFrameIsPng ? "image/png" : "image/jpeg";
+                    stream.Write(Encoding.ASCII.GetBytes($"--{boundary}\r\nContent-Type: {contentType}\r\nContent-Length: {jpeg.Length}\r\n\r\n"));
                     stream.Write(jpeg);
                     stream.Write(Encoding.ASCII.GetBytes("\r\n"));
                     stream.Flush();
@@ -420,6 +425,17 @@ public sealed class WebUiService : IDisposable
                 if (zoomAtDelta > 0) renderer.PanCamera(zoomAtPx * zoomAtDelta * 2f, zoomAtPy * zoomAtDelta * 2f);
             });
             return Json(new { ok = true });
+        }
+
+        if (method == "POST" && path == "/api/action/preview3d/transparent" && _configuration.WebUiLive3DPreview
+            && bool.TryParse(query["on"], out var transparentOn))
+        {
+            // ponytail: experimental — see PreviewRenderer.SetTransparentBackdrop's doc comment for
+            // the naive-chroma-key caveat. "mach mal nen Aus/An-Schalter für trans, dann kann ich es
+            // mir anschauen" — this is that switch.
+            _shell.PreviewWindow?.Renderer.SetTransparentBackdrop(transparentOn);
+            _log.Information($"[WebUi] preview3d transparent backdrop: {transparentOn}");
+            return Json(new { ok = true, transparent = transparentOn });
         }
 
         if (method == "POST" && path == "/api/action/preview3d/setitem" && _configuration.WebUiLive3DPreview

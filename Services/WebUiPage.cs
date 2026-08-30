@@ -71,6 +71,7 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 #preview3d.active{cursor:grabbing}
 #preview3d.panning{cursor:ns-resize}
 #p3dspin.active{color:var(--accent);font-weight:600}
+#p3dtrans.active{color:var(--accent);font-weight:600}
 </style>
 </head>
 <body>
@@ -100,6 +101,7 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
   <div class="row" style="margin-top:6px;margin-bottom:10px;flex-wrap:wrap;gap:8px">
     <button id="p3dspin" onclick="toggleAutoSpin()" title="Wie bei Online-Shops — dreht das Model automatisch. Ziehen mit der Maus oder Zurücksetzen stoppt es wieder.">🎠 Auto-Drehen</button>
     <button onclick="resetPreview3D()" title="Falls das Bild feststeckt oder was Falsches zeigt (z.B. ein fremdes Portrait) — stoppt auch Auto-Drehen">🔄 Preview zurücksetzen</button>
+    <button id="p3dtrans" onclick="toggleTransparent()" title="Experimentell: färbt den grauen Studio-Hintergrund transparent (naiver Chroma-Key — dunkle Klamotten/Haare können mit erwischt werden)">🪄 Transparenter Hintergrund</button>
     <a href="#" onclick="loadPreview3DDebug();return false" style="font-size:12px">🩺 Preview-Stream-Debug (fps, Fehler, Frame-Größe)</a>
     <pre id="p3ddebug" style="display:none;font-size:11px;background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:8px;margin-top:6px;white-space:pre-wrap"></pre>
   </div>
@@ -172,6 +174,13 @@ function startAutoSpin(){
   btn.textContent='⏹️ Drehen stoppen';
   p3dSpinTimer=setInterval(()=>post('/api/action/preview3d/rotate?dx=3&dy=0'),50);
 }
+async function toggleTransparent(){
+  const btn=$('#p3dtrans');
+  const on=!btn.classList.contains('active');
+  await post(`/api/action/preview3d/transparent?on=${on}`);
+  btn.classList.toggle('active',on);
+}
+
 function stopAutoSpin(){
   if(p3dSpinTimer){clearInterval(p3dSpinTimer);p3dSpinTimer=null}
   const btn=$('#p3dspin');
@@ -216,12 +225,19 @@ async function runPreview3DStream(signal){
         const len=parseInt(lenMatch[1],10);
         const bodyStart=headerEnd+4;
         if(buf.length<bodyStart+len)break; // body not fully arrived yet
-        const jpeg=buf.slice(bodyStart,bodyStart+len);
+        const frameBytes=buf.slice(bodyStart,bodyStart+len);
         buf=buf.slice(bodyStart+len);
+        // transparent-backdrop mode (see PreviewRenderer.SetTransparentBackdrop) sends PNG parts
+        // instead of JPEG — read the part's own declared type rather than assuming.
+        const typeMatch=/Content-Type:\s*([\w/-]+)/i.exec(header);
+        const mimeType=typeMatch?typeMatch[1]:'image/jpeg';
         try{
-          const bitmap=await createImageBitmap(new Blob([jpeg],{type:'image/jpeg'}));
+          const bitmap=await createImageBitmap(new Blob([frameBytes],{type:mimeType}));
           if(canvas.width!==bitmap.width)canvas.width=bitmap.width;
           if(canvas.height!==bitmap.height)canvas.height=bitmap.height;
+          // clear first — a transparent PNG frame would otherwise leave the previous frame's pixels
+          // showing through underneath instead of the real (game) background behind the canvas.
+          ctx.clearRect(0,0,canvas.width,canvas.height);
           ctx.drawImage(bitmap,0,0);
           bitmap.close();
         }catch(e){ /* one corrupt/truncated frame — skip it, next one will be fine */ }

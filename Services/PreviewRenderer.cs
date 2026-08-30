@@ -479,7 +479,24 @@ public sealed unsafe class PreviewRenderer : IDisposable
     private uint _webStagingWidth, _webStagingHeight;
     private DXGI_FORMAT _webStagingFormat;
     private byte[]? _latestWebJpeg;
+    private bool _latestWebFrameIsPng;
     private long _lastEncodeTickMs;
+    // ponytail: "mach mal nen Aus/An-Schalter für trans[parenz]" — experimental, off by default.
+    // JPEG has no alpha channel at all, so a transparent backdrop needs PNG instead (slower/bigger,
+    // only paid while this is actually on). Chroma-key is naive: samples the top-left pixel each
+    // frame as "the backdrop color" and keys out anything close to it — CharaView has no real
+    // alpha-separated backdrop/character split to read instead (checked the FFXIVClientStructs field
+    // dump, nothing like it exists), and dark clothing/hair close to that sampled color WILL get
+    // eaten too. Known, accepted limitation — this is for looking at, not a finished feature.
+    private bool _transparentBackdropEnabled;
+
+    /// <summary>Toggle the experimental transparent-backdrop chroma-key. See the field's own comment
+    /// for why it's naive and what it'll get wrong. Thread-safe plain bool write.</summary>
+    public void SetTransparentBackdrop(bool enabled) => _transparentBackdropEnabled = enabled;
+
+    /// <summary>Whether LatestWebJpeg is currently a PNG (transparent-backdrop mode) instead of a
+    /// JPEG — WebUiService's stream needs this to set the right per-part Content-Type.</summary>
+    public bool LatestWebFrameIsPng => _latestWebFrameIsPng;
     // ponytail: was 33 (~30fps cap) — live data showed only ~22fps sustained even under that cap
     // (JPEG encode itself is 6ms, nowhere near the limiter), so the 30fps ceiling wasn't even being
     // hit. Lowered to try for more headroom; if GPU-copy-readiness is the real ceiling (not this),
@@ -657,7 +674,10 @@ public sealed unsafe class PreviewRenderer : IDisposable
                     // Drop it silently (not an error, not a skip — the frame just lost the race).
                     if (_webBufferSeq[i] <= _webLastSentSeq) continue;
                     var encodeStart = Environment.TickCount64;
-                    _latestWebJpeg = EncodeJpeg((int)desc.Width, (int)desc.Height, (int)mapped.RowPitch, (nint)mapped.pData, isBgra);
+                    _latestWebFrameIsPng = _transparentBackdropEnabled;
+                    _latestWebJpeg = _transparentBackdropEnabled
+                        ? EncodeChromaKeyedPng((int)desc.Width, (int)desc.Height, (int)mapped.RowPitch, (nint)mapped.pData, isBgra)
+                        : EncodeJpeg((int)desc.Width, (int)desc.Height, (int)mapped.RowPitch, (nint)mapped.pData, isBgra);
                     _lastEncodeDurationMs = Environment.TickCount64 - encodeStart;
                     _lastFrameBytes = _latestWebJpeg.Length;
                     _webFramesEncoded++;
@@ -706,6 +726,37 @@ public sealed unsafe class PreviewRenderer : IDisposable
         using var encParams = new System.Drawing.Imaging.EncoderParameters(1);
         encParams.Param[0] = new System.Drawing.Imaging.EncoderParameter(System.Drawing.Imaging.Encoder.Quality, 80L);
         bmp.Save(ms, encoder, encParams);
+        return ms.ToArray();
+    }
+
+    /// <summary>Naive chroma-key + PNG encode — see _transparentBackdropEnabled's doc comment for
+    /// why this is naive (no real alpha source, samples one corner pixel as "the backdrop color").
+    /// EncodeSourceBitmap already normalizes to Format32bppArgb regardless of source BGRA-ness, so
+    /// this can just work in that one format without re-deriving isBgra logic itself.</summary>
+    private static byte[] EncodeChromaKeyedPng(int width, int height, int rowPitch, nint scan0, bool isBgra)
+    {
+        using var bmp = EncodeSourceBitmap(width, height, rowPitch, scan0, isBgra);
+        var rect = new System.Drawing.Rectangle(0, 0, width, height);
+        var data = bmp.LockBits(rect, System.Drawing.Imaging.ImageLockMode.ReadWrite, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        const int thresholdSq = 30 * 30; // untuned — raise/lower based on how it looks live
+        unsafe
+        {
+            var basePtr = (byte*)data.Scan0;
+            byte refB = basePtr[0], refG = basePtr[1], refR = basePtr[2]; // top-left pixel = "the backdrop"
+            for (var y = 0; y < height; y++)
+            {
+                var row = basePtr + y * data.Stride;
+                for (var x = 0; x < width; x++)
+                {
+                    var px = row + x * 4;
+                    int db = px[0] - refB, dg = px[1] - refG, dr = px[2] - refR;
+                    if (db * db + dg * dg + dr * dr < thresholdSq) px[3] = 0;
+                }
+            }
+        }
+        bmp.UnlockBits(data);
+        using var ms = new MemoryStream();
+        bmp.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
         return ms.ToArray();
     }
 
