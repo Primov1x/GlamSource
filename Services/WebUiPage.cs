@@ -69,6 +69,7 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 .slot .s{color:var(--muted);font-size:11px}
 #preview3d{background:var(--panel);border:1px solid var(--border);border-radius:8px;margin-bottom:14px;cursor:grab;display:none;width:100%;max-width:480px;height:auto;object-fit:contain}
 #preview3d.active{cursor:grabbing}
+#p3dspin.active{color:var(--accent);font-weight:600}
 </style>
 </head>
 <body>
@@ -96,7 +97,8 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
   <canvas id="preview3d"></canvas>
   <div class="empty" id="p3dhint" style="display:none;font-size:12px">Click 🔓 above to lock the overlay, then drag the model to rotate.</div>
   <div style="margin-top:2px;margin-bottom:10px">
-    <a href="#" onclick="loadPreview3DDebug();return false" style="font-size:12px">🩺 Preview-Stream-Debug (fps, Fehler, Frame-Größe)</a>
+    <a href="#" id="p3dspin" onclick="toggleAutoSpin();return false" style="font-size:12px" title="Wie bei Online-Shops — dreht das Model automatisch. Ziehen mit der Maus stoppt es wieder.">🎠 Auto-Drehen</a>
+    · <a href="#" onclick="loadPreview3DDebug();return false" style="font-size:12px">🩺 Preview-Stream-Debug (fps, Fehler, Frame-Größe)</a>
     · <a href="#" onclick="resetPreview3D();return false" style="font-size:12px" title="Falls das Bild feststeckt oder was Falsches zeigt (z.B. ein fremdes Portrait)">🔄 Preview zurücksetzen</a>
     <pre id="p3ddebug" style="display:none;font-size:11px;background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:8px;margin-top:6px;white-space:pre-wrap"></pre>
   </div>
@@ -156,6 +158,20 @@ function startPreview3D(){
 function stopPreview3D(){
   if(p3dAbort){p3dAbort.abort();p3dAbort=null}
   $('#preview3d').style.display='none';
+  stopAutoSpin();
+}
+
+// --- turntable auto-rotate, like a product viewer on a shop site ---
+let p3dSpinTimer=null;
+function toggleAutoSpin(){ p3dSpinTimer?stopAutoSpin():startAutoSpin() }
+function startAutoSpin(){
+  stopAutoSpin();
+  $('#p3dspin').classList.add('active');
+  p3dSpinTimer=setInterval(()=>post('/api/action/preview3d/rotate?dx=3&dy=0'),50);
+}
+function stopAutoSpin(){
+  if(p3dSpinTimer){clearInterval(p3dSpinTimer);p3dSpinTimer=null}
+  $('#p3dspin')?.classList.remove('active');
 }
 
 function findBytes(hay,needle,from){
@@ -223,7 +239,7 @@ async function loadPreview3DDebug(){
 
 (function initPreview3DDrag(){
   const canvas=$('#preview3d');
-  canvas.addEventListener('mousedown',e=>{p3dDragging=true;p3dLastX=e.clientX;p3dLastY=e.clientY;canvas.classList.add('active')});
+  canvas.addEventListener('mousedown',e=>{stopAutoSpin();p3dDragging=true;p3dLastX=e.clientX;p3dLastY=e.clientY;canvas.classList.add('active')});
   window.addEventListener('mouseup',()=>{p3dDragging=false;canvas.classList.remove('active')});
   window.addEventListener('mousemove',e=>{
     if(!p3dDragging)return;
