@@ -448,6 +448,15 @@ public sealed unsafe class PreviewRenderer : IDisposable
     private const int WebStagingBufferCount = 2;
     private readonly ComPtr<ID3D11Texture2D>[] _webStaging = new ComPtr<ID3D11Texture2D>[WebStagingBufferCount];
     private readonly bool[] _webCopyPending = new bool[WebStagingBufferCount];
+    // ponytail: reported live as "flackert leicht, wie Zucken" — two in-flight GPU copies aren't
+    // guaranteed to finish in the order they were issued (DO_NOT_WAIT polling can observe a later
+    // copy completing before an earlier one). Without this, whichever buffer happens to finish
+    // first wins, so an older frame can occasionally display AFTER a newer one already did — a
+    // brief visible rollback. Each buffer remembers which issue-sequence it's carrying; a
+    // completed buffer only gets sent if its sequence is newer than the last frame actually shown.
+    private readonly long[] _webBufferSeq = new long[WebStagingBufferCount];
+    private long _webNextSeq = 1;
+    private long _webLastSentSeq;
     private int _webNextIssueSlot; // round-robins which buffer gets the next CopyResource
     private uint _webStagingWidth, _webStagingHeight;
     private DXGI_FORMAT _webStagingFormat;
@@ -540,6 +549,8 @@ public sealed unsafe class PreviewRenderer : IDisposable
             _webCopyPending[i] = false;
         }
         _webNextIssueSlot = 0;
+        _webNextSeq = 1;
+        _webLastSentSeq = 0;
     }
 
     /// <remarks>ponytail: pattern mirrors Dalamud's own TextureManager.GetRawImageAsync (internal,
@@ -624,11 +635,15 @@ public sealed unsafe class PreviewRenderer : IDisposable
                 }
                 try
                 {
+                    // stale — a newer buffer already got shown while this one was still pending.
+                    // Drop it silently (not an error, not a skip — the frame just lost the race).
+                    if (_webBufferSeq[i] <= _webLastSentSeq) continue;
                     var encodeStart = Environment.TickCount64;
                     _latestWebJpeg = EncodeJpeg((int)desc.Width, (int)desc.Height, (int)mapped.RowPitch, (nint)mapped.pData, isBgra);
                     _lastEncodeDurationMs = Environment.TickCount64 - encodeStart;
                     _lastFrameBytes = _latestWebJpeg.Length;
                     _webFramesEncoded++;
+                    _webLastSentSeq = _webBufferSeq[i];
                     if (_webFramesEncoded == 1) _log.Info($"[PreviewRenderer] first web frame encoded: {_lastFrameBytes} bytes in {_lastEncodeDurationMs}ms, isBgra={isBgra}");
                     _lastEncodeTickMs = now;
                 }
@@ -651,6 +666,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
             if (_webCopyPending[slot]) continue; // still in flight — try the other buffer
             context.Get()->CopyResource((ID3D11Resource*)_webStaging[slot].Get(), (ID3D11Resource*)tex.Get());
             _webCopyPending[slot] = true;
+            _webBufferSeq[slot] = _webNextSeq++;
             break;
         }
     }
