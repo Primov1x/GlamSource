@@ -93,7 +93,7 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 </section>
 
 <section id="view-character" style="display:none">
-  <img id="preview3d" alt="">
+  <canvas id="preview3d"></canvas>
   <div class="empty" id="p3dhint" style="display:none;font-size:12px">Click 🔓 above to lock the overlay, then drag the model to rotate.</div>
   <div style="margin-top:2px;margin-bottom:10px">
     <a href="#" onclick="loadPreview3DDebug();return false" style="font-size:12px">🩺 Preview-Stream-Debug (fps, Fehler, Frame-Größe)</a>
@@ -136,21 +136,75 @@ function showTab(t){
 }
 
 // --- 3D preview (opt-in, see Settings > 3D Preview) ---
-// Native MJPEG stream (multipart/x-mixed-replace) — the <img> element decodes and repaints itself,
-// no poll loop or raw-pixel JS decode needed anymore (server side: WebUiService.StreamPreviewMjpeg).
-let p3dDragging=false, p3dLastX=0, p3dLastY=0;
+// multipart/x-mixed-replace inside a plain <img> has no guaranteed repaint cadence in modern
+// Chromium — the stream can arrive at 70+ fps (confirmed via /api/preview3d/debug) while the
+// browser only repaints the element far less often internally, no JS hook exposed to even measure
+// it. Parsing the multipart stream ourselves and drawing each decoded frame to a canvas puts US in
+// control of exactly when a repaint happens — one drawImage per arrived frame, not "whenever
+// Chromium feels like it".
+let p3dDragging=false, p3dLastX=0, p3dLastY=0, p3dAbort=null;
+
 function startPreview3D(){
-  const img=$('#preview3d');
-  img.onerror=()=>{ img.style.display='none'; $('#p3dhint').style.display='none'; };
-  img.style.display='block';
+  stopPreview3D();
+  const canvas=$('#preview3d');
+  canvas.style.display='block';
   $('#p3dhint').style.display=overlayLocked?'none':'flex';
-  img.src='/api/preview3d/stream?_='+Date.now(); // cache-bust: force a fresh connection every tab entry
+  p3dAbort=new AbortController();
+  runPreview3DStream(p3dAbort.signal);
 }
 function stopPreview3D(){
-  const img=$('#preview3d');
-  img.onerror=null;
-  img.removeAttribute('src'); // aborts the in-flight stream, closing the server-side connection
-  img.style.display='none';
+  if(p3dAbort){p3dAbort.abort();p3dAbort=null}
+  $('#preview3d').style.display='none';
+}
+
+function findBytes(hay,needle,from){
+  outer: for(let i=from;i<=hay.length-needle.length;i++){
+    for(let j=0;j<needle.length;j++) if(hay[i+j]!==needle[j]) continue outer;
+    return i;
+  }
+  return -1;
+}
+
+async function runPreview3DStream(signal){
+  const canvas=$('#preview3d'), ctx=canvas.getContext('2d');
+  const CRLFCRLF=new Uint8Array([13,10,13,10]);
+  try{
+    const res=await fetch('/api/preview3d/stream?_='+Date.now(),{signal});
+    if(!res.ok||!res.body){ canvas.style.display='none'; return }
+    const boundaryMatch=/boundary=([^;]+)/i.exec(res.headers.get('Content-Type')||'');
+    const boundary=new TextEncoder().encode('--'+(boundaryMatch?boundaryMatch[1]:'glamsourceframe'));
+    const reader=res.body.getReader();
+    let buf=new Uint8Array(0);
+    while(true){
+      const {value,done}=await reader.read();
+      if(done)break;
+      const merged=new Uint8Array(buf.length+value.length);
+      merged.set(buf);merged.set(value,buf.length);
+      buf=merged;
+      // drain every complete part currently sitting in the buffer before waiting on more network data
+      for(;;){
+        const partStart=findBytes(buf,boundary,0);
+        if(partStart<0)break;
+        const headerEnd=findBytes(buf,CRLFCRLF,partStart);
+        if(headerEnd<0)break; // header not fully arrived yet
+        const header=new TextDecoder().decode(buf.subarray(partStart,headerEnd));
+        const lenMatch=/Content-Length:\s*(\d+)/i.exec(header);
+        if(!lenMatch){ buf=buf.subarray(headerEnd+4); continue } // malformed part — skip past it
+        const len=parseInt(lenMatch[1],10);
+        const bodyStart=headerEnd+4;
+        if(buf.length<bodyStart+len)break; // body not fully arrived yet
+        const jpeg=buf.slice(bodyStart,bodyStart+len);
+        buf=buf.slice(bodyStart+len);
+        try{
+          const bitmap=await createImageBitmap(new Blob([jpeg],{type:'image/jpeg'}));
+          if(canvas.width!==bitmap.width)canvas.width=bitmap.width;
+          if(canvas.height!==bitmap.height)canvas.height=bitmap.height;
+          ctx.drawImage(bitmap,0,0);
+          bitmap.close();
+        }catch(e){ /* one corrupt/truncated frame — skip it, next one will be fine */ }
+      }
+    }
+  }catch(e){ if(e.name!=='AbortError'){ console.warn('[preview3d] stream error',e); canvas.style.display='none' } }
 }
 
 async function loadPreview3DDebug(){
@@ -162,16 +216,16 @@ async function loadPreview3DDebug(){
 }
 
 (function initPreview3DDrag(){
-  const img=$('#preview3d');
-  img.addEventListener('mousedown',e=>{p3dDragging=true;p3dLastX=e.clientX;p3dLastY=e.clientY;img.classList.add('active')});
-  window.addEventListener('mouseup',()=>{p3dDragging=false;img.classList.remove('active')});
+  const canvas=$('#preview3d');
+  canvas.addEventListener('mousedown',e=>{p3dDragging=true;p3dLastX=e.clientX;p3dLastY=e.clientY;canvas.classList.add('active')});
+  window.addEventListener('mouseup',()=>{p3dDragging=false;canvas.classList.remove('active')});
   window.addEventListener('mousemove',e=>{
     if(!p3dDragging)return;
     const dx=e.clientX-p3dLastX, dy=e.clientY-p3dLastY;
     p3dLastX=e.clientX;p3dLastY=e.clientY;
     post(`/api/action/preview3d/rotate?dx=${(dx*0.75).toFixed(2)}&dy=${(dy*0.75).toFixed(2)}`);
   });
-  img.addEventListener('wheel',e=>{
+  canvas.addEventListener('wheel',e=>{
     e.preventDefault();
     post(`/api/action/preview3d/zoom?delta=${(-e.deltaY*0.002).toFixed(3)}`);
   },{passive:false});
