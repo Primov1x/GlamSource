@@ -95,7 +95,10 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 <section id="view-character" style="display:none">
   <img id="preview3d" alt="">
   <div class="empty" id="p3dhint" style="display:none;font-size:12px">Click 🔓 above to lock the overlay, then drag the model to rotate.</div>
-  <div style="margin-top:2px;margin-bottom:10px"><a href="/api/preview3d/debug" target="_blank" style="font-size:12px">🩺 Preview-Stream-Debug (fps, Fehler, Frame-Größe)</a></div>
+  <div style="margin-top:2px;margin-bottom:10px">
+    <a href="#" onclick="loadPreview3DDebug();return false" style="font-size:12px">🩺 Preview-Stream-Debug (fps, Fehler, Frame-Größe)</a>
+    <pre id="p3ddebug" style="display:none;font-size:11px;background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:8px;margin-top:6px;white-space:pre-wrap"></pre>
+  </div>
   <div class="empty" id="snapinfo">Loading…</div>
   <div class="snapgrid" id="snap"></div>
 </section>
@@ -148,6 +151,14 @@ function stopPreview3D(){
   img.onerror=null;
   img.removeAttribute('src'); // aborts the in-flight stream, closing the server-side connection
   img.style.display='none';
+}
+
+async function loadPreview3DDebug(){
+  const pre=$('#p3ddebug');
+  pre.style.display='block';
+  pre.textContent='Loading…';
+  try{ pre.textContent=JSON.stringify(await fetch('/api/preview3d/debug').then(r=>r.json()),null,2) }
+  catch(e){ pre.textContent='Fehler: '+e }
 }
 
 (function initPreview3DDrag(){
