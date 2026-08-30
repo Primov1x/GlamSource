@@ -279,6 +279,7 @@ async function startViewer(){
     const THREE=await import('three');
     const {GLTFLoader}=await import('three/addons/loaders/GLTFLoader.js');
     const {OrbitControls}=await import('three/addons/controls/OrbitControls.js');
+    const {RoomEnvironment}=await import('three/addons/environments/RoomEnvironment.js');
     const box=$('#viewer3d');
     box.style.display='block';
     // preserveDrawingBuffer: the eyedropper reads pixels back from this canvas after each frame
@@ -293,6 +294,14 @@ async function startViewer(){
     box.appendChild(renderer.domElement);
     const scene=new THREE.Scene();
     scene.background=new THREE.Color(0x555555);
+    // ponytail: "fehlendes Gold"/"Glas-Effekt fehlt" — metal trim now bakes real metallicFactor=1
+    // (see GltfBuilder's metal/roughness texture), but PBR metal only shows an environment
+    // REFLECTION, no diffuse color of its own — with zero environment data it renders flat black
+    // (or blown-out white at a grazing highlight angle) regardless of the baked gold hue
+    // underneath. A simple procedural room environment gives metal/glass surfaces something to
+    // reflect, the standard three.js fix for exactly this ("PBR metal looks black").
+    const pmrem=new THREE.PMREMGenerator(renderer);
+    scene.environment=pmrem.fromScene(new RoomEnvironment(),0.04).texture;
     const camera=new THREE.PerspectiveCamera(45,box.clientWidth/box.clientHeight,0.01,100);
     camera.position.set(0,1.2,2.2);
     const controls=new OrbitControls(camera,renderer.domElement);
