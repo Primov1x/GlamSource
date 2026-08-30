@@ -11,7 +11,11 @@ namespace GlamSource.Services.ModelExport;
 /// <summary>One mesh plus the index of its PNG texture (into the textures list), or -1 for none.
 /// Tint (RGB 0-1) multiplies the base color — rough whole-mesh dye approximation. NormalTextureIndex
 /// is a decoded tangent-space normal map (see NormalMapDecoder), or -1 for none.</summary>
-public sealed record GltfMeshInput(DecodedMesh Geometry, int TextureIndex, float[]? Tint = null, int NormalTextureIndex = -1, int MetallicRoughnessTextureIndex = -1);
+/// <summary>Role tags a material as "skin"/"hair"/"eye" for the viewer's JS to apply proper
+/// non-metallic-roughness shading (sheen for skin, anisotropic specular for hair, clearcoat for
+/// wet eyes) instead of flat MeshStandardMaterial — a first step toward closer-to-real-game
+/// shading. null for equipment/accessories (no special treatment).</summary>
+public sealed record GltfMeshInput(DecodedMesh Geometry, int TextureIndex, float[]? Tint = null, int NormalTextureIndex = -1, int MetallicRoughnessTextureIndex = -1, string? Role = null);
 
 // ponytail: hand-rolled GLB (glTF 2.0 binary) writer — the format is just JSON + one binary
 // buffer; a gltf library dependency would be bigger than this file.
@@ -37,14 +41,20 @@ public static class GltfBuilder
 
         // one material per (texture, tint, normal texture) combo — dye multiplies base color
         var materialByKey = new Dictionary<string, int>();
-        int MaterialFor(int texIndex, float[]? tint, int normalTexIndex, int metalRoughTexIndex)
+        int MaterialFor(int texIndex, float[]? tint, int normalTexIndex, int metalRoughTexIndex, string? role)
         {
             var f = tint is { Length: 3 } ? new[] { (double)tint[0], tint[1], tint[2], 1.0 } : new[] { 1.0, 1.0, 1.0, 1.0 };
             var hasNormal = normalTexIndex >= 0 && normalTexIndex < pngTextures.Count;
             var hasMetalRough = metalRoughTexIndex >= 0 && metalRoughTexIndex < pngTextures.Count;
-            var key = $"{texIndex}:{f[0]:F3},{f[1]:F3},{f[2]:F3}:{(hasNormal ? normalTexIndex : -1)}:{(hasMetalRough ? metalRoughTexIndex : -1)}";
+            var key = $"{texIndex}:{f[0]:F3},{f[1]:F3},{f[2]:F3}:{(hasNormal ? normalTexIndex : -1)}:{(hasMetalRough ? metalRoughTexIndex : -1)}:{role}";
             if (materialByKey.TryGetValue(key, out var m)) return m;
             m = materials.Count;
+            // extras is a free-form glTF spec field for exactly this — passing app-specific data
+            // through to the loader without abusing a real PBR property. three.js's GLTFLoader
+            // exposes it as material.userData.gltfExtensions is NOT this; plain material.userData
+            // does NOT auto-populate from extras either — the viewer JS reads it off the raw
+            // material def in the parsed json, see WebUiPage.cs's post-load material pass.
+            var extras = role != null ? new { role } : null;
             // ponytail: without a baked metallicRoughness texture, metallicFactor stays 0 — guessing
             // a flat metalness for every material (no per-pixel data) looked worse than plain diffuse
             // in earlier testing. With the texture, factors are 1.0 (pure multiplier) per glTF spec.
@@ -63,6 +73,7 @@ public static class GltfBuilder
                     alphaMode = "MASK",
                     alphaCutoff = 0.5,
                     doubleSided = true,
+                    extras,
                 });
             else
                 materials.Add(new
@@ -74,6 +85,7 @@ public static class GltfBuilder
                         roughnessFactor = 0.85,
                     },
                     doubleSided = true,
+                    extras,
                 });
             materialByKey[key] = m;
             return m;
@@ -118,7 +130,7 @@ public static class GltfBuilder
                     {
                         attributes = attrs,
                         indices = idxAccessor,
-                        material = MaterialFor(input.TextureIndex, input.Tint, input.NormalTextureIndex, input.MetallicRoughnessTextureIndex),
+                        material = MaterialFor(input.TextureIndex, input.Tint, input.NormalTextureIndex, input.MetallicRoughnessTextureIndex, input.Role),
                     },
                 },
             });

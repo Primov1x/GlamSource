@@ -377,6 +377,29 @@ async function reloadViewerModel(){
     const gltf=await new Promise((res,rej)=>new v.GLTFLoader().parse(buf,'',res,rej));
     if(v.model)v.scene.remove(v.model);
     v.model=gltf.scene;
+    // ponytail: first step toward actually-FFXIV-like shading instead of flat glTF PBR — materials
+    // tagged with a "role" (skin/hair/eye, see GltfBuilder.cs's extras field) get upgraded from the
+    // loader's default MeshStandardMaterial to MeshPhysicalMaterial with the property that role
+    // actually needs: sheen for skin's soft/waxy look, anisotropic specular for hair's strand
+    // highlight streak, clearcoat for a wet-eye look. GLTFLoader copies glTF "extras" straight onto
+    // material.userData (parser.assignExtrasToUserData) — no manual JSON parsing needed here.
+    // materials are cache-shared across meshes by the loader (same glTF material index -> same
+    // instance) — upgrade each distinct instance once via a lookup, or a shared material would get
+    // replaced-and-disposed on the first mesh and leave later meshes pointing at a disposed one.
+    const upgraded=new Map();
+    v.model.traverse(o=>{
+      const role=o.material?.userData?.role;
+      if(!role||!(o.material instanceof THREE.MeshStandardMaterial))return;
+      const old=o.material;
+      if(upgraded.has(old)){o.material=upgraded.get(old);return}
+      const phys=new THREE.MeshPhysicalMaterial();
+      phys.copy(old); // carries over map/normalMap/metalnessMap/color/roughness/etc.
+      if(role==='skin'){phys.sheen=0.35;phys.sheenColor=new THREE.Color(0xffe0cc);phys.sheenRoughness=0.6}
+      else if(role==='hair'){if('anisotropy' in phys){phys.anisotropy=0.6;phys.anisotropyRotation=Math.PI/2}phys.clearcoat=0.15;phys.clearcoatRoughness=0.4}
+      else if(role==='eye'){phys.clearcoat=0.8;phys.clearcoatRoughness=0.05}
+      upgraded.set(old,phys);
+      o.material=phys;
+    });
     v.scene.add(v.model);
     info.style.display='none';
   }catch(e){info.textContent='⚠️ '+e.message}
