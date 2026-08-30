@@ -50,11 +50,11 @@ public static class CmpColorReader
         return new CustomizeColors(skin, hair);
     }
 
-    // ponytail: highlight colors are tribe-independent, stored in the "common" block right after
-    // the eye-color block (word offset 1280, length 192, rounded up to the next 256-word boundary
-    // = 1536). Verified against real data: word 1536.. gives a plausible gray ramp then warm
-    // blonde tones, matching CustomizeIndex.HairColor2's swatch picker.
-    private const uint HighlightBlockStart = 1536;
+    // ponytail: highlight colors are tribe-independent, common block 1 (word offset 256) — nailed
+    // by ground truth: Glamourer displays #525252 for this user's highlight swatch (index 5), and
+    // a full scan of human.cmp finds that exact color ONLY at word 261 = 256 + 5. The previous
+    // guess (word 1536, a plausible-looking gray ramp) read a different table.
+    private const uint HighlightBlockStart = 256;
 
     /// <summary>Highlight color for CustomizeIndex.HairColor2's swatch index. Only meaningful when
     /// CustomizeIndex.HasHighlights has its 0x80 bit set (negative = enabled, per Dalamud's enum

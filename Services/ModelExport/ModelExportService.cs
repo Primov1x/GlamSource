@@ -87,6 +87,7 @@ public sealed class ModelExportService
 
         var itemSheet = _gameData.GetExcelSheet<Lumina.Excel.Sheets.Item>();
         var stainSheet = _gameData.GetExcelSheet<Lumina.Excel.Sheets.Stain>();
+        ushort headSetId = 0;
         foreach (var (slot, itemId, stainId) in items)
         {
             // ponytail: whole-mesh tint from the stain color — real dye only recolors specific
@@ -103,6 +104,7 @@ public sealed class ModelExportService
             var setId = (ushort)modelMain;
             var itemVariant = (ushort)(modelMain >> 16);
             if (setId == 0) { LastTrace.Add($"{slot}:{itemId} setId 0"); continue; }
+            if (slot == GlamSource.Core.EquipmentSlotType.Head) headSetId = setId;
 
             var info = SlotInfo(slot)!.Value;
             // ponytail: most gear ships one race-agnostic model (RaceCode, c0101) and the game fits
@@ -211,7 +213,20 @@ public sealed class ModelExportService
             var bodyId = _gameData.FileExists($"chara/human/{rc}/obj/body/b0001/model/{rc}b0001_top.mdl") ? "b0001" : "b0002";
             AddCharaPart($"chara/human/{rc}/obj/body/{bodyId}/model/{rc}{bodyId}_top.mdl", rc, $"body/{bodyId}", skinTint, meshInputs, pngs, materialCache, pose);
             AddCharaPart($"chara/human/{rc}/obj/face/f{chara.Face:D4}/model/{rc}f{chara.Face:D4}_fac.mdl", rc, $"face/f{chara.Face:D4}", skinTint, meshInputs, pngs, materialCache, pose);
-            AddCharaPart($"chara/human/{rc}/obj/hair/h{chara.Hair:D4}/model/{rc}h{chara.Hair:D4}_hir.mdl", rc, $"hair/h{chara.Hair:D4}", hairTint, meshInputs, pngs, materialCache, pose, colors?.Highlight);
+            // ponytail: the equipped hat's EQP flags decide what part of the hair renders — exactly
+            // what the game does. HeadHideHair (full helmets) drops the hair part entirely;
+            // HeadHideScalp hides only the "atr_kam" scalp/top-hair submeshes, which is what was
+            // clipping through the cap's crown.
+            var hairHidden = headSetId != 0 && EqpReader.HidesHair(_gameData, headSetId);
+            var hairHideAttrs = headSetId != 0 ? EqpReader.HiddenHairAttributes(_gameData, headSetId) : Array.Empty<string>();
+            if (hairHidden)
+                LastTrace.Add($"hair hidden entirely by head gear e{headSetId:D4} (EQP HeadHideHair)");
+            else
+            {
+                if (hairHideAttrs.Count > 0)
+                    LastTrace.Add($"head gear e{headSetId:D4} EQP hides hair attrs: [{string.Join(",", hairHideAttrs)}]");
+                AddCharaPart($"chara/human/{rc}/obj/hair/h{chara.Hair:D4}/model/{rc}h{chara.Hair:D4}_hir.mdl", rc, $"hair/h{chara.Hair:D4}", hairTint, meshInputs, pngs, materialCache, pose, colors?.Highlight, hairHideAttrs);
+            }
             if (chara.TailOrEars > 0)
             {
                 // tail (Miqo'te/Au Ra/Hrothgar) or ears (Viera) — whichever path exists
@@ -231,7 +246,7 @@ public sealed class ModelExportService
     /// when the path doesn't exist for this race. Untextured meshes get the fallback tint.</summary>
     private void AddCharaPart(string mdlPath, string raceCode, string partFolder, float[] fallbackTint,
         List<GltfMeshInput> meshInputs, List<byte[]> pngs, Dictionary<string, (int, float[]?, int)> materialCache, SkeletonPose? pose,
-        float[]? highlightTint = null)
+        float[]? highlightTint = null, IReadOnlyCollection<string>? hideAttributes = null)
     {
         if (!_gameData.FileExists(mdlPath)) { LastTrace.Add($"chara part missing: {mdlPath}"); return; }
         var raw = _gameData.GetFile(mdlPath);
@@ -241,7 +256,7 @@ public sealed class ModelExportService
         catch (Exception ex) { LastTrace.Add($"chara part parse {mdlPath}: {ex.Message}"); return; }
         if (!mdl.Valid) { LastTrace.Add($"chara part invalid: {mdlPath}"); return; }
 
-        var meshes = MdlGeometry.DecodeLod0(mdl);
+        var meshes = MdlGeometry.DecodeLod0(mdl, hideAttributes);
         LastTrace.Add($"chara part {partFolder}: {meshes.Count} meshes");
 
         // ponytail: two passes — some chara-part submeshes (e.g. face "etc_a/b/c": eyebrows/lash/

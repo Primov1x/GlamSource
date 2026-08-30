@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Lumina.Data.Parsing;
 using Penumbra.GameData.Files;
 
@@ -57,7 +58,7 @@ public static class MdlGeometry
     private const byte UsageNormal = 3;
     private const byte UsageUv = 4;
 
-    public static List<DecodedMesh> DecodeLod0(MdlFile mdl)
+    public static List<DecodedMesh> DecodeLod0(MdlFile mdl, IReadOnlyCollection<string>? hideAttributes = null)
     {
         var result = new List<DecodedMesh>();
         if (mdl.LodCount == 0) return result;
@@ -160,13 +161,25 @@ public static class MdlGeometry
             {
                 var sub = mdl.SubMeshes[si];
                 outMesh.SubmeshesTotal++;
-                var isLod = false;
+                // atr_lod always drops; hideAttributes lets the caller hide additional named
+                // attributes — e.g. a hat whose EQP entry sets HeadHideScalp hides the hair's
+                // "atr_kam" (scalp/top-hair) submeshes, exactly what the game does. Verified
+                // against real data: e6084's EQP has HeadHideScalp=true and hair h0003's only
+                // non-base attributes are atr_bak/atr_kam.
+                string? dropAs = null;
                 for (var bit = 0; bit < 32 && bit < mdl.Attributes.Length; bit++)
-                    if ((sub.AttributeIndexMask & (1u << bit)) != 0 && mdl.Attributes[bit] == "atr_lod")
-                        isLod = true;
-                if (isLod)
                 {
-                    outMesh.DroppedAttributes.Add("atr_lod");
+                    if ((sub.AttributeIndexMask & (1u << bit)) == 0) continue;
+                    var name = mdl.Attributes[bit];
+                    if (name == "atr_lod" || (hideAttributes != null && hideAttributes.Contains(name)))
+                    {
+                        dropAs = name;
+                        break;
+                    }
+                }
+                if (dropAs != null)
+                {
+                    outMesh.DroppedAttributes.Add(dropAs);
                     continue;
                 }
                 outMesh.SubmeshesKept++;
