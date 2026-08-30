@@ -95,6 +95,7 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 <section id="view-character" style="display:none">
   <img id="preview3d" alt="">
   <div class="empty" id="p3dhint" style="display:none;font-size:12px">Click 🔓 above to lock the overlay, then drag the model to rotate.</div>
+  <div style="margin-top:2px;margin-bottom:10px"><a href="/api/preview3d/debug" target="_blank" style="font-size:12px">🩺 Preview-Stream-Debug (fps, Fehler, Frame-Größe)</a></div>
   <div class="empty" id="snapinfo">Loading…</div>
   <div class="snapgrid" id="snap"></div>
 </section>

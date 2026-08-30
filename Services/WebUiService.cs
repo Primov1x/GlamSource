@@ -249,6 +249,7 @@ public sealed class WebUiService : IDisposable
     {
         if (!_configuration.WebUiLive3DPreview)
         {
+            _log.Information("[WebUi] preview3d/stream request rejected — WebUiLive3DPreview is off");
             stream.Write(Encoding.ASCII.GetBytes("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"));
             return;
         }
@@ -259,19 +260,31 @@ public sealed class WebUiService : IDisposable
             "Cache-Control: no-store\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n"));
         stream.Flush();
 
+        var swStart = Environment.TickCount64;
+        var framesSent = 0;
         byte[]? lastSent = null;
-        while (!token.IsCancellationRequested && _configuration.WebUiLive3DPreview)
+        _log.Information("[WebUi] preview3d/stream connected");
+        try
         {
-            var jpeg = _shell.PreviewWindow?.Renderer.LatestWebJpeg;
-            if (jpeg != null && !ReferenceEquals(jpeg, lastSent))
+            while (!token.IsCancellationRequested && _configuration.WebUiLive3DPreview)
             {
-                lastSent = jpeg;
-                stream.Write(Encoding.ASCII.GetBytes($"--{boundary}\r\nContent-Type: image/jpeg\r\nContent-Length: {jpeg.Length}\r\n\r\n"));
-                stream.Write(jpeg);
-                stream.Write(Encoding.ASCII.GetBytes("\r\n"));
-                stream.Flush();
+                var jpeg = _shell.PreviewWindow?.Renderer.LatestWebJpeg;
+                if (jpeg != null && !ReferenceEquals(jpeg, lastSent))
+                {
+                    lastSent = jpeg;
+                    stream.Write(Encoding.ASCII.GetBytes($"--{boundary}\r\nContent-Type: image/jpeg\r\nContent-Length: {jpeg.Length}\r\n\r\n"));
+                    stream.Write(jpeg);
+                    stream.Write(Encoding.ASCII.GetBytes("\r\n"));
+                    stream.Flush();
+                    framesSent++;
+                }
+                Thread.Sleep(16); // ~60Hz check of the in-memory latest frame; actual cadence gated by PreviewRenderer's encode rate
             }
-            Thread.Sleep(16); // ~60Hz check of the in-memory latest frame; actual cadence gated by PreviewRenderer's encode rate
+        }
+        finally
+        {
+            var elapsedS = (Environment.TickCount64 - swStart) / 1000.0;
+            _log.Information($"[WebUi] preview3d/stream disconnected — sent {framesSent} frame(s) over {elapsedS:F1}s ({(elapsedS > 0 ? framesSent / elapsedS : 0):F1} fps avg)");
         }
     }
 
@@ -365,6 +378,7 @@ public sealed class WebUiService : IDisposable
             // be fully wired yet at WebUiService construction time, and SetSnapshotProvider itself
             // handles "already registered" cheaply (ensures init, then a plain field write).
             _shell.PreviewWindow?.SetSnapshotProvider(() => _webPreviewGear.IsEmpty ? null : _webPreviewGear.Values.ToList());
+            _log.Information($"[WebUi] preview3d setitem: slot={setSlot} itemId={setItemId} stain0={setStain0} stain1={setStain1} (now {_webPreviewGear.Count} slot(s) overridden)");
             return Json(new { ok = true, slots = _webPreviewGear.Count });
         }
 
@@ -372,7 +386,33 @@ public sealed class WebUiService : IDisposable
         {
             _webPreviewGear.Clear();
             _shell.PreviewWindow?.SetSnapshotProvider(null);
+            _log.Information("[WebUi] preview3d cleargear — back to live self-worn gear");
             return Json(new { ok = true });
+        }
+
+        if (method == "GET" && path == "/api/preview3d/debug")
+        {
+            // ponytail: mirrors /api/model3d/debug's "don't guess, look at the actual counters"
+            // philosophy — for the MJPEG pipeline (untested in practice at time of writing), so a bad
+            // first live run is diagnosable here instead of squinting at the video feed.
+            var renderer = _shell.PreviewWindow?.Renderer;
+            var stats = renderer?.GetWebCaptureStats();
+            return Json(new
+            {
+                enabled = _configuration.WebUiLive3DPreview,
+                rendererInitialized = renderer?.IsInitialized ?? false,
+                stagingReady = stats?.StagingReady ?? false,
+                stagingWidth = stats?.StagingWidth ?? 0,
+                stagingHeight = stats?.StagingHeight ?? 0,
+                framesEncoded = stats?.FramesEncoded ?? 0,
+                framesSkipped = stats?.FramesSkipped ?? 0,
+                captureErrors = stats?.CaptureErrors ?? 0,
+                lastFrameBytes = stats?.LastFrameBytes ?? 0,
+                lastEncodeDurationMs = stats?.LastEncodeDurationMs ?? 0,
+                lastError = stats?.LastError,
+                latestFrameAvailable = renderer?.LatestWebJpeg != null,
+                previewGearOverrideSlots = _webPreviewGear.Keys.Select(s => s.ToString()).ToArray(),
+            });
         }
 
         if (method == "GET" && path == "/api/model3d/debug")
@@ -488,6 +528,7 @@ public sealed class WebUiService : IDisposable
             {
                 "GET /", "GET /api/search?q=", "GET /api/item/{id}", "GET /api/snapshot", "GET /api/preview3d/stream",
                 "POST /api/action/preview3d/setitem?slot=&itemId=&stain0=&stain1=", "POST /api/action/preview3d/cleargear",
+                "GET /api/preview3d/debug",
                 "POST /api/action/craftlog/{id}", "POST /api/action/dutyfinder/{cfc}",
                 "POST /api/action/map?territory=&map=&x=&y=",
             },

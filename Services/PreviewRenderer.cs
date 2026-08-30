@@ -408,6 +408,27 @@ public sealed unsafe class PreviewRenderer : IDisposable
     private long _lastEncodeTickMs;
     private const long EncodeThrottleMs = 33; // ~30fps cap on JPEG re-encode cost
 
+    // --- debug counters, all untested-in-practice as of writing — exposed via GetWebCaptureStats()
+    // (see WebUiService's GET /api/preview3d/debug) so a bad first live run is diagnosable from the
+    // web UI instead of guessing. FramesSkipped is expected/healthy (DO_NOT_WAIT doing its job, not
+    // an error); CaptureErrors and LastError are the ones to actually look at.
+    private long _webFramesEncoded;
+    private long _webFramesSkipped;
+    private long _webCaptureErrors;
+    private long _lastFrameBytes;
+    private long _lastEncodeDurationMs;
+    private string? _lastCaptureError;
+
+    public readonly record struct WebCaptureStats(
+        bool StagingReady, long FramesEncoded, long FramesSkipped, long CaptureErrors,
+        long LastFrameBytes, long LastEncodeDurationMs, string? LastError, int StagingWidth, int StagingHeight);
+
+    /// <summary>Snapshot of the web MJPEG capture pipeline's health — thread-safe plain field reads,
+    /// same as LatestWebJpeg.</summary>
+    public WebCaptureStats GetWebCaptureStats() => new(
+        _webStaging.Get() != null, _webFramesEncoded, _webFramesSkipped, _webCaptureErrors,
+        _lastFrameBytes, _lastEncodeDurationMs, _lastCaptureError, (int)_webStagingWidth, (int)_webStagingHeight);
+
     /// <summary>Latest JPEG-encoded frame for the web-UI MJPEG stream (see WebUiService's
     /// /api/preview3d/stream), or null if never captured / feature off. Thread-safe to read from
     /// anywhere (plain field read) — capture/encode only ever runs from Draw(), never from here.</summary>
@@ -425,7 +446,14 @@ public sealed unsafe class PreviewRenderer : IDisposable
     {
         if (!enabled) { _latestWebJpeg = null; ReleaseWebStaging(); return; }
         try { PumpWebCapture(); }
-        catch { /* best-effort — a bad frame just stalls the stream one tick, not a crash */ }
+        catch (Exception ex)
+        {
+            // best-effort — a bad frame just stalls the stream one tick, not a crash — but record it
+            // so /api/preview3d/debug can actually show WHY instead of just "no frame yet".
+            _webCaptureErrors++;
+            _lastCaptureError = ex.Message;
+            _log.Warning($"[PreviewRenderer] web capture failed: {ex.Message}");
+        }
     }
 
     private void ReleaseWebStaging()
@@ -480,10 +508,16 @@ public sealed unsafe class PreviewRenderer : IDisposable
                 MipLevels = 1,
                 ArraySize = 1,
             };
-            if (device.Get()->CreateTexture2D(&stagingDesc, null, _webStaging.GetAddressOf()).FAILED) return;
+            if (device.Get()->CreateTexture2D(&stagingDesc, null, _webStaging.GetAddressOf()).FAILED)
+            {
+                _webCaptureErrors++;
+                _lastCaptureError = "CreateTexture2D (staging) failed";
+                return;
+            }
             _webStagingWidth = desc.Width;
             _webStagingHeight = desc.Height;
             _webStagingFormat = desc.Format;
+            _log.Info($"[PreviewRenderer] web staging texture (re)created: {desc.Width}x{desc.Height} fmt={desc.Format}");
         }
 
         if (!_webCopyPending)
@@ -498,13 +532,24 @@ public sealed unsafe class PreviewRenderer : IDisposable
 
         D3D11_MAPPED_SUBRESOURCE mapped;
         var hr = context.Get()->Map((ID3D11Resource*)_webStaging.Get(), 0, D3D11_MAP.D3D11_MAP_READ, (uint)D3D11_MAP_FLAG.D3D11_MAP_FLAG_DO_NOT_WAIT, &mapped);
-        if (hr.Value == DXGI.DXGI_ERROR_WAS_STILL_DRAWING) return; // GPU not done yet — copy stays pending, retry next Draw()
-        if (hr.FAILED) { _webCopyPending = false; return; } // real failure — drop this cycle, next Draw() starts a fresh copy
+        if (hr.Value == DXGI.DXGI_ERROR_WAS_STILL_DRAWING) { _webFramesSkipped++; return; } // GPU not done yet — copy stays pending, retry next Draw()
+        if (hr.FAILED)
+        {
+            _webCopyPending = false;
+            _webCaptureErrors++;
+            _lastCaptureError = $"Map failed: 0x{hr.Value:X8}";
+            return; // real failure — drop this cycle, next Draw() starts a fresh copy
+        }
 
         try
         {
             var isBgra = desc.Format is DXGI_FORMAT.DXGI_FORMAT_B8G8R8A8_UNORM or DXGI_FORMAT.DXGI_FORMAT_B8G8R8X8_UNORM;
+            var encodeStart = Environment.TickCount64;
             _latestWebJpeg = EncodeJpeg((int)desc.Width, (int)desc.Height, (int)mapped.RowPitch, (nint)mapped.pData, isBgra);
+            _lastEncodeDurationMs = Environment.TickCount64 - encodeStart;
+            _lastFrameBytes = _latestWebJpeg.Length;
+            _webFramesEncoded++;
+            if (_webFramesEncoded == 1) _log.Info($"[PreviewRenderer] first web frame encoded: {_lastFrameBytes} bytes in {_lastEncodeDurationMs}ms, isBgra={isBgra}");
             _lastEncodeTickMs = now;
         }
         finally
