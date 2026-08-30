@@ -564,7 +564,12 @@ public sealed class ModelExportService
             result[o + 0] = (byte)Math.Clamp((mainTint[0] + (highlightTint[0] - mainTint[0]) * weight) * 255f, 0f, 255f);
             result[o + 1] = (byte)Math.Clamp((mainTint[1] + (highlightTint[1] - mainTint[1]) * weight) * 255f, 0f, 255f);
             result[o + 2] = (byte)Math.Clamp((mainTint[2] + (highlightTint[2] - mainTint[2]) * weight) * 255f, 0f, 255f);
-            result[o + 3] = 255;
+            // ponytail: alpha forced fully opaque here was the "solid blob, no strands" bug — the
+            // hair mesh's alphaMode is already MASK/cutoff 0.5 (see GltfBuilder), but with every
+            // pixel opaque nothing ever gets cut out, so the whole card renders solid instead of
+            // per-strand cutout shapes. Use the mask texture's own alpha channel — FFXIV hair cards
+            // are alpha-tested, so the real strand silhouette should live there.
+            result[o + 3] = maskRgba[o + 3];
         }
         return result;
     }
