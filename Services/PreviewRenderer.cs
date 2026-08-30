@@ -439,10 +439,18 @@ public sealed unsafe class PreviewRenderer : IDisposable
     // Draw() instead of blocking the render thread. Real cadence is now "however fast the GPU
     // actually finishes each copy" (typically 1 frame), only capped by EncodeThrottleMs below since
     // JPEG-encoding isn't free either and nothing needs it faster.
-    private ComPtr<ID3D11Texture2D> _webStaging;
+    // Double-buffered: while buffer A's copy is being polled/mapped/encoded, buffer B can already
+    // have its OWN CopyResource in flight — measured live, single-buffer (issue-then-wait-a-frame-
+    // then-check, strictly alternating) capped throughput at roughly half of Draw()'s own call rate
+    // (58 Draw()/s in, ~26 encoded/s out) purely from that serialization, not GPU or encode cost.
+    // Two independent buffers remove that serialization: a new copy can start the SAME Draw() call
+    // that finished checking the other one.
+    private const int WebStagingBufferCount = 2;
+    private readonly ComPtr<ID3D11Texture2D>[] _webStaging = new ComPtr<ID3D11Texture2D>[WebStagingBufferCount];
+    private readonly bool[] _webCopyPending = new bool[WebStagingBufferCount];
+    private int _webNextIssueSlot; // round-robins which buffer gets the next CopyResource
     private uint _webStagingWidth, _webStagingHeight;
     private DXGI_FORMAT _webStagingFormat;
-    private bool _webCopyPending;
     private byte[]? _latestWebJpeg;
     private long _lastEncodeTickMs;
     // ponytail: was 33 (~30fps cap) — live data showed only ~22fps sustained even under that cap
@@ -483,7 +491,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
         var elapsedS = (Environment.TickCount64 - _drawCallWindowStartMs) / 1000.0;
         var drawCallsPerSecond = elapsedS > 0 ? _drawCallCount / elapsedS : 0;
         return new(
-            _webStaging.Get() != null, _webFramesEncoded, _webFramesSkipped, _webCaptureErrors,
+            _webStaging[0].Get() != null, _webFramesEncoded, _webFramesSkipped, _webCaptureErrors,
             _lastFrameBytes, _lastEncodeDurationMs, _lastCaptureError, (int)_webStagingWidth, (int)_webStagingHeight,
             _nativeUiOwnsSlot, drawCallsPerSecond);
     }
@@ -525,9 +533,13 @@ public sealed unsafe class PreviewRenderer : IDisposable
 
     private void ReleaseWebStaging()
     {
-        _webStaging.Dispose();
-        _webStaging = default;
-        _webCopyPending = false;
+        for (var i = 0; i < WebStagingBufferCount; i++)
+        {
+            _webStaging[i].Dispose();
+            _webStaging[i] = default;
+            _webCopyPending[i] = false;
+        }
+        _webNextIssueSlot = 0;
     }
 
     /// <remarks>ponytail: pattern mirrors Dalamud's own TextureManager.GetRawImageAsync (internal,
@@ -562,8 +574,8 @@ public sealed unsafe class PreviewRenderer : IDisposable
         D3D11_TEXTURE2D_DESC desc;
         tex.Get()->GetDesc(&desc);
 
-        // (re)create the staging texture on first use or if the source render target resized
-        if (_webStaging.Get() == null || desc.Width != _webStagingWidth || desc.Height != _webStagingHeight || desc.Format != _webStagingFormat)
+        // (re)create the staging textures on first use or if the source render target resized
+        if (_webStaging[0].Get() == null || desc.Width != _webStagingWidth || desc.Height != _webStagingHeight || desc.Format != _webStagingFormat)
         {
             ReleaseWebStaging();
             var stagingDesc = desc with
@@ -575,54 +587,71 @@ public sealed unsafe class PreviewRenderer : IDisposable
                 MipLevels = 1,
                 ArraySize = 1,
             };
-            if (device.Get()->CreateTexture2D(&stagingDesc, null, _webStaging.GetAddressOf()).FAILED)
+            for (var i = 0; i < WebStagingBufferCount; i++)
             {
-                _webCaptureErrors++;
-                _lastCaptureError = "CreateTexture2D (staging) failed";
-                return;
+                if (device.Get()->CreateTexture2D(&stagingDesc, null, _webStaging[i].GetAddressOf()).FAILED)
+                {
+                    _webCaptureErrors++;
+                    _lastCaptureError = "CreateTexture2D (staging) failed";
+                    return;
+                }
             }
             _webStagingWidth = desc.Width;
             _webStagingHeight = desc.Height;
             _webStagingFormat = desc.Format;
-            _log.Info($"[PreviewRenderer] web staging texture (re)created: {desc.Width}x{desc.Height} fmt={desc.Format}");
-        }
-
-        if (!_webCopyPending)
-        {
-            context.Get()->CopyResource((ID3D11Resource*)_webStaging.Get(), (ID3D11Resource*)tex.Get());
-            _webCopyPending = true;
-            return; // give the GPU at least one Draw() before polling Map — an instant DO_NOT_WAIT check would just miss every time
+            _log.Info($"[PreviewRenderer] web staging textures (re)created: {WebStagingBufferCount}x {desc.Width}x{desc.Height} fmt={desc.Format}");
         }
 
         var now = Environment.TickCount64;
-        if (now - _lastEncodeTickMs < EncodeThrottleMs) return; // copy stays pending; poll again next Draw()
+        var isBgra = desc.Format is DXGI_FORMAT.DXGI_FORMAT_B8G8R8A8_UNORM or DXGI_FORMAT.DXGI_FORMAT_B8G8R8X8_UNORM;
 
-        D3D11_MAPPED_SUBRESOURCE mapped;
-        var hr = context.Get()->Map((ID3D11Resource*)_webStaging.Get(), 0, D3D11_MAP.D3D11_MAP_READ, (uint)D3D11_MAP_FLAG.D3D11_MAP_FLAG_DO_NOT_WAIT, &mapped);
-        if (hr.Value == DXGI.DXGI_ERROR_WAS_STILL_DRAWING) { _webFramesSkipped++; return; } // GPU not done yet — copy stays pending, retry next Draw()
-        if (hr.FAILED)
+        // 1) drain whichever pending buffer's GPU copy has actually finished — at most one encode
+        // per Draw() call (matches EncodeThrottleMs's intent: cap encode cost, not skip it entirely).
+        if (now - _lastEncodeTickMs >= EncodeThrottleMs)
         {
-            _webCopyPending = false;
-            _webCaptureErrors++;
-            _lastCaptureError = $"Map failed: 0x{hr.Value:X8}";
-            return; // real failure — drop this cycle, next Draw() starts a fresh copy
+            for (var i = 0; i < WebStagingBufferCount; i++)
+            {
+                if (!_webCopyPending[i]) continue;
+                D3D11_MAPPED_SUBRESOURCE mapped;
+                var hr = context.Get()->Map((ID3D11Resource*)_webStaging[i].Get(), 0, D3D11_MAP.D3D11_MAP_READ, (uint)D3D11_MAP_FLAG.D3D11_MAP_FLAG_DO_NOT_WAIT, &mapped);
+                if (hr.Value == DXGI.DXGI_ERROR_WAS_STILL_DRAWING) { _webFramesSkipped++; continue; } // not done yet — leave pending, try again next Draw()
+                if (hr.FAILED)
+                {
+                    _webCopyPending[i] = false;
+                    _webCaptureErrors++;
+                    _lastCaptureError = $"Map failed: 0x{hr.Value:X8}";
+                    continue;
+                }
+                try
+                {
+                    var encodeStart = Environment.TickCount64;
+                    _latestWebJpeg = EncodeJpeg((int)desc.Width, (int)desc.Height, (int)mapped.RowPitch, (nint)mapped.pData, isBgra);
+                    _lastEncodeDurationMs = Environment.TickCount64 - encodeStart;
+                    _lastFrameBytes = _latestWebJpeg.Length;
+                    _webFramesEncoded++;
+                    if (_webFramesEncoded == 1) _log.Info($"[PreviewRenderer] first web frame encoded: {_lastFrameBytes} bytes in {_lastEncodeDurationMs}ms, isBgra={isBgra}");
+                    _lastEncodeTickMs = now;
+                }
+                finally
+                {
+                    context.Get()->Unmap((ID3D11Resource*)_webStaging[i].Get(), 0);
+                    _webCopyPending[i] = false;
+                }
+                break; // one encode per Draw() call is enough; the other buffer (if also ready) waits for the next one
+            }
         }
 
-        try
+        // 2) issue a fresh copy into whichever buffer is currently free — independent of step 1
+        // above, so a new copy can start the SAME Draw() call that just finished checking the other
+        // buffer, instead of always waiting a full extra Draw() between "issue" and "check".
+        for (var tries = 0; tries < WebStagingBufferCount; tries++)
         {
-            var isBgra = desc.Format is DXGI_FORMAT.DXGI_FORMAT_B8G8R8A8_UNORM or DXGI_FORMAT.DXGI_FORMAT_B8G8R8X8_UNORM;
-            var encodeStart = Environment.TickCount64;
-            _latestWebJpeg = EncodeJpeg((int)desc.Width, (int)desc.Height, (int)mapped.RowPitch, (nint)mapped.pData, isBgra);
-            _lastEncodeDurationMs = Environment.TickCount64 - encodeStart;
-            _lastFrameBytes = _latestWebJpeg.Length;
-            _webFramesEncoded++;
-            if (_webFramesEncoded == 1) _log.Info($"[PreviewRenderer] first web frame encoded: {_lastFrameBytes} bytes in {_lastEncodeDurationMs}ms, isBgra={isBgra}");
-            _lastEncodeTickMs = now;
-        }
-        finally
-        {
-            context.Get()->Unmap((ID3D11Resource*)_webStaging.Get(), 0);
-            _webCopyPending = false; // next Draw() starts a fresh CopyResource for the following frame
+            var slot = _webNextIssueSlot;
+            _webNextIssueSlot = (_webNextIssueSlot + 1) % WebStagingBufferCount;
+            if (_webCopyPending[slot]) continue; // still in flight — try the other buffer
+            context.Get()->CopyResource((ID3D11Resource*)_webStaging[slot].Get(), (ID3D11Resource*)tex.Get());
+            _webCopyPending[slot] = true;
+            break;
         }
     }
 
