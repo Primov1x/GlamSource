@@ -481,6 +481,11 @@ public sealed unsafe class PreviewRenderer : IDisposable
     private byte[]? _latestWebJpeg;
     private bool _latestWebFrameIsPng;
     private long _lastEncodeTickMs;
+    // ponytail: the raw pixel copy + in-flight flag that let actual encoding move off the Draw()
+    // thread — see PumpWebCapture's inline comment for why (transparent-backdrop mode was tanking
+    // real in-game FPS by encoding synchronously on the game's own render thread).
+    private byte[]? _rawFrameBuffer;
+    private volatile bool _webEncodeInProgress;
     // ponytail: "mach mal nen Aus/An-Schalter für trans[parenz]" — experimental, off by default.
     // JPEG has no alpha channel at all, so a transparent backdrop needs PNG instead (slower/bigger,
     // only paid while this is actually on). Chroma-key is naive: samples the top-left pixel each
@@ -673,16 +678,51 @@ public sealed unsafe class PreviewRenderer : IDisposable
                     // stale — a newer buffer already got shown while this one was still pending.
                     // Drop it silently (not an error, not a skip — the frame just lost the race).
                     if (_webBufferSeq[i] <= _webLastSentSeq) continue;
-                    var encodeStart = Environment.TickCount64;
-                    _latestWebFrameIsPng = _transparentBackdropEnabled;
-                    _latestWebJpeg = _transparentBackdropEnabled
-                        ? EncodeChromaKeyedPng((int)desc.Width, (int)desc.Height, (int)mapped.RowPitch, (nint)mapped.pData, isBgra)
-                        : EncodeJpeg((int)desc.Width, (int)desc.Height, (int)mapped.RowPitch, (nint)mapped.pData, isBgra);
-                    _lastEncodeDurationMs = Environment.TickCount64 - encodeStart;
-                    _lastFrameBytes = _latestWebJpeg.Length;
-                    _webFramesEncoded++;
+                    // Previous background encode still running — don't pile up a second one, leave
+                    // this buffer's copy pending and retry the whole thing next Draw(). Reported
+                    // live: enabling the transparent-backdrop (PNG + flood-fill) mode tanked actual
+                    // in-game FPS — because the encode used to run SYNCHRONOUSLY right here, on the
+                    // same thread as the game's own Present. Only the raw memcpy + Map/Unmap below
+                    // (D3D11 calls, must stay inline with Draw — see this method's own doc comment)
+                    // still run on this thread; actual JPEG/PNG encoding is pure CPU, no graphics API
+                    // calls, and now runs on a background Task instead of blocking the game.
+                    if (_webEncodeInProgress) continue;
+
+                    var w = (int)desc.Width;
+                    var h = (int)desc.Height;
+                    var rowPitch = (int)mapped.RowPitch;
+                    var byteCount = rowPitch * h;
+                    if (_rawFrameBuffer == null || _rawFrameBuffer.Length != byteCount) _rawFrameBuffer = new byte[byteCount];
+                    var rawFrameBuffer = _rawFrameBuffer;
+                    fixed (byte* dst = rawFrameBuffer)
+                        Buffer.MemoryCopy((void*)mapped.pData, dst, byteCount, byteCount);
+
                     _webLastSentSeq = _webBufferSeq[i];
-                    if (_webFramesEncoded == 1) _log.Info($"[PreviewRenderer] first web frame encoded: {_lastFrameBytes} bytes in {_lastEncodeDurationMs}ms, isBgra={isBgra}");
+                    _webEncodeInProgress = true;
+                    var transparent = _transparentBackdropEnabled;
+                    var encodeStart = Environment.TickCount64;
+                    System.Threading.Tasks.Task.Run(() =>
+                    {
+                        try
+                        {
+                            var png = transparent;
+                            var encoded = png
+                                ? EncodeChromaKeyedPngFromBuffer(rawFrameBuffer, w, h, rowPitch, isBgra)
+                                : EncodeJpegFromBuffer(rawFrameBuffer, w, h, rowPitch, isBgra);
+                            _latestWebFrameIsPng = png;
+                            _latestWebJpeg = encoded;
+                            _lastEncodeDurationMs = Environment.TickCount64 - encodeStart;
+                            _lastFrameBytes = encoded.Length;
+                            _webFramesEncoded++;
+                            if (_webFramesEncoded == 1) _log.Info($"[PreviewRenderer] first web frame encoded: {_lastFrameBytes} bytes in {_lastEncodeDurationMs}ms, isBgra={isBgra}");
+                        }
+                        catch (Exception ex)
+                        {
+                            _webCaptureErrors++;
+                            _lastCaptureError = $"background encode failed: {ex.Message}";
+                        }
+                        finally { _webEncodeInProgress = false; }
+                    });
                     _lastEncodeTickMs = now;
                 }
                 finally
@@ -690,7 +730,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
                     context.Get()->Unmap((ID3D11Resource*)_webStaging[i].Get(), 0);
                     _webCopyPending[i] = false;
                 }
-                break; // one encode per Draw() call is enough; the other buffer (if also ready) waits for the next one
+                break; // one copy-and-dispatch per Draw() call is enough; the other buffer (if also ready) waits for the next one
             }
         }
 
@@ -716,6 +756,20 @@ public sealed unsafe class PreviewRenderer : IDisposable
         => isBgra
             ? new System.Drawing.Bitmap(width, height, rowPitch, System.Drawing.Imaging.PixelFormat.Format32bppArgb, scan0)
             : SwapToBgraBitmap(width, height, rowPitch, scan0);
+
+    /// <summary>Pins the managed copy and delegates to EncodeJpeg — safe to call from a background
+    /// thread/Task, unlike the GPU-mapped pointer this buffer was copied from (which is Unmap()'d
+    /// back on the Draw thread before this ever runs).</summary>
+    private static unsafe byte[] EncodeJpegFromBuffer(byte[] buffer, int width, int height, int rowPitch, bool isBgra)
+    {
+        fixed (byte* p = buffer) return EncodeJpeg(width, height, rowPitch, (nint)p, isBgra);
+    }
+
+    /// <summary>Same as EncodeJpegFromBuffer, for the chroma-key/PNG path.</summary>
+    private unsafe byte[] EncodeChromaKeyedPngFromBuffer(byte[] buffer, int width, int height, int rowPitch, bool isBgra)
+    {
+        fixed (byte* p = buffer) return EncodeChromaKeyedPng(width, height, rowPitch, (nint)p, isBgra);
+    }
 
     private static byte[] EncodeJpeg(int width, int height, int rowPitch, nint scan0, bool isBgra)
     {
