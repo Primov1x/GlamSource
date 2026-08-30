@@ -134,12 +134,14 @@ public sealed class ModelExportService
             }
             if (mdlPath == null) { LastTrace.Add($"{slot}:{itemId} missing (tried {string.Join(", ", raceCandidates)})"); continue; }
 
-            // ponytail: gear modeled for a different race than the character (almost always the
-            // generic Hyur c0101 fallback) needs the racial bone-deform correction — see
-            // RacialDeform's doc comment. Static data, applies regardless of pose.
+            // ponytail: REVERTED (0.0.0.126) — shipped in 0.0.0.125, made things actively worse
+            // ("jetzt ist alles deformt", visible distortion across the whole outfit, not just the
+            // arm gap) and didn't even close the original gap. The direct per-bone lookup (no
+            // inheritance-walk, see PdbReader's doc comment) was too big a simplification of the
+            // real algorithm to trust blind — needs real verification against known-good vertex
+            // positions before trying again, not another guess under time pressure. Keeping
+            // PdbReader/RacialDeform as infrastructure, just not wired live.
             IReadOnlyDictionary<string, System.Numerics.Matrix4x4>? racialDeforms = null;
-            if (chara != null && usedRace != chara.RaceCode && int.TryParse(chara.RaceCode.AsSpan(1), out var charaRaceNum))
-                racialDeforms = PdbReader.GetDeforms(_gameData, (ushort)charaRaceNum);
 
             var raw = _gameData.GetFile(mdlPath);
             if (raw == null) { LastTrace.Add($"{slot}:{itemId} GetFile null"); continue; }
