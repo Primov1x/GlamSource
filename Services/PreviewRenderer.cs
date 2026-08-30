@@ -431,7 +431,12 @@ public sealed unsafe class PreviewRenderer : IDisposable
     private bool _webCopyPending;
     private byte[]? _latestWebJpeg;
     private long _lastEncodeTickMs;
-    private const long EncodeThrottleMs = 33; // ~30fps cap on JPEG re-encode cost
+    // ponytail: was 33 (~30fps cap) — live data showed only ~22fps sustained even under that cap
+    // (JPEG encode itself is 6ms, nowhere near the limiter), so the 30fps ceiling wasn't even being
+    // hit. Lowered to try for more headroom; if GPU-copy-readiness is the real ceiling (not this),
+    // sustained fps won't move much and that's the answer to "can we get more" without touching the
+    // capture/copy side itself.
+    private const long EncodeThrottleMs = 16; // ~60fps cap on JPEG re-encode cost
 
     // --- debug counters, all untested-in-practice as of writing — exposed via GetWebCaptureStats()
     // (see WebUiService's GET /api/preview3d/debug) so a bad first live run is diagnosable from the
