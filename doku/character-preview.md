@@ -1,6 +1,6 @@
 # Character-Tab Web-Preview — Stand & Doku
 
-Stand: 0.0.0.159. Betrifft die Web-UI (`Services/WebUiPage.cs`/`WebUiService.cs`) und die
+Stand: 0.0.0.160. Betrifft die Web-UI (`Services/WebUiPage.cs`/`WebUiService.cs`) und die
 CharaView-Anbindung (`Services/PreviewRenderer.cs`, `Windows/GlamourPreviewWindow.cs`,
 `Windows/GlamSourceShellWindow.cs`). Für den Release-Prozess selbst siehe [`../RELEASING.md`](../RELEASING.md).
 
@@ -42,13 +42,41 @@ ein `<canvas>` gezeichnet (kein `<img src=multipart>` — siehe "Warum kein `<im
 - **🎠 Auto-Drehen**: Turntable-Rotation wie bei Online-Shop-Produktansichten.
 - **🔄 Preview zurücksetzen**: volles `Release()`+`Initialize()` — Notausstieg falls die Vorschau
   hängt oder was Falsches zeigt (siehe Bugs unten). Stoppt auch Auto-Drehen.
-- **🧊 Pose einfrieren**: stoppt die Live-Animations-Kopie (`SuspendCharacterCopy`, gab's vorher
-  schon intern, war nur nie an die Web-UI angebunden) — Kamera bleibt bedienbar, nur die
-  Idle-Animation (Atmen/Wippen) hört auf. Nötig weil die Idle-Drosselung (Punkt 3 oben) aus einer
-  sanften Idle-Animation ein sichtbares "springt jede Sekunde" macht.
+- **🧊 Pose einfrieren** — **funktioniert nicht, siehe "Bekannte Limitierung: Einfrieren" unten.**
+  Button/Endpoint existieren, tun aber nicht was der Name verspricht.
 - **🪄 Transparenter Hintergrund** (experimentell, siehe Limitierung unten).
 - **🩺 Preview-Stream-Debug**: `GET /api/preview3d/debug` inline im Tab — Frames encoded/skipped,
   Fehler, aktuelle/letzte Stream-fps, Zoom-Wert, Kamera-Distanz, Draw()-Aufrufrate.
+
+## Bekannte Limitierung: Einfrieren funktioniert nicht
+
+Ursprünglicher Wunsch: "1x Glam+Char einfangen, dann nur noch angucken" ohne Live-Animation
+(Atmen/Wippen), weil die Idle-Drosselung (s.o.) aus der sanften Idle-Animation ein sichtbares
+"springt jede Sekunde" macht.
+
+Zwei Versuche, beide live getestet, **keiner hat funktioniert**:
+
+1. `SuspendCharacterCopy(true)` — stoppt nur UNSERE `ModelData.CopyFromCharacter`-Aufrufe.
+   Char bewegte sich trotzdem weiter.
+2. Zusätzlich `TryonCharaView.DoUpdate = false` gesetzt (echtes Feld, per Reflection gegen die
+   echte FFXIVClientStructs.dll gefunden, Name legte "steuert ob CharaView überhaupt fortschreibt"
+   nahe) — **auch das hat nichts geändert**, per Nutzer-Rückmeldung "nicht geklappt".
+
+Vermutung (nicht verifiziert): `agent->CharaView.GetCharacter()` liefert vermutlich direkt einen
+Zeiger auf das ECHTE, laufende Spieler-Objekt zurück, unabhängig von beiden obigen Flags —
+`Update(_counter, ch)` synct dann bei jedem Tick von diesem live-animierenden Objekt, egal was wir
+sonst einstellen. Um das wirklich zu entkoppeln, bräuchte man entweder:
+
+- ein komplett eigenes, "gefälschtes" Character-Objekt im Speicher (Nutzer-Idee) — riskant, echte
+  Spiel-Speicherstruktur nachbauen, hohe Crash-Gefahr, nicht ohne tiefe native Recherche versucht.
+- oder einen anderen, bisher nicht gefundenen Hebel in `TryonCharaView`/`AgentTryon`, der die
+  Animations-Quelle wirklich von der Live-Referenz trennt.
+
+**Stand: nicht weiter verfolgt** (Nutzer-Entscheidung: "nicht geklappt, schreib in die docs, nix
+mehr fixen"). Für den ursprünglichen Anwendungsfall (statischer Snapshot) existiert im **3D-Viewer**-
+Tab bereits ein funktionierendes, komplett unabhängiges System (`🧍 Idle`-Button, eigenes
+`SkeletonPose`-Snapshot statt Live-Objekt-Referenz) — hat andere Nachteile (Shader-Näherung statt
+echter Spiel-Renderer), aber friert wirklich ein.
 
 ## Bekannte Limitierung: Transparenter Hintergrund
 
@@ -128,9 +156,15 @@ native ImGui-Fenster offen war (die Dispatch-Logik lief nur innerhalb `DrawChara
   jetzt Hintergrund-Thread.
 - Naiver 1-Pixel-Chroma-Key hat Kleidung/Haare mitgefressen → Flood-Fill vom Rand (nur
   zusammenhängender Hintergrund).
+- CI-Race: zwei Versionsbumps kurz hintereinander gepusht (0.0.0.159, 0.0.0.160) haben zwei
+  parallele CI-Läufe gestartet, die sich beim Hochladen ins selbe `LATEST`-Release überholt haben
+  → Dalamud-Installer-Fehler "Distributed plugin version does not match repo version". Fix:
+  `concurrency`+`cancel-in-progress` im Workflow, bricht den älteren Lauf bei neuem Push ab.
 
 ## Offene Punkte
 
+- **Pose einfrieren funktioniert nicht** (siehe Limitierung oben) — zwei Versuche gescheitert,
+  nicht weiter verfolgt auf Nutzer-Wunsch.
 - Transparenz bei dunklen Outfits (siehe Limitierung oben) — kein sauberer Fix in Sicht ohne echte
   Alpha-/Tiefendaten vom Spiel.
 - Native-Slot-Übernahme (siehe Limitierung oben) — deckt bekannte 4 Agents ab, evtl. nicht alle.
