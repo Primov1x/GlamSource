@@ -69,4 +69,4 @@ jobs:
         shell: pwsh
         run: |
           Copy-Item ./artifacts/GlamSource.zip ./artifacts/latest.zip
-          gh release upload LATEST ./artifacts/GlamSource.zip ./artifacts/latest.zip --clobber --repo ${{ github.repository }}
+          gh release upload LATEST ./artifacts/GlamSource.zip ./artifacts/latest.zip repo.json --clobber --repo ${{ github.repository }}
