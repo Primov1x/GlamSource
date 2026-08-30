@@ -389,12 +389,12 @@ async function reloadViewerModel(){
     const upgraded=new Map();
     v.model.traverse(o=>{
       const role=o.material?.userData?.role;
-      if(!role||!(o.material instanceof THREE.MeshStandardMaterial))return;
+      if(!role||!(o.material instanceof v.THREE.MeshStandardMaterial))return;
       const old=o.material;
       if(upgraded.has(old)){o.material=upgraded.get(old);return}
-      const phys=new THREE.MeshPhysicalMaterial();
+      const phys=new v.THREE.MeshPhysicalMaterial();
       phys.copy(old); // carries over map/normalMap/metalnessMap/color/roughness/etc.
-      if(role==='skin'){phys.sheen=0.35;phys.sheenColor=new THREE.Color(0xffe0cc);phys.sheenRoughness=0.6}
+      if(role==='skin'){phys.sheen=0.35;phys.sheenColor=new v.THREE.Color(0xffe0cc);phys.sheenRoughness=0.6}
       else if(role==='hair'){if('anisotropy' in phys){phys.anisotropy=0.6;phys.anisotropyRotation=Math.PI/2}phys.clearcoat=0.15;phys.clearcoatRoughness=0.4}
       else if(role==='eye'){phys.clearcoat=0.8;phys.clearcoatRoughness=0.05}
       upgraded.set(old,phys);
