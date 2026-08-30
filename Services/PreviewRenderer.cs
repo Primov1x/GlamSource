@@ -256,9 +256,23 @@ public sealed unsafe class PreviewRenderer : IDisposable
         // whatever that native UI put in the shared texture — reported live as "the Character tab
         // showed a stranger's Glamour Plate" with no repro (it's not ours, it's just an honest
         // capture of a slot someone else briefly owns).
-        if (agent->AgentInterface.IsAgentActive())
+        //
+        // AgentTryon's own flag isn't the only offender: AgentCharaCard (Adventurer Plate) and the
+        // AgentBannerParty/AgentBannerMIP family (party "group photo" screens — up to 8 party
+        // members, one CharaView slot each, ours included when the party's big enough) are entirely
+        // separate Agent instances with their own IsAgentActive(), confirmed via reflection against
+        // the real FFXIVClientStructs.dll, not guessed — this is what the earlier "someone else's
+        // portrait" reports (Adventure Plate, then a stranger's portrait with no clean repro) were:
+        // different agents, same shared-slot mechanism, needing the same guard.
+        var charaCard = AgentCharaCard.Instance();
+        var bannerParty = AgentBannerParty.Instance();
+        var bannerMip = AgentBannerMIP.Instance();
+        if (agent->AgentInterface.IsAgentActive()
+            || (charaCard != null && charaCard->AgentInterface.IsAgentActive())
+            || (bannerParty != null && bannerParty->AgentBannerInterface.AgentInterface.IsAgentActive())
+            || (bannerMip != null && bannerMip->AgentBannerInterface.AgentInterface.IsAgentActive()))
         {
-            if (!_nativeUiOwnsSlot) _log.Info("[PreviewRenderer] native UI (Fitting Room/Glamour Plate) took over the CharaView slot — pausing our render/capture until it releases it");
+            if (!_nativeUiOwnsSlot) _log.Info($"[PreviewRenderer] native UI took over the CharaView slot (tryon={agent->AgentInterface.IsAgentActive()} charaCard={charaCard != null && charaCard->AgentInterface.IsAgentActive()} bannerParty={bannerParty != null && bannerParty->AgentBannerInterface.AgentInterface.IsAgentActive()} bannerMip={bannerMip != null && bannerMip->AgentBannerInterface.AgentInterface.IsAgentActive()}) — pausing our render/capture until it releases it");
             _nativeUiOwnsSlot = true;
             return;
         }
