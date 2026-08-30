@@ -729,8 +729,14 @@ public sealed unsafe class PreviewRenderer : IDisposable
         return ms.ToArray();
     }
 
-    /// <summary>Naive chroma-key + PNG encode — see _transparentBackdropEnabled's doc comment for
-    /// why this is naive (no real alpha source, samples one corner pixel as "the backdrop color").
+    /// <summary>Chroma-key + PNG encode — see _transparentBackdropEnabled's doc comment for why this
+    /// has no real alpha source to work from. Flood-fills from the image BORDER instead of a single
+    /// global reference color: only backdrop connected to the edge gets keyed out, so dark clothing/
+    /// hair in the middle of the frame survives even if similarly colored (reported live: a flat
+    /// global threshold made "die Kleidung sieht weird aus" — this fixes that class of mistake, a
+    /// gradient backdrop is naturally one connected blob touching every edge, a worn character isn't
+    /// connected to the edge in a normal centered framing). Each step compares to its OWN neighbor's
+    /// color, not a fixed reference, so it tolerates the backdrop's gradient.
     /// EncodeSourceBitmap already normalizes to Format32bppArgb regardless of source BGRA-ness, so
     /// this can just work in that one format without re-deriving isBgra logic itself.</summary>
     private static byte[] EncodeChromaKeyedPng(int width, int height, int rowPitch, nint scan0, bool isBgra)
@@ -738,20 +744,47 @@ public sealed unsafe class PreviewRenderer : IDisposable
         using var bmp = EncodeSourceBitmap(width, height, rowPitch, scan0, isBgra);
         var rect = new System.Drawing.Rectangle(0, 0, width, height);
         var data = bmp.LockBits(rect, System.Drawing.Imaging.ImageLockMode.ReadWrite, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-        const int thresholdSq = 30 * 30; // untuned — raise/lower based on how it looks live
+        const int thresholdSq = 18 * 18; // untuned — per-step tolerance now, not a global one; raise/lower based on how it looks live
         unsafe
         {
             var basePtr = (byte*)data.Scan0;
-            byte refB = basePtr[0], refG = basePtr[1], refR = basePtr[2]; // top-left pixel = "the backdrop"
-            for (var y = 0; y < height; y++)
+            var stride = data.Stride;
+            var visited = new bool[width * height];
+            var stack = new Stack<int>(width * height / 4);
+
+            void Seed(int x, int y)
             {
-                var row = basePtr + y * data.Stride;
-                for (var x = 0; x < width; x++)
-                {
-                    var px = row + x * 4;
-                    int db = px[0] - refB, dg = px[1] - refG, dr = px[2] - refR;
-                    if (db * db + dg * dg + dr * dr < thresholdSq) px[3] = 0;
-                }
+                var i = y * width + x;
+                if (visited[i]) return;
+                visited[i] = true;
+                stack.Push(i);
+            }
+            for (var x = 0; x < width; x++) { Seed(x, 0); Seed(x, height - 1); }
+            for (var y = 0; y < height; y++) { Seed(0, y); Seed(width - 1, y); }
+
+            while (stack.Count > 0)
+            {
+                var i = stack.Pop();
+                var x = i % width;
+                var y = i / width;
+                var p = basePtr + y * stride + x * 4;
+                p[3] = 0; // keyed out — part of the backdrop blob
+
+                if (x > 0) TryExpand(x - 1, y, p);
+                if (x < width - 1) TryExpand(x + 1, y, p);
+                if (y > 0) TryExpand(x, y - 1, p);
+                if (y < height - 1) TryExpand(x, y + 1, p);
+            }
+
+            void TryExpand(int nx, int ny, byte* fromPixel)
+            {
+                var ni = ny * width + nx;
+                if (visited[ni]) return;
+                var np = basePtr + ny * stride + nx * 4;
+                int db = np[0] - fromPixel[0], dg = np[1] - fromPixel[1], dr = np[2] - fromPixel[2];
+                if (db * db + dg * dg + dr * dr >= thresholdSq) return;
+                visited[ni] = true;
+                stack.Push(ni);
             }
         }
         bmp.UnlockBits(data);
