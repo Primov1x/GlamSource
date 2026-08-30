@@ -126,12 +126,20 @@ public sealed class ModelExportService
                     raceCandidates.Add($"c{(rc % 200 < 100 ? rc + 100 : rc - 100):D4}");
             }
             string? mdlPath = null;
+            string? usedRace = null;
             foreach (var rc in raceCandidates)
             {
                 var candidate = $"chara/{info.Category}/{info.Prefix}{setId:D4}/model/{rc}{info.Prefix}{setId:D4}_{info.Suffix}.mdl";
-                if (_gameData.FileExists(candidate)) { mdlPath = candidate; break; }
+                if (_gameData.FileExists(candidate)) { mdlPath = candidate; usedRace = rc; break; }
             }
             if (mdlPath == null) { LastTrace.Add($"{slot}:{itemId} missing (tried {string.Join(", ", raceCandidates)})"); continue; }
+
+            // ponytail: gear modeled for a different race than the character (almost always the
+            // generic Hyur c0101 fallback) needs the racial bone-deform correction — see
+            // RacialDeform's doc comment. Static data, applies regardless of pose.
+            IReadOnlyDictionary<string, System.Numerics.Matrix4x4>? racialDeforms = null;
+            if (chara != null && usedRace != chara.RaceCode && int.TryParse(chara.RaceCode.AsSpan(1), out var charaRaceNum))
+                racialDeforms = PdbReader.GetDeforms(_gameData, (ushort)charaRaceNum);
 
             var raw = _gameData.GetFile(mdlPath);
             if (raw == null) { LastTrace.Add($"{slot}:{itemId} GetFile null"); continue; }
@@ -166,6 +174,11 @@ public sealed class ModelExportService
             {
                 if (m.SubmeshesKept < m.SubmeshesTotal)
                     LastTrace.Add($"  submeshes: {m.SubmeshesKept}/{m.SubmeshesTotal} kept, dropped attrs=[{string.Join(",", m.DroppedAttributes)}]");
+                if (racialDeforms != null)
+                {
+                    RacialDeform.Apply(m, mdl.Bones, mdl.BoneTables, racialDeforms);
+                    LastTrace.Add($"  racial deform applied ({usedRace}->{chara!.RaceCode}, {racialDeforms.Count} bone entries)");
+                }
                 if (pose != null)
                 {
                     var stats = SkinApply.Apply(m, mdl.Bones, mdl.BoneTables, pose);
