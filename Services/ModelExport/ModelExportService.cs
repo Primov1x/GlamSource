@@ -248,7 +248,7 @@ public sealed class ModelExportService
             {
                 // tail (Miqo'te/Au Ra/Hrothgar) or ears (Viera) — whichever path exists
                 AddCharaPart($"chara/human/{rc}/obj/tail/t{chara.TailOrEars:D4}/model/{rc}t{chara.TailOrEars:D4}_til.mdl", rc, $"tail/t{chara.TailOrEars:D4}", hairTint, meshInputs, pngs, materialCache, pose);
-                AddCharaPart($"chara/human/{rc}/obj/zear/z{chara.TailOrEars:D4}/model/{rc}z{chara.TailOrEars:D4}_zer.mdl", rc, $"zear/z{chara.TailOrEars:D4}", skinTint, meshInputs, pngs, materialCache, pose);
+                AddCharaPart($"chara/human/{rc}/obj/zear/z{chara.TailOrEars:D4}/model/{rc}z{chara.TailOrEars:D4}_zer.mdl", rc, $"zear/z{chara.TailOrEars:D4}", skinTint, meshInputs, pngs, materialCache, pose, outerTint: hairTint);
             }
         }
 
@@ -263,7 +263,7 @@ public sealed class ModelExportService
     /// when the path doesn't exist for this race. Untextured meshes get the fallback tint.</summary>
     private void AddCharaPart(string mdlPath, string raceCode, string partFolder, float[] fallbackTint,
         List<GltfMeshInput> meshInputs, List<byte[]> pngs, Dictionary<string, (int, float[]?, int, int)> materialCache, SkeletonPose? pose,
-        float[]? highlightTint = null, IReadOnlyCollection<string>? hideAttributes = null, float[]? eyeTint = null, float[]? decalTint = null)
+        float[]? highlightTint = null, IReadOnlyCollection<string>? hideAttributes = null, float[]? eyeTint = null, float[]? decalTint = null, float[]? outerTint = null)
     {
         if (!_gameData.FileExists(mdlPath)) { LastTrace.Add($"chara part missing: {mdlPath}"); return; }
         var raw = _gameData.GetFile(mdlPath);
@@ -304,6 +304,10 @@ public sealed class ModelExportService
                 // ponytail: the iris material's base texture is neutral grayscale too — needs the
                 // character's actual eye color, not the skin tint every other face material uses.
                 if (eyeTint != null && mtrlName.Contains("_iri_")) tint = eyeTint;
+                // ponytail: Viera ear outer shell is hair-colored (black fur in the real screenshot
+                // comparison), not skin-colored — only the inner "_fac_" strip is skin tone. Was
+                // using skinTint for the whole ear part, tinting the outer shell wrong.
+                if (outerTint != null && !mtrlName.Contains("_fac_")) tint = outerTint;
                 // ponytail: some non-Hyur body models (e.g. Viera b0002) reference the shared
                 // Hyur skin material by name (skin_mask.tex etc. is generic across races) instead
                 // of their own race's folder — same misroute the equipment loop already handles,
