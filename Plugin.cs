@@ -242,6 +242,13 @@ public class Plugin : IAsyncDalamudPlugin
 
     private void OnFrameworkUpdate(IFramework fw)
     {
+        // ponytail: reported live — web-UI preview didn't follow a fresh in-game target-click at
+        // all, only updating after opening the native ImGui window's Character tab once. That whole
+        // sync/dispatch used to live ONLY inside DrawCharacterTab()'s own Draw() call, so with the
+        // native window closed (web-UI-only usage) it simply never ran. Every tick now, independent
+        // of any window's visibility — cheap (a few field reads unless the target actually changed).
+        if (Configuration.WebUiLive3DPreview) shellWindow.SyncPreviewForWeb();
+
         if (!_bwHideDone)
         {
             if (!Configuration.WebUiEnabled || !Configuration.WebUiAutoOverlay || --_bwHideRetryFrames <= 0)

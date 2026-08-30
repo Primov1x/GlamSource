@@ -470,31 +470,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
     // =====================================================================
     private void DrawCharacterTab()
     {
-        // ponytail: a fresh hardtarget overrides a stuck Recent selection.
-        var currentTarget = Plugin.TargetManager?.Target;
-        var currentTargetId = currentTarget?.EntityId ?? 0;
-        if (currentTargetId != 0 && currentTargetId != _lastLiveTarget && _recentOverride != null)
-        {
-            _recentOverride = null;
-            _activeRecentName = null;
-        }
-        // ponytail: track live target even when override active — otherwise every frame
-        // sees "new" hardtarget and wipes the just-clicked Recent.
-        if (currentTargetId != 0) _lastLiveTarget = currentTargetId;
-
-        // Refresh live snapshot every frame unless pinned or Recent-override active.
-        // ponytail: only overwrite _snapshot when we actually have a target; null-flicker keeps the last one.
-        if (!_pinned && _recentOverride == null)
-        {
-            if (currentTarget != null)
-            {
-                var live = _glamour.TryGetVisibleGlamour(currentTarget.ObjectIndex) ?? _glamour.GetTargetEquipment();
-                MaybePushRecentForTarget(currentTarget, live);
-                _snapshot = live ?? _snapshot;
-            }
-        }
-        // Ensure the CharaView renderer is running as long as this tab is drawn.
-        PreviewWindow?.EnsureInitializedForSelf();
+        SyncLiveTargetSnapshot();
 
         DrawCharacterToolbar();
         ImGui.Separator();
@@ -544,6 +520,48 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
 
         ImGui.PopStyleVar(2);
 
+        SyncPreviewTargetDispatch();
+    }
+
+    // ponytail: extracted from DrawCharacterTab (was inline there only) — reported live: web-UI
+    // preview didn't follow a fresh in-game target-click at all, only updating after opening the
+    // native ImGui window's Character tab once. Root cause: this logic only ever ran as part of
+    // THAT tab's own Draw() call, so with the native window closed (web-UI-only usage) it simply
+    // never executed. Now called both from DrawCharacterTab() (unchanged behavior when the native
+    // window is open) AND from an always-on Framework.Update hook (see SyncPreviewForWeb/Plugin.cs)
+    // so the web preview stays live regardless of window visibility.
+    private void SyncLiveTargetSnapshot()
+    {
+        // ponytail: a fresh hardtarget overrides a stuck Recent selection.
+        var currentTarget = Plugin.TargetManager?.Target;
+        var currentTargetId = currentTarget?.EntityId ?? 0;
+        if (currentTargetId != 0 && currentTargetId != _lastLiveTarget && _recentOverride != null)
+        {
+            _recentOverride = null;
+            _activeRecentName = null;
+        }
+        // ponytail: track live target even when override active — otherwise every frame
+        // sees "new" hardtarget and wipes the just-clicked Recent.
+        if (currentTargetId != 0) _lastLiveTarget = currentTargetId;
+
+        // Refresh live snapshot every frame unless pinned or Recent-override active.
+        // ponytail: only overwrite _snapshot when we actually have a target; null-flicker keeps the last one.
+        if (!_pinned && _recentOverride == null)
+        {
+            if (currentTarget != null)
+            {
+                var live = _glamour.TryGetVisibleGlamour(currentTarget.ObjectIndex) ?? _glamour.GetTargetEquipment();
+                MaybePushRecentForTarget(currentTarget, live);
+                _snapshot = live ?? _snapshot;
+            }
+        }
+        // Ensure the CharaView renderer is running as long as this tab is drawn.
+        PreviewWindow?.EnsureInitializedForSelf();
+    }
+
+    // ponytail: see SyncLiveTargetSnapshot's comment — same extraction, same reason.
+    private void SyncPreviewTargetDispatch()
+    {
         // Preview = live target (or none). Recent click drives CharaView directly via
         // SetCharaViewItemSlot in ApplyRecentGlamOverride, so overlay must stay cleared then.
         // ponytail: debounce target null-flicker (mouse-over plugin loses hardtarget briefly).
@@ -621,6 +639,16 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
                 _lastProviderKind = ProviderKind.Self;
             }
         }
+    }
+
+    /// <summary>Runs the same live-target sync + dispatch DrawCharacterTab() does, for callers that
+    /// want the web preview kept in sync WITHOUT the native ImGui window being open at all — see
+    /// SyncLiveTargetSnapshot's comment for why this needed to exist as a standalone entry point.
+    /// Safe to call every Framework.Update tick; identical dedup/debounce logic as the Draw() path.</summary>
+    public void SyncPreviewForWeb()
+    {
+        SyncLiveTargetSnapshot();
+        SyncPreviewTargetDispatch();
     }
 
     private void DrawCharacterToolbar()
