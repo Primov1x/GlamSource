@@ -1180,7 +1180,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
                             // not finished yet / depth target unavailable)
                             var encoded = png
                                 ? (depthValid
-                                    ? EncodeDepthMaskedPngFromBuffer(rawFrameBuffer, w, h, rowPitch, isBgra,
+                                    ? EncodeDepthMaskedPngFast(rawFrameBuffer, w, h, rowPitch, isBgra,
                                         depthBuf!, depthPitch, depthFmt, depthW, depthH)
                                     : EncodeChromaKeyedPngFromBuffer(rawFrameBuffer, w, h, rowPitch, isBgra))
                                 : EncodeJpegFromBuffer(rawFrameBuffer, w, h, rowPitch, isBgra);
@@ -1358,109 +1358,127 @@ public sealed unsafe class PreviewRenderer : IDisposable
         fixed (byte* p = buffer) return EncodeChromaKeyedPng(width, height, rowPitch, (nint)p, isBgra);
     }
 
-    /// <summary>PNG with alpha derived from the CharaView DEPTH buffer instead of color similarity
-    /// (see _depthStaging's field comment): backdrop = pixels whose depth equals the clear value
-    /// (sampled from the image corners — no geometry ever renders there in a normal framing),
-    /// character = everything else. Immune to dark-clothing-on-dark-backdrop, the failure that
-    /// killed the flood-fill. Depth texel decoding by format: 24-bit UNORM in the low 3 bytes
-    /// (R24G8/D24S8 family, 4-byte texels) or a 32-bit float (R32/D32 family; D32_FLOAT_S8X24
-    /// family has 8-byte texels, float first).</summary>
-    private byte[] EncodeDepthMaskedPngFromBuffer(byte[] buffer, int width, int height, int rowPitch, bool isBgra,
+    // --- minimal fast PNG writer ---
+    // GDI+'s PNG encoder measured 37-65ms per 576x960 frame (max compression, no knob) and was THE
+    // stream fps ceiling (~15fps). This writer: filter 0 rows + ZLibStream(Fastest) — bigger files,
+    // several times faster, pure background-thread CPU, zero in-game cost.
+    private static readonly uint[] Crc32Table = BuildCrc32Table();
+
+    private static uint[] BuildCrc32Table()
+    {
+        var t = new uint[256];
+        for (uint n = 0; n < 256; n++)
+        {
+            var c = n;
+            for (var k = 0; k < 8; k++) c = (c & 1) != 0 ? 0xEDB88320 ^ (c >> 1) : c >> 1;
+            t[n] = c;
+        }
+        return t;
+    }
+
+    private static uint Crc32(ReadOnlySpan<byte> data, uint crc)
+    {
+        foreach (var b in data) crc = Crc32Table[(crc ^ b) & 0xFF] ^ (crc >> 8);
+        return crc;
+    }
+
+    private static void WritePngChunk(MemoryStream ms, ReadOnlySpan<byte> type, ReadOnlySpan<byte> data)
+    {
+        Span<byte> len = stackalloc byte[4];
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(len, (uint)data.Length);
+        ms.Write(len);
+        ms.Write(type);
+        ms.Write(data);
+        var crc = Crc32(data, Crc32(type, 0xFFFFFFFF)) ^ 0xFFFFFFFF;
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(len, crc);
+        ms.Write(len);
+    }
+
+    /// <summary>raw = h rows of (1 filter byte + w*4 RGBA bytes), filter 0 everywhere.</summary>
+    private static byte[] WritePngRgba(byte[] raw, int w, int h)
+    {
+        using var ms = new MemoryStream(raw.Length / 3);
+        ms.Write(stackalloc byte[] { 137, 80, 78, 71, 13, 10, 26, 10 });
+        Span<byte> ihdr = stackalloc byte[13];
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(ihdr, (uint)w);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(ihdr[4..], (uint)h);
+        ihdr[8] = 8;  // bit depth
+        ihdr[9] = 6;  // color type RGBA
+        WritePngChunk(ms, "IHDR"u8, ihdr);
+        using var cms = new MemoryStream(raw.Length / 3);
+        using (var z = new System.IO.Compression.ZLibStream(cms, System.IO.Compression.CompressionLevel.Fastest, leaveOpen: true))
+            z.Write(raw, 0, raw.Length);
+        WritePngChunk(ms, "IDAT"u8, cms.GetBuffer().AsSpan(0, (int)cms.Length));
+        WritePngChunk(ms, "IEND"u8, default);
+        return ms.ToArray();
+    }
+
+    // reused across frames (single encode in flight, guarded by _webEncodeInProgress)
+    private byte[]? _pngRawBuffer;
+
+    /// <summary>Fast path of the depth-masked transparent encode: builds the RGBA rows directly
+    /// (BGRA swizzle + depth mask + 1px erode) and writes the PNG itself — no GDI+ anywhere.</summary>
+    private byte[] EncodeDepthMaskedPngFast(byte[] color, int w, int h, int rowPitch, bool isBgra,
         byte[] depth, int depthPitch, DXGI_FORMAT depthFmt, int depthW, int depthH)
     {
-        int texelSize;
-        var isFloat = false;
-        switch (depthFmt)
-        {
-            case DXGI_FORMAT.DXGI_FORMAT_R24G8_TYPELESS:
-            case DXGI_FORMAT.DXGI_FORMAT_D24_UNORM_S8_UINT:
-            case DXGI_FORMAT.DXGI_FORMAT_R24_UNORM_X8_TYPELESS:
-                texelSize = 4;
-                break;
-            case DXGI_FORMAT.DXGI_FORMAT_R32_TYPELESS:
-            case DXGI_FORMAT.DXGI_FORMAT_D32_FLOAT:
-            case DXGI_FORMAT.DXGI_FORMAT_R32_FLOAT:
-                texelSize = 4;
-                isFloat = true;
-                break;
-            case DXGI_FORMAT.DXGI_FORMAT_R32G8X24_TYPELESS:
-            case DXGI_FORMAT.DXGI_FORMAT_D32_FLOAT_S8X24_UINT:
-                texelSize = 8;
-                isFloat = true;
-                break;
-            default:
-                // unknown depth layout — better a colored frame than a garbled mask
-                _lastCaptureError = $"unhandled depth format {depthFmt} — transparent falls back to flood-fill";
-                unsafe { fixed (byte* p = buffer) return EncodeChromaKeyedPng(width, height, rowPitch, (nint)p, isBgra); }
-        }
+        var isFloat = depthFmt is DXGI_FORMAT.DXGI_FORMAT_R32_TYPELESS or DXGI_FORMAT.DXGI_FORMAT_D32_FLOAT
+            or DXGI_FORMAT.DXGI_FORMAT_R32_FLOAT or DXGI_FORMAT.DXGI_FORMAT_R32G8X24_TYPELESS
+            or DXGI_FORMAT.DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
+        var texelSize = depthFmt is DXGI_FORMAT.DXGI_FORMAT_R32G8X24_TYPELESS or DXGI_FORMAT.DXGI_FORMAT_D32_FLOAT_S8X24_UINT ? 8 : 4;
 
+        if (_chromaVisited == null || _chromaVisited.Length != w * h) _chromaVisited = new bool[w * h];
+        var isBackdrop = _chromaVisited;
         unsafe
         {
-            fixed (byte* colorPtr = buffer)
-            fixed (byte* depthPtrFixed = depth)
+            fixed (byte* dpF = depth)
             {
-                // plain local copy — a `fixed` variable can't be captured by a local function (CS1764)
-                var depthPtr = depthPtrFixed;
-                float ReadDepth(int x, int y)
+                var dp = dpF;
+                for (var y = 0; y < h; y++)
                 {
-                    var p = depthPtr + y * depthPitch + x * texelSize;
-                    if (isFloat) return *(float*)p;
-                    return (p[0] | (p[1] << 8) | (p[2] << 16)) / 16777215f;
-                }
-
-                // No learned reference at all. Two prior versions derived the clear value from the
-                // image (corner median, then border mode + cache) and BOTH broke live the moment
-                // the character covered the sampled area ("beim Ranzoomen verschwindet der Char":
-                // border = all character, learned reference = character depth, character keyed out).
-                // A depth buffer is only ever CLEARED to exactly 0.0 or 1.0 — real geometry never
-                // lands bit-exactly on either. Backdrop = bit-exact 0 or max, done: correct at any
-                // zoom, from the first frame, nothing to learn or cache.
-                bool IsClear(float d) => d == 0f || d == 1f;
-
-                using var bmp = EncodeSourceBitmap(width, height, rowPitch, (nint)colorPtr, isBgra);
-                var rect = new System.Drawing.Rectangle(0, 0, width, height);
-                var data = bmp.LockBits(rect, System.Drawing.Imaging.ImageLockMode.ReadWrite, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-                var basePtr = (byte*)data.Scan0;
-                var stride = data.Stride;
-                // backdrop bool per pixel, kept for the erode pass below — reuses the flood-fill
-                // path's scratch array (never both active: one encode at a time, different modes)
-                if (_chromaVisited == null || _chromaVisited.Length != width * height)
-                    _chromaVisited = new bool[width * height];
-                var isBackdrop = _chromaVisited;
-                for (var y = 0; y < height; y++)
-                {
-                    // nearest-neighbor into the depth buffer if resolutions differ
-                    var dy = depthH == height ? y : y * depthH / height;
-                    var row = basePtr + y * stride;
-                    for (var x = 0; x < width; x++)
+                    var dy = depthH == h ? y : y * depthH / h;
+                    var rowBase = y * w;
+                    for (var x = 0; x < w; x++)
                     {
-                        var dx = depthW == width ? x : x * depthW / width;
-                        var backdrop = IsClear(ReadDepth(dx, dy));
-                        isBackdrop[y * width + x] = backdrop;
-                        if (backdrop) row[x * 4 + 3] = 0; // depth untouched by any geometry
+                        var dx = depthW == w ? x : x * depthW / w;
+                        var p = dp + dy * depthPitch + dx * texelSize;
+                        var d = isFloat ? *(float*)p : (p[0] | (p[1] << 8) | (p[2] << 16)) / 16777215f;
+                        isBackdrop[rowBase + x] = d == 0f || d == 1f;
                     }
                 }
-                // erode 1px: silhouette-edge pixels are antialiased blends of character AND backdrop
-                // color (a faint bright fringe on dark outfits) — kill any kept pixel that touches
-                // backdrop. 4-neighborhood, single pass, reads the UN-eroded mask so it can't chain.
-                for (var y = 0; y < height; y++)
-                {
-                    var row = basePtr + y * stride;
-                    for (var x = 0; x < width; x++)
-                    {
-                        var i2 = y * width + x;
-                        if (isBackdrop[i2]) continue;
-                        if ((x > 0 && isBackdrop[i2 - 1]) || (x < width - 1 && isBackdrop[i2 + 1])
-                            || (y > 0 && isBackdrop[i2 - width]) || (y < height - 1 && isBackdrop[i2 + width]))
-                            row[x * 4 + 3] = 0;
-                    }
-                }
-                bmp.UnlockBits(data);
-                using var ms = new MemoryStream();
-                bmp.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
-                return ms.ToArray();
             }
         }
+
+        var rawLen = h * (1 + w * 4);
+        if (_pngRawBuffer == null || _pngRawBuffer.Length != rawLen) _pngRawBuffer = new byte[rawLen];
+        var raw = _pngRawBuffer;
+        for (var y = 0; y < h; y++)
+        {
+            var src = y * rowPitch;
+            var dst = y * (1 + w * 4);
+            raw[dst++] = 0; // filter: none
+            var rowBase = y * w;
+            for (var x = 0; x < w; x++, src += 4, dst += 4)
+            {
+                var i = rowBase + x;
+                // 1px erode inline: kept pixel touching backdrop (4-neighborhood, un-eroded mask)
+                var transparent = isBackdrop[i]
+                    || (x > 0 && isBackdrop[i - 1]) || (x < w - 1 && isBackdrop[i + 1])
+                    || (y > 0 && isBackdrop[i - w]) || (y < h - 1 && isBackdrop[i + w]);
+                if (transparent)
+                {
+                    raw[dst] = 0; raw[dst + 1] = 0; raw[dst + 2] = 0; raw[dst + 3] = 0;
+                }
+                else if (isBgra)
+                {
+                    raw[dst] = color[src + 2]; raw[dst + 1] = color[src + 1]; raw[dst + 2] = color[src]; raw[dst + 3] = 255;
+                }
+                else
+                {
+                    raw[dst] = color[src]; raw[dst + 1] = color[src + 1]; raw[dst + 2] = color[src + 2]; raw[dst + 3] = 255;
+                }
+            }
+        }
+        return WritePngRgba(raw, w, h);
     }
 
     private static byte[] EncodeJpeg(int width, int height, int rowPitch, nint scan0, bool isBgra)

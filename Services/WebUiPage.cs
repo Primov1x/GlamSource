@@ -311,7 +311,9 @@ function p3dRedraw(){
     // clear the circle FIRST — with a transparent frame, the magnified crop's transparent pixels
     // otherwise let the unmagnified base image show through underneath ("seh sachen doppelt")
     ctx.clearRect(x-r,y-r,2*r,2*r);
-    ctx.imageSmoothingEnabled=false; // crisp native pixels inside the loupe
+    // smoothing ON: with the RT still at native 576 res (2x realloc only catches a fresh boot's
+    // first allocation), nearest-neighbor was pure pixel blocks ("sieht pixelig aus")
+    ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
     ctx.drawImage(p3dBitmap,x-r/m,y-r/m,2*r/m,2*r/m,x-r,y-r,2*r,2*r);
     ctx.restore();
     ctx.beginPath();ctx.arc(x,y,r,0,7);
