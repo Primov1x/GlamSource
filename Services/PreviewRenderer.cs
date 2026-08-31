@@ -596,6 +596,19 @@ public sealed unsafe class PreviewRenderer : IDisposable
         // TryonCharaView (separate from the drawn/sheathed stance) — keep the preview weaponless
         // unless explicitly requested.
         agent->CharaView.HideWeapon = !(_weaponDrawn || _weaponOnly); // weapon-only shows it sheathed
+        // The weapon DrawObject spawns fine but its own IsVisible flag stays FALSE (log-verified:
+        // drawObject=non-null, objVisible=False) — force it every tick while a weapon mode is on,
+        // same as the weapon-only body-hide loop already did for its case.
+        if (_weaponDrawn || _weaponOnly)
+        {
+            var wch = agent->CharaView.GetCharacter();
+            if (wch != null)
+                for (var i = 0; i < 3; i++)
+                {
+                    var wd = wch->DrawData.Weapon((DrawDataContainer.WeaponSlot)i).DrawObject;
+                    if (wd != null) wd->IsVisible = true;
+                }
+        }
 
         var ch = agent->CharaView.GetCharacter();
         if (ch == null) return;
