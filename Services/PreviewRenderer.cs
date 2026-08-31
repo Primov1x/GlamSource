@@ -180,11 +180,14 @@ public sealed unsafe class PreviewRenderer : IDisposable
             return; // this frame renders the just-captured pose anyway
         }
 
-        for (var p = 0; p < partialCount; p++)
+        // clamp to the array we actually hold — partialCount is re-read from live memory and can
+        // shrink/grow between the capture-check above and here (audit finding: out-of-bounds)
+        var applyCount = System.Math.Min(partialCount, frozenModel!.Length);
+        for (var p = 0; p < applyCount; p++)
         {
             var pose = skeleton->PartialSkeletons[p].GetHavokPose(0);
             if (pose == null) continue;
-            var frozenM = frozenModel![p];
+            var frozenM = frozenModel[p];
             var n = System.Math.Min(frozenM.Length, pose->ModelPose.Length);
             for (var i = 0; i < n; i++)
             {
@@ -1033,14 +1036,31 @@ public sealed unsafe class PreviewRenderer : IDisposable
         }
     }
 
-    /// <summary>The CharaView pipeline's shared depth/stencil target (RenderTargetManager+0x360,
-    /// internal in FFXIVClientStructs — raw offset read, same technique as SetCharaViewEquipmentSlotRaw).
+    // Offset of RenderTargetManager's internal Unk360 ("Depth/Stencil for CharaView?"), resolved
+    // at runtime via reflection from the SHIPPED FFXIVClientStructs assembly instead of a
+    // hardcoded 0x360 — a game patch that shifts the struct also ships an updated
+    // FFXIVClientStructs, so the resolved offset moves with it. A hardcoded offset reading a
+    // then-garbage pointer and dereferencing it is an AccessViolation (flagged in the crash-safety
+    // audit). -1 = field not found (renamed/removed upstream) → depth path stays disabled.
+    private static readonly int CharaViewDepthOffset = ResolveCharaViewDepthOffset();
+
+    private static int ResolveCharaViewDepthOffset()
+    {
+        var field = typeof(RenderTargetManager).GetField("Unk360",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var attr = field?.GetCustomAttributes(typeof(System.Runtime.InteropServices.FieldOffsetAttribute), false);
+        return attr is [System.Runtime.InteropServices.FieldOffsetAttribute a] ? a.Value : -1;
+    }
+
+    /// <summary>The CharaView pipeline's shared depth/stencil target (RenderTargetManager.Unk360,
+    /// internal in FFXIVClientStructs — offset resolved via reflection, see CharaViewDepthOffset).
     /// Shared by ALL CharaViews; ours holds our content right after our Render() call, and
     /// _nativeUiOwnsSlot already pauses us whenever anyone else drives the slot.</summary>
     private static FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* GetCharaViewDepthTexture()
     {
+        if (CharaViewDepthOffset < 0) return null;
         var rtm = RenderTargetManager.Instance();
-        return rtm == null ? null : *(FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture**)((byte*)rtm + 0x360);
+        return rtm == null ? null : *(FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture**)((byte*)rtm + CharaViewDepthOffset);
     }
 
     /// <summary>Copy the CharaView depth target into the given slot's depth staging — called right

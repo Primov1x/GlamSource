@@ -345,6 +345,8 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
         _framework.RunOnFrameworkThread(_renderer.Release);
     }
 
+    private long _lastCameraReinitMs;
+
     private void OnFrameworkTick(IFramework fw)
     {
         if (!_clientState.IsLoggedIn) return;
@@ -354,8 +356,11 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
         // every camera call silently no-opped ("Kamera hat garnicht funktioniert") and the last
         // captured frame was a stranger's portrait. Full reinit (same path as the manual reset
         // button, including the equipment re-seed) instead of waiting for the user to notice.
-        if (_renderer.CameraLost)
+        // cooldown (audit finding): if reinit can't complete (e.g. LocalPlayer gone while zoning),
+        // CameraLost stays true — without this, a reinit attempt + warning would queue EVERY tick
+        if (_renderer.CameraLost && Environment.TickCount64 - _lastCameraReinitMs > 3000)
         {
+            _lastCameraReinitMs = Environment.TickCount64;
             _log.Warning("[GlamourPreviewWindow] CharaView camera lost after a native-UI slot takeover — auto-reinitializing");
             ForceReinitializeForSelf();
         }
