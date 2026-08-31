@@ -145,7 +145,19 @@ public sealed class WebUiService : IDisposable
     public void SetEnabled(bool enabled)
     {
         if (enabled && _listener == null) { Start(); EnsureBrowsingwayInlay(); }
-        else if (!enabled && _listener != null) Stop();
+        else if (!enabled && _listener != null)
+        {
+            Stop();
+            // server going away = close the overlay too — otherwise Browsingway keeps showing a
+            // dead page ("wenn der Server ausgeschaltet ist, soll das Fenster sich schließen").
+            // Plugin unload does the same in DisposeAsync; this covers the settings toggle.
+            try
+            {
+                _framework.RunOnFrameworkThread(() =>
+                    Plugin.CommandManager.ProcessCommand("/bw overlay glamsource disabled on"));
+            }
+            catch { /* Browsingway not installed — nothing to close */ }
+        }
     }
 
     private void Start()

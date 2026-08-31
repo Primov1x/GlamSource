@@ -92,6 +92,7 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
   <span class="brand">GlamSource</span>
   <span class="sub">web ui</span>
   <span class="spacer"></span>
+  <button id="btn-min" title="Minimieren — nur die Titelleiste bleibt sichtbar" onclick="toggleMinimize()">–</button>
   <button id="btn-lock" title="Lock overlay position — needed to drag-rotate the 3D preview (Browsingway has no title bar; unlocked, any drag moves the whole window instead)" onclick="toggleLock()">🔓</button>
   <button title="Hide (reopen from the GlamSource window)" onclick="post('/api/action/overlay/hide')">×</button>
 </div>
@@ -159,13 +160,26 @@ const img=(id,size)=>`<img src="${icon(id)}" width="${size}" height="${size}" lo
 const TYPE_ICON={craft:'🔨',vendor:'🛒',quest:'❗',duty:'⚔️'};
 function typeIcon(cls){return TYPE_ICON[cls]??'✦'}
 
+let currentTab='lookup';
 function showTab(t){
+  currentTab=t;
   for(const x of['lookup','character','viewer']){
     $('#view-'+x).style.display=x===t?'':'none';
     $('#tab-'+x).classList.toggle('active',x===t);
   }
   if(t==='character'){loadSnapshot();startPreview3D()}else{stopPreview3D()}
   if(t==='viewer')startViewer();
+}
+
+// minimize to the title bar (Dalamud-style collapse isn't possible for a Browsingway page — the
+// overlay window keeps its size, but the content below the bar disappears and the stream stops)
+let uiMinimized=false;
+function toggleMinimize(){
+  uiMinimized=!uiMinimized;
+  $('#app').style.display=uiMinimized?'none':'';
+  $('#btn-min').textContent=uiMinimized?'▢':'–';
+  if(uiMinimized)stopPreview3D();
+  else if(currentTab==='character'){loadSnapshot();startPreview3D()}
 }
 
 // --- 3D preview (opt-in, see Settings > 3D Preview) ---
