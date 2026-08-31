@@ -567,12 +567,13 @@ public sealed unsafe class PreviewRenderer : IDisposable
         var ch = agent->CharaView.GetCharacter();
         if (ch == null) return;
 
-        // Mode stomp — the root cause behind the crafting anvil surviving the BaseOverride pin:
-        // CopyFromCharacter mirrors the live char's MODE too (crafting = Mode 5), and BaseOverride
-        // only forces the base animation "when character is in a Normal or AnimLock state"
-        // (FFXIVClientStructs' own doc on the field). Stomp the clone back to Normal every tick.
-        if (ch->Mode != CharacterModes.Normal && ch->Mode != CharacterModes.AnimLock)
-            ch->SetMode(CharacterModes.Normal, 0);
+        // NOTE deliberately NO per-tick mode stomp / idle pin anymore: both were attempted anvil
+        // fixes and made it WORSE — force-interrupting the clone's craft animation midway cut off
+        // the craft-END path that despawns the facility prop, leaving an ORPHANED anvil in the
+        // offscreen scene that survives every CharaView Release/Initialize (observed live: anvil
+        // outlived resets and a class switch). The source-side copy gate below (skip copying while
+        // the live char is occupied) is the actual prevention; an already-orphaned prop only goes
+        // away with a plugin reload / game restart tearing the scene down.
 
         // post-init idle reset (see _pendingIdleReset) — once, as soon as the clone is loaded
         if (_pendingIdleReset && agent->CharaView.CharacterLoaded)
@@ -599,15 +600,8 @@ public sealed unsafe class PreviewRenderer : IDisposable
             ch->Timeline.BaseOverride = 0;
             ch->Timeline.TimelineSequencer.PlayTimeline(3); // 3 = normal idle (Brio's reset value)
         }
-        else if (!_weaponDrawn)
-        {
-            // Default state: PIN plain idle every tick. The per-tick CopyFromCharacter mirrors the
-            // live char's action state — while the player crafts, the clone picked up the crafting
-            // loop INCLUDING its timeline-bound prop (live report: an anvil rendering under the
-            // char). A one-time reset at init wasn't enough, the next copy brought it back.
-            // Skipped while the weapon stance is on (BaseOverride 3 would fight the drawn idle).
-            ch->Timeline.BaseOverride = 3;
-        }
+        // (no else: default state leaves the clone's timeline alone — see the orphaned-anvil NOTE
+        // above for why force-pinning idle here backfired)
 
         // smart framing, ease-out half ("nie in einer Box wirken"): if the char clips the RT
         // border (arm swung past the edge mid-rotation, or a zoom fine front-on but not side-on),
