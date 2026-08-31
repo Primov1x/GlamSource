@@ -772,6 +772,10 @@ public sealed unsafe class PreviewRenderer : IDisposable
                 // model+draw object were long since correct): the clone's DrawData hidden flags
                 // stay set and the engine re-derives invisibility from them every frame, overruling
                 // a bare IsVisible force. Clear container + per-slot + draw object, every tick.
+                // stance: path #13's native copy left the weapon HOLSTERED ("waffe da, aber
+                // holstered"). TimelineContainer.Flags3 bit6 = IsWeaponDrawn — force drawn each
+                // tick while the stance is requested; the timeline system derives the pose from it.
+                if (_weaponDrawn) wch->Timeline.Flags3 |= 0x40;
                 wch->DrawData.IsWeaponHidden = false;
                 for (var i = 0; i < 3; i++)
                 {
