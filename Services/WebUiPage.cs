@@ -68,6 +68,11 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 .slot .g{color:var(--success);font-size:12px}
 .slot .s{color:var(--muted);font-size:11px}
 #preview3d{background:transparent;border:0;margin-bottom:14px;cursor:grab;display:none;width:100%;height:70vh;object-fit:contain}
+/* transparent-backdrop mode: the char PNG is transparent, but #app's own dark background painted
+   a solid box behind it — reported live as "schwarz verschwindet, die Box ist immer noch da"
+   (black char on black page = invisible; the dark #app rectangle IS the box). While the mode is
+   on, let the game show through the whole app area (Browsingway composites transparent pixels). */
+body.p3dtransparent #app{background:transparent}
 #preview3d.active{cursor:grabbing}
 #preview3d.panning{cursor:ns-resize}
 #p3dspin.active{color:var(--accent);font-weight:600}
@@ -181,6 +186,7 @@ async function toggleTransparent(){
   const on=!btn.classList.contains('active');
   await post(`/api/action/preview3d/transparent?on=${on}`);
   btn.classList.toggle('active',on);
+  document.body.classList.toggle('p3dtransparent',on); // see the CSS rule — kills the dark box behind the char
 }
 
 async function toggleFreeze(){
@@ -287,6 +293,8 @@ function p3dRedraw(){
   // clear — a transparent PNG frame would otherwise leave the previous frame's pixels showing
   ctx.clearRect(0,0,canvas.width,canvas.height);
   if(!p3dBitmap)return;
+  ctx.imageSmoothingEnabled=true;
+  ctx.imageSmoothingQuality='high'; // best browser-side upscale for the digital zoom
   ctx.setTransform(p3dScale,0,0,p3dScale,p3dOx,p3dOy);
   ctx.drawImage(p3dBitmap,0,0);
   ctx.setTransform(1,0,0,1,0,0);
