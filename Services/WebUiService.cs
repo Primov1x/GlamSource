@@ -447,6 +447,15 @@ public sealed class WebUiService : IDisposable
             return Json(new { ok = true, frozen = freezeOn });
         }
 
+        if (method == "POST" && path == "/api/action/preview3d/ortho" && _configuration.WebUiLive3DPreview
+            && bool.TryParse(query["on"], out var orthoOn))
+        {
+            _shell.PreviewWindow?.Renderer.NotifyInteraction();
+            _framework.RunOnFrameworkThread(() => _shell.PreviewWindow?.Renderer.SetOrtho(orthoOn));
+            _log.Information($"[WebUi] preview3d ortho: {orthoOn}");
+            return Json(new { ok = true, ortho = orthoOn });
+        }
+
         if (method == "POST" && path == "/api/action/preview3d/transparent" && _configuration.WebUiLive3DPreview
             && bool.TryParse(query["on"], out var transparentOn))
         {
@@ -524,6 +533,7 @@ public sealed class WebUiService : IDisposable
                 enabled = _configuration.WebUiLive3DPreview,
                 rendererInitialized = renderer?.IsInitialized ?? false,
                 zoom = renderer?.Zoom,
+                ortho = renderer?.OrthoEnabled,
                 cameraDistance,
                 stagingReady = stats?.StagingReady ?? false,
                 stagingWidth = stats?.StagingWidth ?? 0,

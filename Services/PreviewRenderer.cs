@@ -561,6 +561,21 @@ public sealed unsafe class PreviewRenderer : IDisposable
         }
 
         agent->CharaView.Update(_counter, ch);
+
+        // ortho projection — reapplied every frame (the game re-derives the projection from these
+        // fields each CharaView update, a one-time write would be stomped). Zoom drives the
+        // projection HEIGHT here, not the camera position — see _orthoEnabled's comment.
+        if (_orthoEnabled)
+        {
+            var sceneCam = agent->CharaView.Camera;
+            if (sceneCam != null && sceneCam->RenderCamera != null)
+            {
+                var rc = sceneCam->RenderCamera;
+                rc->IsOrtho = true;
+                rc->OrthoHeight = OrthoBaseHeight / _zoom;
+            }
+        }
+
         if (_autoFreezeCountdown > 0 && --_autoFreezeCountdown == 0 && !_freezePose) SetFreezePose(true);
 
         // freeze: refresh the clone's skeleton pointer for the UpdateBonePhysics detour (which runs
@@ -616,6 +631,10 @@ public sealed unsafe class PreviewRenderer : IDisposable
         // (an earlier hard "no zoom-in while border touched" gate lived here — killed zooming
         // entirely because the default framing already touches the border; the gentle ease-out
         // in Tick() is the whole smart-framing mechanism now)
+
+        // ortho mode: zoom = projection height (applied in Tick), the camera does NOT move —
+        // moving it would only shift the near/far planes for no visual gain
+        if (_orthoEnabled) { _zoom = target; return; }
         _zoom = target;
         if (!_initialized || target == current) return;
 
@@ -653,6 +672,29 @@ public sealed unsafe class PreviewRenderer : IDisposable
         if (agent == null) return;
         agent->CharaView.SetCameraXAndY(deltaX, deltaY);
     }
+
+    // Orthographic camera ("Ingame-Rendering, aber erweitert" research, avenue 1): the CharaView's
+    // Render.Camera exposes plain writable projection fields (FoV/AspectRatio/Near/Far/IsOrtho/
+    // OrthoHeight — verified against FFXIVClientStructs source, no hooks needed). Ortho is what
+    // real product viewers use: no perspective distortion, and zoom becomes a projection-height
+    // change instead of a camera move — the character CANNOT clip the near plane or swing out of
+    // the frustum sideways while zooming. The game recomputes the projection from these fields
+    // each frame, so they're reapplied every Tick right before our Render() call.
+    private bool _orthoEnabled = true; // default on — the whole point of the viewer
+    private const float OrthoBaseHeight = 2.6f; // world-units frame height at zoom 1 (tall race + hat fits)
+
+    /// <summary>Toggle the orthographic projection. Framework thread.</summary>
+    public void SetOrtho(bool enabled)
+    {
+        _orthoEnabled = enabled;
+        if (enabled || !_initialized) return;
+        // switching back to perspective: clear the flag once, the game re-derives the rest
+        var agent = AgentTryon.Instance();
+        var cam = agent != null ? agent->CharaView.Camera : null;
+        if (cam != null && cam->RenderCamera != null) cam->RenderCamera->IsOrtho = false;
+    }
+
+    public bool OrthoEnabled => _orthoEnabled;
 
     // ponytail: neutral preview default — no weapon/tool in hand until the user opts in.
     private bool _weaponDrawn;
