@@ -614,6 +614,11 @@ public sealed unsafe class PreviewRenderer : IDisposable
             _weaponLoadPending = false;
             LoadWeaponsOntoClone(ch);
         }
+        if (_weaponVerifyCountdown > 0 && --_weaponVerifyCountdown == 0)
+        {
+            var mh = ch->DrawData.Weapon(DrawDataContainer.WeaponSlot.MainHand);
+            _log.Info($"[PreviewRenderer] weapon verify (1s later): mainhand model id={mh.ModelId.Id} drawObject={(nint)mh.DrawObject:X} objVisible={(mh.DrawObject != null ? mh.DrawObject->IsVisible : false)} slotHidden={mh.IsHidden} containerHidden={ch->DrawData.IsWeaponHidden}");
+        }
 
         // post-init idle reset (see _pendingIdleReset) — once, as soon as the clone is loaded
         if (_pendingIdleReset && agent->CharaView.CharacterLoaded)
@@ -919,16 +924,25 @@ public sealed unsafe class PreviewRenderer : IDisposable
     // SetModelData (weapons ignored), and agent TryOn() opened the real Fitting Room window.
     private bool _weaponLoadPending;
 
+    private int _weaponVerifyCountdown; // diagnostic: check the draw objects a second after loading
+
     private void LoadWeaponsOntoClone(Character* clone)
     {
         var addr = _sourceProvider?.Invoke() ?? 0;
-        if (addr == 0) return;
+        if (addr == 0) { _log.Warning("[PreviewRenderer] LoadWeapons: no source"); return; }
         var src = (Character*)addr;
         for (var i = 0; i < 3; i++)
         {
             var model = src->DrawData.Weapon((DrawDataContainer.WeaponSlot)i).ModelId;
+            _log.Info($"[PreviewRenderer] LoadWeapon slot {i}: id={model.Id} type={model.Type} variant={model.Variant} stain0={model.Stain0}");
             clone->DrawData.LoadWeapon((DrawDataContainer.WeaponSlot)i, model, 0, 0, 0, 0, false);
+            clone->DrawData.Weapon((DrawDataContainer.WeaponSlot)i).IsHidden = false; // spawn ≠ shown
         }
+        // also flip the container-level weapon-hidden flag if present
+        {
+            clone->DrawData.IsWeaponHidden = false;
+        }
+        _weaponVerifyCountdown = 60;
     }
 
     /// <summary>Show/hide the mainhand weapon model in the preview. Re-applied every Tick.
