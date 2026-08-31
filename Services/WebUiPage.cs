@@ -133,14 +133,10 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
   <div class="row p3dtoolbar" style="margin-top:6px;margin-bottom:10px;flex-wrap:wrap;gap:8px;align-items:center">
     <span class="tbl">Ansicht</span>
     <button id="p3dspin" onclick="toggleAutoSpin()" title="Dreht das Model automatisch — Ziehen oder Zurücksetzen stoppt">Drehen</button>
-    <button id="p3dortho" class="active" onclick="toggleOrtho()" title="Orthografische Produkt-Viewer-Projektion (Standard: an) — ohne Verzerrung, Zoom schneidet nichts ab">Ortho</button>
     <button onclick="resetPreview3D()" title="Kompletter Neuaufbau — falls das Bild feststeckt oder was Falsches zeigt">Zurücksetzen</button>
     <span class="tbl">Pose</span>
-    <button id="p3dfreeze" class="active" onclick="toggleFreeze()" title="Pose einfrieren (Standard: an) — Kamera bleibt frei, nur die Animation steht">Einfrieren</button>
     <button id="p3dweapon" onclick="toggleWeapon()" title="Waffe ziehen (Standard: aus) — für geglamte Waffen; setzt ein aktives Emote zurück">Waffe</button>
     <select id="p3demote" onchange="setEmote(this.value)" title="Statische Emote-Pose (rein clientseitig — auch nicht freigeschaltete funktionieren); steckt die Waffe weg"><option value="0">Emote: Idle</option></select>
-    <span class="tbl">Anzeige</span>
-    <button id="p3dtrans" class="active" onclick="toggleTransparent()" title="Transparenter Hintergrund (Standard: an) — Depth-Maske, dunkle Outfits sicher">Transparenz</button>
     <a href="#" onclick="loadPreview3DDebug();return false" style="font-size:12px" title="fps, Fehler, Frame-Größe">Debug</a>
   </div>
   <pre id="p3ddebug" style="display:none;font-size:11px;background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:8px;margin-top:6px;white-space:pre-wrap"></pre>
@@ -231,33 +227,12 @@ function startAutoSpin(){
   btn.textContent='⏹️ Drehen stoppen';
   p3dSpinTimer=setInterval(()=>post('/api/action/preview3d/rotate?dx=3&dy=0'),50);
 }
-async function toggleTransparent(){
-  const btn=$('#p3dtrans');
-  const on=!btn.classList.contains('active');
-  await post(`/api/action/preview3d/transparent?on=${on}`);
-  btn.classList.toggle('active',on);
-}
-
 async function toggleWeapon(){
   const btn=$('#p3dweapon');
   const on=!btn.classList.contains('active');
   await post(`/api/action/preview3d/weapon?on=${on}`);
   btn.classList.toggle('active',on);
   $('#p3demote').value='0'; // server clears the emote when the weapon toggles — mirror it
-}
-
-async function toggleOrtho(){
-  const btn=$('#p3dortho');
-  const on=!btn.classList.contains('active');
-  await post(`/api/action/preview3d/ortho?on=${on}`);
-  btn.classList.toggle('active',on);
-}
-
-async function toggleFreeze(){
-  const btn=$('#p3dfreeze');
-  const on=!btn.classList.contains('active');
-  await post(`/api/action/preview3d/freeze?on=${on}`);
-  btn.classList.toggle('active',on);
 }
 
 function stopAutoSpin(){
@@ -330,7 +305,6 @@ async function resetPreview3D(){
   stopAutoSpin();
   p3dResetView(); // digital zoom/pan back to 1:1
   await post('/api/action/preview3d/reset');
-  $('#p3dfreeze').classList.add('active'); // server re-arms freeze-by-default after reinit
   $('#p3demote').value='0'; // reinit builds a fresh clone without the emote override
   startPreview3D(); // reconnect the stream — the old one keeps serving frames until reset lands
 }
