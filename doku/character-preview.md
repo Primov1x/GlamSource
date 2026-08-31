@@ -1,6 +1,6 @@
 # Character-Tab Web-Preview — Stand & Doku
 
-Stand: 0.0.0.265. Betrifft die Web-UI (`Services/WebUiPage.cs`/`WebUiService.cs`) und die
+Stand: 0.0.0.266. Betrifft die Web-UI (`Services/WebUiPage.cs`/`WebUiService.cs`) und die
 CharaView-Anbindung (`Services/PreviewRenderer.cs`, `Windows/GlamourPreviewWindow.cs`,
 `Windows/GlamSourceShellWindow.cs`). Für den Release-Prozess selbst siehe [`../RELEASING.md`](../RELEASING.md).
 
@@ -267,6 +267,91 @@ defekt gestartet (vermutlich GPU-Prozess-Absturz → Software-Rendering). **Fix:
 einmal deaktivieren + aktivieren** (frische CEF-Prozesse) — danach sofort wieder flüssig.
 Kein GlamSource-Bug; die Kill-Switches (`POST /api/debug/kill?sys=...&on=...`) bleiben für künftige
 Bisects drin.
+
+## Waffen-Anzeige in der Preview — Versuchsprotokoll (Stand 0.0.0.266)
+
+Ziel: eine gezogene/geglamte Waffe im Web-Preview-Klon sichtbar machen. Bisher **nicht
+zuverlässig gelöst**. CharaView (`AgentTryon`, slot 2 = TryOn/GearSetPreview) ist der native
+Portrait-/Fitting-Room-Renderer — kein normaler Welt-Actor wie bei Brio/Ktisis/Anamnesis, die alle
+einen echten gespawnten `Character*` in der Spielwelt bewegen und bekannteste Referenz-Codebasen
+für Waffen-Handling sind. Ktisis' eigener CharaView-Einsatz (`Interface/KTK/PreviewNode.cs`, slot 1
+= AgentInspect) macht **nur** `ModelData.CopyFromCharacter` — keinerlei Waffen-Sonderbehandlung —
+zeigt also vermutlich selbst keine Waffen in seinem Mini-Preview. Kein bekanntes Community-Plugin
+baut eine eigene Waffen-Anzeige auf CharaView auf; alle Referenzen (Brio, Ktisis, Anamnesis)
+arbeiten mit echten Welt-Actors.
+
+**Bekannt funktionierend, ohne Sonderaufwand:** `ModelData._weaponModelIds` (0x70) wird schon durch
+den normalen Pro-Tick-`CopyFromCharacter`-Call korrekt mit der Waffen-ID der Quelle befüllt (per
+`/api/debug/weaponstate` live verifiziert: `md.weapon0: id=2027 ...` stimmt exakt mit der
+getragenen Waffe). Das Datenmodell hat die Information — nur das Rendering fehlt.
+
+### Chronologie der Versuche (diese Session, ~13 Anläufe)
+
+1. **Native `CharacterSetup.CopyFromCharacter` auf dem Klon** (Brios `ActorSpawnService`-Mechanismus,
+   Pfad #13) — erstmals überhaupt ein sichtbares Waffenmodell (245). Vorher: 12 gescheiterte Versuche
+   aus früheren Sessions (Items-Pfad, `LoadWeapon`, `SetModelData`, Flag-Clearing auf allen 3 Ebenen,
+   echtes `TryOn()`, byte-exakter TryOnItems-Fill — alle dokumentiert als tot, s. History).
+2. Waffe sichtbar, aber **eingesteckt** (holstered) — `Timeline.Flags3` Bit 6 (`IsWeaponDrawn`) fehlte.
+   Pro-Tick gesetzt (246) → **Duplikat**: Engine wertet den Waffen-Attach jeden Frame neu aus.
+3. Bit nur noch **einmalig** nach dem Copy gesetzt (247) → Waffe bewegte sich nicht mit der
+   Animation mit (eigenes Skelett, unser Freeze-Hook packt nur den Körper).
+4. **Drei Waffen sichtbar.** `WeaponSlot` hat 3 Einträge (MainHand/OffHand/System) — der eine
+   Copy-Call spawnt alle drei ungefragt. Erst versucht: `System` hart ausblenden (249) — falsch,
+   `System` ist beim Handwerker das **zweite echte Werkzeug**, nicht Müll. Korrigiert (251): pro
+   Slot nach `ModelId.Id != 0` filtern statt nach Namen.
+5. **Reset räumte nichts weg** — `_weaponDrawn`/`_weaponOnly` überlebten `Release()` (250 Fix).
+6. Trotzdem weiter 3 Waffen sichtbar über mehrere Fix-Zyklen — Ursache: **Orphans aus früheren,
+   ungeschützten Spawns** (245-248 hatten `CopyFromCharacter` teils ungeschützt gefeuert), die
+   Plugin-Reloads überlebten und erst ein **vollständiger Spielneustart** entfernte (bestätigt live,
+   analog zum dokumentierten Amboss-Orphan-Bug bei Handwerks-Facilities).
+7. Nach sauberem Neustart: Waffe **nicht sichtbar trotz korrekter Daten** (`ModelId` gesetzt,
+   `DrawObject` non-null, `IsHidden=false`) — `DrawObject->IsVisible`-Flag manuell gesetzt, aber
+   live über mehrere Sekunden stabil `vis=False`, ohne dass sich am Rendering etwas änderte.
+8. Gefunden: `DrawDataContainer.HideWeapons(bool)` — die **native** Funktion hinter `/displayarms`.
+   Ersetzt die manuelle Flag-Pokerei (254) → Waffe kurzzeitig wieder sichtbar (auch die
+   Nicht-Anzeigen-Fälle brauchten denselben nativen Call, nicht nur den Anzeigen-Pfad, 257).
+9. **`HideWeapons(false)` zeigt alle 3 Slots pauschal**, überschreibt unseren Modell-ID-Filter direkt
+   wieder — Reihenfolge gedreht: nativer Call zuerst, Filter danach (255).
+10. Live per `/api/debug/weaponstate` bestätigt: 4. (nie angefasstes) `_unkWeaponData`-Feld leer,
+    nicht die Ursache. `DrawObjectData.State`-Byte gedumpt (0x08 für aktive Slots) — kein
+    zusätzlicher Aufschluss.
+11. **Brios `ActorRedrawService.Redraw()`-Pattern übernommen**: `DisableDraw()` → Copy →
+    `IsReadyToDraw()` abwarten → `EnableDraw()`. Ein Guard (`if MainHand.DrawObject == null`)
+    verhinderte allerdings, dass der Pfad überhaupt lief — die Engine recycelt den
+    Client-Object-Slot des Klons über Plugin-Reloads hinweg, ein altes `DrawObject` blieb non-null
+    (bestätigt: 0 Log-Zeilen "weapon path #13" über mehrere Testzyklen trotz Klicks). Guard entfernt
+    (262).
+12. Danach lief der Redraw-Zyklus tatsächlich (Log bestätigt `EnableDraw()` ~14ms nach `DisableDraw()`),
+    aber: **der komplette Klon verschwand aus der Preview**, nicht nur die Waffe. CharaViews
+    Render-to-Texture-Pfad verträgt sich offensichtlich nicht mit dem für echte Welt-Actors gedachten
+    Draw-Enable/Disable-Zyklus. **Zurückgerollt** (264) — aktueller Stand: reiner Doppel-Copy ohne
+    Draw-Zyklus, Waffe wieder unsichtbar, aber Klon stabil sichtbar.
+
+### Aktueller Stand (265)
+
+- `ModelData._weaponModelIds` korrekt befüllt (via normalem Pro-Tick-Copy).
+- Pfad #13 (`CharacterSetup.CopyFromCharacter`, doppelt, `WeaponHiding`-Flag beim ersten Call —
+  exakt Brios Muster) läuft einmalig pro Aktivierung, ohne Guard-Blockade.
+- `ApplyWeaponVisibility()`: nativer `HideWeapons()`-Call + Pro-Slot-`IsHidden`-Filter nach
+  Modell-ID, vor UND nach `CharaView.Update()` angewendet.
+- Debug-Endpoint `/api/debug/weaponstate` zeigt alle 3 Waffen-Slots + das 4. Unk-Feld.
+- Ergebnis: Daten korrekt, **Rendering bleibt unzuverlässig** (mal unsichtbar, mal Duplikate, mal
+  Klon-Verschwinden je nach Zusatzmaßnahme).
+
+### Nächste Ansatzpunkte (nicht ausprobiert)
+
+- **Inspect-Fenster-Hypothese**: das normale in-game Inspect-Fenster zeigt Waffen anderer Spieler
+  zuverlässig über exakt dieselbe CharaView-Struktur (nur anderer Slot/Agent). Der native Weg dahin
+  wurde nie untersucht — möglich, dass der alte, vor 248 gelöschte Mechanismus (`DoUpdate=true` +
+  Agent-Flags `HideWeapon`/`DrawWeapon` + `_items`-Replay nach `Update()`) näher an der Wahrheit war
+  als Pfad #13, und die damaligen Duplikate/Bugs eher von Pfad #13 selbst kamen (der komplett
+  außerhalb von CharaViews eigener Buchhaltung operiert) als vom Agent-Mechanismus. Nie isoliert
+  gegeneinander getestet.
+- Kein Blick auf Penumbra/Glamourer-Quellcode geworfen (Brios Kommentar "needed for some tools like
+  Penumbra/Glamourer" beim Doppel-Copy deutet auf zusätzliches Wissen dort).
+- Denkbar: das Problem liegt nicht am Waffen-Draw-Object selbst, sondern an der **Camera/Culling**-
+  Seite der CharaView-Textur (Ortho-Kamera-Frustum schneidet den Waffen-Bounding-Volume ab) — nie
+  isoliert getestet (z. B. Zoom/Ortho temporär deaktivieren während Waffen-Test).
 
 ## Offene Punkte
 

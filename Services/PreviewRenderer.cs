@@ -757,23 +757,34 @@ public sealed unsafe class PreviewRenderer : IDisposable
                     var srcAddr = _sourceProvider?.Invoke() ?? nint.Zero;
                     if (srcAddr != nint.Zero)
                     {
-                        // matched to Brio's ActorSpawnService.CloneCharacter, the one reference
-                        // that reliably spawns exactly one weapon set: WeaponHiding flag on the
-                        // real-source copy, PLUS a second self->self copy with CopyFlags.None
-                        // ("needed for some tools like Penumbra/Glamourer" — apparently also
-                        // settles whatever the first copy leaves half-finished for weapons).
-                        //
-                        // REVERTED: Brio's ActorRedrawService.Redraw() wraps its spawn in
-                        // DisableDraw() -> copy -> wait IsReadyToDraw() -> EnableDraw(). Tried the
-                        // same here — EnableDraw() fired reliably (14ms later per log), but the
-                        // WHOLE CLONE vanished from the preview, not just the weapon ("nun
-                        // verschwindet der ganze char"). CharaView's render-to-texture path is not
-                        // a normal world actor; DisableDraw()/EnableDraw() interacts with it
-                        // differently than with Brio's spawned world actors. Dropped the wrap,
-                        // back to a plain double copy.
-                        wch->CharacterSetup.CopyFromCharacter((Character*)srcAddr, CharacterSetupContainer.CopyFlags.WeaponHiding);
-                        wch->CharacterSetup.CopyFromCharacter(wch, CharacterSetupContainer.CopyFlags.None);
-                        _log.Info("[PreviewRenderer] weapon path #13: CharacterSetup.CopyFromCharacter (Brio-matched, double copy) applied to clone");
+                        // Weapon path #14: matched to Glamourer's WeaponService.LoadWeapon — the
+                        // one battle-tested reference that reloads a LIVE character's weapon draw
+                        // object directly, with NO CharacterSetup/redraw pipeline at all. Path #13
+                        // (native CharacterSetup.CopyFromCharacter, Brio's spawn mechanism) is
+                        // GONE: after ~13 attempts (double-copy, DisableDraw/EnableDraw wrap — the
+                        // latter made the whole clone vanish, "nun verschwindet der ganze char")
+                        // it never rendered reliably. Glamourer hooks the native
+                        // DrawDataContainer.LoadWeapon and always calls the ORIGINAL with
+                        // redrawOnEquality=1, skipGameObject=1 (clib's a5/a7/a8 all 0/false) — we
+                        // were calling the SAME function in the long-dead "path #5" with all-zero
+                        // params (LoadWeaponsOntoClone, never worked). skipGameObject=1 per
+                        // Glamourer's own comment: "controls whether the new weapons are written to
+                        // the game object or just influence the draw object" — exactly what a
+                        // CharaView clone's non-standard object needs: touch the draw object only.
+                        var src = (Character*)srcAddr;
+                        for (var i = 0; i < 2; i++) // MainHand, OffHand — System/crafter handled below
+                        {
+                            var slot = (DrawDataContainer.WeaponSlot)i;
+                            var model = src->DrawData.Weapon(slot).ModelId;
+                            wch->DrawData.LoadWeapon(slot, model, 1, 0, 1, 0, false);
+                        }
+                        // crafter's second tool lives in System, per clib comment — same call
+                        {
+                            var model = src->DrawData.Weapon(DrawDataContainer.WeaponSlot.System).ModelId;
+                            if (model.Id != 0)
+                                wch->DrawData.LoadWeapon(DrawDataContainer.WeaponSlot.System, model, 1, 0, 1, 0, false);
+                        }
+                        _log.Info($"[PreviewRenderer] weapon path #14: LoadWeapon (Glamourer-matched) applied to clone, main={src->DrawData.Weapon(DrawDataContainer.WeaponSlot.MainHand).ModelId.Id} off={src->DrawData.Weapon(DrawDataContainer.WeaponSlot.OffHand).ModelId.Id}");
                         // stance, ONE-SHOT only: per-tick forcing (246) made the game re-evaluate
                         // the weapon attach every frame — duplicate weapon, floating, no anim.
                         // The thaw window SetWeaponDrawn opened lets the transition play out.
