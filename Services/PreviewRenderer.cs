@@ -662,6 +662,22 @@ public sealed unsafe class PreviewRenderer : IDisposable
     // eaten too. Known, accepted limitation — this is for looking at, not a finished feature.
     private bool _transparentBackdropEnabled;
 
+    // Depth-buffer mask for the transparent mode — the REAL fix for "dark clothing gets eaten".
+    // The color target's alpha is flat 255 (probed live, 0.0.0.165) and no backdrop-color field
+    // exists, but the CharaView pipeline has its own depth/stencil target (RenderTargetManager
+    // +0x360, "Depth/Stencil for CharaView?" — internal field, read via raw offset): the backdrop
+    // has NO geometry, so its depth stays at the clear value while every character pixel differs —
+    // a perfect cutout mask independent of color (same principle as the GPose community's ReShade
+    // depth-alpha screenshots). Single staging buffer, no double-buffering: freeze-by-default makes
+    // the scene static, so color/depth frame pairing doesn't matter.
+    private ComPtr<ID3D11Texture2D> _depthStaging;
+    private uint _depthWidth, _depthHeight;
+    private DXGI_FORMAT _depthFormat;
+    private bool _depthCopyPending;
+    private byte[]? _rawDepthBuffer;
+    private int _rawDepthRowPitch;
+    private bool _rawDepthValid;
+
     // ponytail: "es reicht auch eine Standaufnahme, der Char muss sich nicht aktiv bewegen" —
     // don't spend GPU/CPU capturing a smooth video nobody's watching. Full-rate (EncodeThrottleMs)
     // only for a short window after an actual camera action (rotate/pan/zoom/auto-spin); otherwise
@@ -721,7 +737,8 @@ public sealed unsafe class PreviewRenderer : IDisposable
     public readonly record struct WebCaptureStats(
         bool StagingReady, long FramesEncoded, long FramesSkipped, long CaptureErrors,
         long LastFrameBytes, long LastEncodeDurationMs, string? LastError, int StagingWidth, int StagingHeight,
-        bool NativeUiOwnsSlot, double DrawCallsPerSecond, byte AlphaMin, byte AlphaMax);
+        bool NativeUiOwnsSlot, double DrawCallsPerSecond, byte AlphaMin, byte AlphaMax,
+        bool DepthMaskReady, string? DepthFormat);
 
     /// <summary>Snapshot of the web MJPEG capture pipeline's health — thread-safe plain field reads,
     /// same as LatestWebJpeg.</summary>
@@ -732,7 +749,8 @@ public sealed unsafe class PreviewRenderer : IDisposable
         return new(
             _webStaging[0].Get() != null, _webFramesEncoded, _webFramesSkipped, _webCaptureErrors,
             _lastFrameBytes, _lastEncodeDurationMs, _lastCaptureError, (int)_webStagingWidth, (int)_webStagingHeight,
-            _nativeUiOwnsSlot, drawCallsPerSecond, _alphaMin, _alphaMax);
+            _nativeUiOwnsSlot, drawCallsPerSecond, _alphaMin, _alphaMax,
+            _rawDepthValid, _depthStaging.Get() != null ? _depthFormat.ToString() : null);
     }
 
     /// <summary>Latest JPEG-encoded frame for the web-UI MJPEG stream (see WebUiService's
@@ -778,6 +796,10 @@ public sealed unsafe class PreviewRenderer : IDisposable
             _webStaging[i] = default;
             _webCopyPending[i] = false;
         }
+        _depthStaging.Dispose();
+        _depthStaging = default;
+        _depthCopyPending = false;
+        _rawDepthValid = false;
         _webNextIssueSlot = 0;
         _webNextSeq = 1;
         _webLastSentSeq = 0;
@@ -891,6 +913,17 @@ public sealed unsafe class PreviewRenderer : IDisposable
                     _webLastSentSeq = _webBufferSeq[i];
                     _webEncodeInProgress = true;
                     var transparent = _transparentBackdropEnabled;
+                    // drain the depth copy (if one is in flight) into _rawDepthBuffer while we're
+                    // in the "no encode running" window — the Task below reads it, and the next
+                    // refresh can only happen after that Task finished (same lifecycle guarantee
+                    // _rawFrameBuffer relies on).
+                    if (transparent) DrainDepthCopy(context);
+                    var depthValid = transparent && _rawDepthValid && _rawDepthBuffer != null;
+                    var depthBuf = _rawDepthBuffer;
+                    var depthPitch = _rawDepthRowPitch;
+                    var depthFmt = _depthFormat;
+                    var depthW = (int)_depthWidth;
+                    var depthH = (int)_depthHeight;
                     var encodeStart = Environment.TickCount64;
                     System.Threading.Tasks.Task.Run(() =>
                     {
@@ -915,8 +948,13 @@ public sealed unsafe class PreviewRenderer : IDisposable
                                 _alphaMax = amax;
                             }
                             var png = transparent;
+                            // depth mask when we have one; flood-fill only as fallback (depth copy
+                            // not finished yet / depth target unavailable)
                             var encoded = png
-                                ? EncodeChromaKeyedPngFromBuffer(rawFrameBuffer, w, h, rowPitch, isBgra)
+                                ? (depthValid
+                                    ? EncodeDepthMaskedPngFromBuffer(rawFrameBuffer, w, h, rowPitch, isBgra,
+                                        depthBuf!, depthPitch, depthFmt, depthW, depthH)
+                                    : EncodeChromaKeyedPngFromBuffer(rawFrameBuffer, w, h, rowPitch, isBgra))
                                 : EncodeJpegFromBuffer(rawFrameBuffer, w, h, rowPitch, isBgra);
                             _latestWebFrameIsPng = png;
                             _latestWebJpeg = encoded;
@@ -956,6 +994,85 @@ public sealed unsafe class PreviewRenderer : IDisposable
             _webBufferSeq[slot] = _webNextSeq++;
             break;
         }
+
+        // 3) transparent mode: also copy the CharaView depth target (the real cutout mask — see
+        // _depthStaging's field comment). Issued alongside the color copy, drained in step 1.
+        if (_transparentBackdropEnabled) IssueDepthCopy(device, context);
+    }
+
+    /// <summary>The CharaView pipeline's shared depth/stencil target (RenderTargetManager+0x360,
+    /// internal in FFXIVClientStructs — raw offset read, same technique as SetCharaViewEquipmentSlotRaw).
+    /// Shared by ALL CharaViews; ours holds our content right after our Render() call, and
+    /// _nativeUiOwnsSlot already pauses us whenever anyone else drives the slot.</summary>
+    private static FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* GetCharaViewDepthTexture()
+    {
+        var rtm = RenderTargetManager.Instance();
+        return rtm == null ? null : *(FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture**)((byte*)rtm + 0x360);
+    }
+
+    private void IssueDepthCopy(ComPtr<ID3D11Device> device, ComPtr<ID3D11DeviceContext> context)
+    {
+        if (_depthCopyPending) return;
+        var gameTex = GetCharaViewDepthTexture();
+        if (gameTex == null || gameTex->D3D11Texture2D == null)
+        {
+            if (_rawDepthBuffer == null) _lastCaptureError = "CharaView depth target unavailable (RTM+0x360 null)";
+            return;
+        }
+        var depthTex = (ID3D11Texture2D*)gameTex->D3D11Texture2D;
+        D3D11_TEXTURE2D_DESC desc;
+        depthTex->GetDesc(&desc);
+        if (_depthStaging.Get() == null || desc.Width != _depthWidth || desc.Height != _depthHeight || desc.Format != _depthFormat)
+        {
+            _depthStaging.Dispose();
+            _depthStaging = default;
+            _rawDepthValid = false;
+            var stagingDesc = desc with
+            {
+                Usage = D3D11_USAGE.D3D11_USAGE_STAGING,
+                BindFlags = 0u,
+                CPUAccessFlags = (uint)D3D11_CPU_ACCESS_FLAG.D3D11_CPU_ACCESS_READ,
+                MiscFlags = 0u,
+                MipLevels = 1,
+                ArraySize = 1,
+            };
+            ComPtr<ID3D11Texture2D> staging = default;
+            if (device.Get()->CreateTexture2D(&stagingDesc, null, staging.GetAddressOf()).FAILED)
+            {
+                _lastCaptureError = $"CreateTexture2D (depth staging, fmt={desc.Format}) failed";
+                return;
+            }
+            _depthStaging = staging;
+            _depthWidth = desc.Width;
+            _depthHeight = desc.Height;
+            _depthFormat = desc.Format;
+            _log.Info($"[PreviewRenderer] depth staging created: {desc.Width}x{desc.Height} fmt={desc.Format}");
+        }
+        context.Get()->CopyResource((ID3D11Resource*)_depthStaging.Get(), (ID3D11Resource*)depthTex);
+        _depthCopyPending = true;
+    }
+
+    private void DrainDepthCopy(ComPtr<ID3D11DeviceContext> context)
+    {
+        if (!_depthCopyPending || _depthStaging.Get() == null) return;
+        D3D11_MAPPED_SUBRESOURCE mapped;
+        var hr = context.Get()->Map((ID3D11Resource*)_depthStaging.Get(), 0, D3D11_MAP.D3D11_MAP_READ, (uint)D3D11_MAP_FLAG.D3D11_MAP_FLAG_DO_NOT_WAIT, &mapped);
+        if (hr.Value == DXGI.DXGI_ERROR_WAS_STILL_DRAWING) return; // not done — encode falls back / reuses last depth this round
+        if (hr.FAILED) { _depthCopyPending = false; _lastCaptureError = $"depth Map failed: 0x{hr.Value:X8}"; return; }
+        try
+        {
+            var byteCount = (int)mapped.RowPitch * (int)_depthHeight;
+            if (_rawDepthBuffer == null || _rawDepthBuffer.Length != byteCount) _rawDepthBuffer = new byte[byteCount];
+            _rawDepthRowPitch = (int)mapped.RowPitch;
+            fixed (byte* dst = _rawDepthBuffer)
+                Buffer.MemoryCopy((void*)mapped.pData, dst, byteCount, byteCount);
+            _rawDepthValid = true;
+        }
+        finally
+        {
+            context.Get()->Unmap((ID3D11Resource*)_depthStaging.Get(), 0);
+            _depthCopyPending = false;
+        }
     }
 
     /// <summary>D3D11's BGRA formats are byte-identical to GDI+'s Format32bppArgb (same B,G,R,A
@@ -978,6 +1095,89 @@ public sealed unsafe class PreviewRenderer : IDisposable
     private unsafe byte[] EncodeChromaKeyedPngFromBuffer(byte[] buffer, int width, int height, int rowPitch, bool isBgra)
     {
         fixed (byte* p = buffer) return EncodeChromaKeyedPng(width, height, rowPitch, (nint)p, isBgra);
+    }
+
+    /// <summary>PNG with alpha derived from the CharaView DEPTH buffer instead of color similarity
+    /// (see _depthStaging's field comment): backdrop = pixels whose depth equals the clear value
+    /// (sampled from the image corners — no geometry ever renders there in a normal framing),
+    /// character = everything else. Immune to dark-clothing-on-dark-backdrop, the failure that
+    /// killed the flood-fill. Depth texel decoding by format: 24-bit UNORM in the low 3 bytes
+    /// (R24G8/D24S8 family, 4-byte texels) or a 32-bit float (R32/D32 family; D32_FLOAT_S8X24
+    /// family has 8-byte texels, float first).</summary>
+    private byte[] EncodeDepthMaskedPngFromBuffer(byte[] buffer, int width, int height, int rowPitch, bool isBgra,
+        byte[] depth, int depthPitch, DXGI_FORMAT depthFmt, int depthW, int depthH)
+    {
+        int texelSize;
+        var isFloat = false;
+        switch (depthFmt)
+        {
+            case DXGI_FORMAT.DXGI_FORMAT_R24G8_TYPELESS:
+            case DXGI_FORMAT.DXGI_FORMAT_D24_UNORM_S8_UINT:
+            case DXGI_FORMAT.DXGI_FORMAT_R24_UNORM_X8_TYPELESS:
+                texelSize = 4;
+                break;
+            case DXGI_FORMAT.DXGI_FORMAT_R32_TYPELESS:
+            case DXGI_FORMAT.DXGI_FORMAT_D32_FLOAT:
+            case DXGI_FORMAT.DXGI_FORMAT_R32_FLOAT:
+                texelSize = 4;
+                isFloat = true;
+                break;
+            case DXGI_FORMAT.DXGI_FORMAT_R32G8X24_TYPELESS:
+            case DXGI_FORMAT.DXGI_FORMAT_D32_FLOAT_S8X24_UINT:
+                texelSize = 8;
+                isFloat = true;
+                break;
+            default:
+                // unknown depth layout — better a colored frame than a garbled mask
+                _lastCaptureError = $"unhandled depth format {depthFmt} — transparent falls back to flood-fill";
+                unsafe { fixed (byte* p = buffer) return EncodeChromaKeyedPng(width, height, rowPitch, (nint)p, isBgra); }
+        }
+
+        unsafe
+        {
+            fixed (byte* colorPtr = buffer)
+            fixed (byte* depthPtrFixed = depth)
+            {
+                // plain local copy — a `fixed` variable can't be captured by a local function (CS1764)
+                var depthPtr = depthPtrFixed;
+                float ReadDepth(int x, int y)
+                {
+                    var p = depthPtr + y * depthPitch + x * texelSize;
+                    if (isFloat) return *(float*)p;
+                    return (p[0] | (p[1] << 8) | (p[2] << 16)) / 16777215f;
+                }
+
+                // clear-value reference from the corners; they agree in any normal framing —
+                // if a corner is covered by geometry, the min/max spread check falls back to the
+                // most common corner value being outnumbered 3:1 (median-of-4 via pair-mid).
+                Span<float> corners = [ReadDepth(0, 0), ReadDepth(depthW - 1, 0), ReadDepth(0, depthH - 1), ReadDepth(depthW - 1, depthH - 1)];
+                corners.Sort();
+                var reference = (corners[1] + corners[2]) * 0.5f; // median — robust to one covered corner
+                const float eps = 1e-5f;
+
+                using var bmp = EncodeSourceBitmap(width, height, rowPitch, (nint)colorPtr, isBgra);
+                var rect = new System.Drawing.Rectangle(0, 0, width, height);
+                var data = bmp.LockBits(rect, System.Drawing.Imaging.ImageLockMode.ReadWrite, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                var basePtr = (byte*)data.Scan0;
+                var stride = data.Stride;
+                for (var y = 0; y < height; y++)
+                {
+                    // nearest-neighbor into the depth buffer if resolutions differ
+                    var dy = depthH == height ? y : y * depthH / height;
+                    var row = basePtr + y * stride;
+                    for (var x = 0; x < width; x++)
+                    {
+                        var dx = depthW == width ? x : x * depthW / width;
+                        if (System.Math.Abs(ReadDepth(dx, dy) - reference) <= eps)
+                            row[x * 4 + 3] = 0; // backdrop — depth untouched by any geometry
+                    }
+                }
+                bmp.UnlockBits(data);
+                using var ms = new MemoryStream();
+                bmp.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
+                return ms.ToArray();
+            }
+        }
     }
 
     private static byte[] EncodeJpeg(int width, int height, int rowPitch, nint scan0, bool isBgra)

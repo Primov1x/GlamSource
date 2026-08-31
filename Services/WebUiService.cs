@@ -537,6 +537,9 @@ public sealed class WebUiService : IDisposable
                 // PreviewRenderer._alphaMin doc comment)
                 alphaMin = stats?.AlphaMin ?? 0,
                 alphaMax = stats?.AlphaMax ?? 0,
+                // depth-mask status for the transparent mode (see PreviewRenderer._depthStaging)
+                depthMaskReady = stats?.DepthMaskReady ?? false,
+                depthFormat = stats?.DepthFormat,
                 latestFrameAvailable = renderer?.LatestWebJpeg != null,
                 previewGearOverrideSlots = _webPreviewGear.Keys.Select(s => s.ToString()).ToArray(),
                 // the actual "is it smooth" answer, no /xllog needed — live while a stream is

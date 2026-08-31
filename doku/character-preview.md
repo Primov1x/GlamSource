@@ -1,6 +1,6 @@
 # Character-Tab Web-Preview — Stand & Doku
 
-Stand: 0.0.0.166. Betrifft die Web-UI (`Services/WebUiPage.cs`/`WebUiService.cs`) und die
+Stand: 0.0.0.167. Betrifft die Web-UI (`Services/WebUiPage.cs`/`WebUiService.cs`) und die
 CharaView-Anbindung (`Services/PreviewRenderer.cs`, `Windows/GlamourPreviewWindow.cs`,
 `Windows/GlamSourceShellWindow.cs`). Für den Release-Prozess selbst siehe [`../RELEASING.md`](../RELEASING.md).
 
@@ -149,12 +149,17 @@ des Rendertargets die Charakter-Maske BEREITS enthält und wir sie bisher schlic
   ebenfalls als eigene, abschaltbare Ebene.
 
 Empirischer Test eingebaut und gelaufen: **`alphaMin==alphaMax==255` (live gemessen, 0.0.0.165)**
-— der Alpha-Kanal der Farb-Textur ist flach opak, Spur tot. Verbleibende Spur: Depth-/G-Buffer des
-CharaView (`RenderTargetManager`, Offset 0x360 Depth/Stencil, 0x308 G-Buffer) als Geometrie-Maske
-kopieren — Hintergrund hat keine Geometrie, Depth bleibt auf Clear-Wert (dieselbe Technik wie die
-bekannten ReShade-"transparente Screenshots" der GPose-Community). Aufwand: eigene Staging-Kopie
-mit typeless Format (z.B. R24G8_TYPELESS) + Threshold, gleicher Mechanismus wie der bestehende
-Farb-Readback.
+— der Alpha-Kanal der Farb-Textur ist flach opak, Spur tot.
+
+**Umgesetzt stattdessen (0.0.0.167): Depth-Buffer-Maske.** Der CharaView-Renderpfad hat ein eigenes
+Depth/Stencil-Target (`RenderTargetManager`+0x360, internes Feld, per Raw-Offset gelesen) — der
+Hintergrund hat keine Geometrie, seine Depth bleibt auf dem Clear-Wert, jeder Charakter-Pixel weicht
+ab: perfekte Silhouetten-Maske, farbunabhängig, dunkle Outfits egal (dieselbe Technik wie die
+ReShade-"transparente Screenshots" der GPose-Community). Umsetzung: zweite Staging-Textur
+(Single-Buffer — Freeze-Standard macht Frame-Pairing egal), Copy zusammen mit dem Farb-Copy,
+Clear-Referenz = Median der vier Bildecken, Alpha=0 wo Depth==Referenz. Format-Dekodierung für
+R24G8/D24S8- und R32-Float-Familien; unbekanntes Format fällt auf den alten Flood-Fill zurück
+(Fehler in `lastError` sichtbar). Debug-Felder: `depthMaskReady`, `depthFormat`.
 
 ## Bekannte Limitierung: fremde Agents können den Render-Slot übernehmen
 
