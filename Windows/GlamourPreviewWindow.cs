@@ -141,9 +141,13 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
     public void ForceReinitializeForSelf()
     {
         _sourceEntityId = 0;
-        _framework.RunOnFrameworkThread(() =>
+        _framework.RunOnFrameworkThread(() => _renderer.Release());
+        // Initialize DEFERRED by ~0.25s: Release+Initialize in the same frame left the rebuilt
+        // clone stuck in a T-pose (recurring live report on every reset) — the client object
+        // teardown apparently needs frames to complete before a clean rebuild. The plugin-load
+        // first init never had this problem because nothing was torn down before it.
+        _framework.RunOnTick(() =>
         {
-            _renderer.Release();
             var localPlayer = _objectTable.LocalPlayer;
             if (localPlayer == null)
             {
@@ -152,7 +156,7 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
             }
             _renderer.Initialize((Character*)localPlayer.Address, 0, () => _objectTable.LocalPlayer?.Address ?? nint.Zero);
             SeedSelfEquipmentOnce();
-        });
+        }, delayTicks: 15);
         if (!_frameworkHooked)
         {
             _framework.Update += OnFrameworkTick;
