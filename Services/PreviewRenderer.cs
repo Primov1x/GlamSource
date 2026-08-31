@@ -416,18 +416,28 @@ public sealed unsafe class PreviewRenderer : IDisposable
         }
         if (itemId != 0)
         {
+            // byte-exact mirror of what a REAL TryOn(50904) wrote (live memory diff, not the
+            // upstream field names — those placed the category in byte 0, the real call put it
+            // in byte 1 with byte 0 zeroed):
             var e0 = b + 0x370;
-            e0[0] = equipSlotCategory;
+            e0[0] = 0;
+            e0[1] = equipSlotCategory;
             e0[2] = stain0;
             e0[3] = stain1;
             e0[8] = (byte)(stain0 != 0 ? 1 : 0); // HasStain0
             e0[9] = (byte)(stain1 != 0 ? 1 : 0); // HasStain1
             *(uint*)(e0 + 0x0C) = itemId;
             *(uint*)(e0 + 0x14) = iconId;
+            e0[0x18] = 2; // UnkEquipSlotCategoryFlags — the real call wrote 2
         }
+        // agent-side flags, byte-exact from the same diff
+        b[0x332] = 0;
+        b[0x344] = 1;
+        b[0x346] = 0;
         b[0x364] = 1; // TryOnItemsChanged
         b[0x365] = 1; // GearItemsChanged — refresh the own-gear list too
         b[0x367] = 1; // DisplayGear — render the character's own equipment alongside
+        b[0x368] = 1; // set by the real call, undocumented
     }
 
     /// <summary>Full weapon-pipeline state dump for live diagnosis. Framework thread.</summary>
