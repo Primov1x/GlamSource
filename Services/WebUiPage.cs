@@ -245,7 +245,9 @@ async function toggleWeaponOnly(){
   const btn=$('#p3dweapononly');
   const on=!btn.classList.contains('active');
   await post(`/api/action/preview3d/weapononly?on=${on}`);
-  btn.classList.toggle('active',on); // decoupled from the Waffe stance button — no pose change
+  btn.classList.toggle('active',on);
+  $('#p3dweapon').classList.toggle('active',on); // drawn stance implied (glow/effects need it)
+  $('#p3demote').value='0';
 }
 
 function stopAutoSpin(){

@@ -595,6 +595,14 @@ public sealed unsafe class PreviewRenderer : IDisposable
             ch->Timeline.TimelineSequencer.PlayTimeline(3); // 3 = plain idle
         }
 
+        // one-time upward nudge for the tighter ortho framing (see OrthoLiftY) — the feet sat on
+        // the bottom edge, the shrunken frame would cut them without this
+        if (_orthoEnabled && !_orthoLiftApplied && agent->CharaView.CharacterLoaded)
+        {
+            _orthoLiftApplied = true;
+            agent->CharaView.SetCameraXAndY(0f, OrthoLiftY);
+        }
+
         // emote pose (see _emoteTimelineId's comment) — BaseOverride re-pinned every tick,
         // PlayTimeline once per selection for the immediate blend
         if (_emoteTimelineId != 0)
@@ -798,10 +806,14 @@ public sealed unsafe class PreviewRenderer : IDisposable
     // the frustum sideways while zooming. The game recomputes the projection from these fields
     // each frame, so they're reapplied every Tick right before our Render() call.
     private bool _orthoEnabled = true; // default on — the whole point of the viewer
-    // matches the engine's own default OrthoHeight (2.0241 read back live via the debug endpoint)
-    // — the first guess of 2.6 framed the char noticeably smaller than the perspective default
-    // ("ist halt sehr weit weg")
-    private const float OrthoBaseHeight = 2.0241f;
+    // "Char allgemein größer, ohne Box-Limit, ohne Riesen-Fenster": the default framing has the
+    // feet ON the bottom edge and dead air above the head — the only real gain is squeezing that
+    // top gap. Tighter frame (smaller base height; engine default was 2.0241, read back live)
+    // plus a one-time upward camera nudge (OrthoLiftY, applied once after load so the feet clear
+    // the bottom edge). Both are TUNING constants — pan units are empirical.
+    private const float OrthoBaseHeight = 1.9f;
+    private const float OrthoLiftY = -14f;
+    private bool _orthoLiftApplied;
 
     /// <summary>Toggle the orthographic projection. Framework thread.</summary>
     public void SetOrtho(bool enabled)
@@ -854,10 +866,13 @@ public sealed unsafe class PreviewRenderer : IDisposable
     // character — but bare-skinned with just the weapon it reads as a weapon showcase.
     private bool _weaponOnly;
 
-    /// <summary>Weapon showcase mode: weapon VISIBLE (sheathed rest position — no stance change,
-    /// no thaw; coupling it to the drawn pose was rejected live), all other gear hidden.
-    /// Framework thread.</summary>
-    public void SetWeaponOnly(bool on) => _weaponOnly = on;
+    /// <summary>Weapon showcase mode: weapon DRAWN (glow/effects only show drawn — sheathed rest
+    /// position was rejected live), all other gear hidden. Framework thread.</summary>
+    public void SetWeaponOnly(bool on)
+    {
+        _weaponOnly = on;
+        SetWeaponDrawn(on);
+    }
 
     /// <summary>Show/hide the mainhand weapon model in the preview. Re-applied every Tick.
     /// Also thaws a frozen pose for a moment: the drawn/sheathed switch plays a stance animation —
@@ -1769,6 +1784,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
         // the clone (and its skeleton) is about to die — stop the freeze detour touching it
         _freezeSkeleton = 0;
         _frozenModel = null;
+        _orthoLiftApplied = false; // fresh camera after reinit needs the nudge again
         if (!_initialized) { _log.Info("[PreviewRenderer] Release() no-op, not initialized"); return; }
         try
         {
