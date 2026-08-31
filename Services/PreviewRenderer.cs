@@ -760,12 +760,24 @@ public sealed unsafe class PreviewRenderer : IDisposable
                     // the ROOT flags (state-dump proven): the clone's DrawData hidden flags stay
                     // set and the engine re-derives invisibility from them every frame — clear
                     // container + per-slot + draw object, every tick.
+                    // WeaponSlot has 3 entries (MainHand/OffHand/System) and the setup copy spawns
+                    // all three unconditionally — live: "instant 3 stück" (crafter tool + off-hand
+                    // tool + the System/Prop slot, which is facility/shield junk, not a weapon).
+                    // MainHand always shown; OffHand only if it actually carries a model (dual-wield
+                    // classes); System never.
                     wch->DrawData.IsWeaponHidden = false;
                     for (var i = 0; i < 3; i++)
                     {
-                        ref var slotData = ref wch->DrawData.Weapon((DrawDataContainer.WeaponSlot)i);
-                        slotData.IsHidden = false;
-                        if (slotData.DrawObject != null) slotData.DrawObject->IsVisible = true;
+                        var slot = (DrawDataContainer.WeaponSlot)i;
+                        ref var slotData = ref wch->DrawData.Weapon(slot);
+                        var show = slot switch
+                        {
+                            DrawDataContainer.WeaponSlot.MainHand => true,
+                            DrawDataContainer.WeaponSlot.OffHand => slotData.ModelId.Id != 0,
+                            _ => false,
+                        };
+                        slotData.IsHidden = !show;
+                        if (slotData.DrawObject != null) slotData.DrawObject->IsVisible = show;
                     }
                 }
                 else
