@@ -595,6 +595,10 @@ public sealed unsafe class PreviewRenderer : IDisposable
         ApplyOrtho(agent);
 
         if (_scaleWindowTicks > 0 && --_scaleWindowTicks == 0) _scaleCharaViewAllocs = false;
+        // while thawed-for-animation (weapon stance / emote settling), keep the stream at full
+        // rate — otherwise the idle throttle turns the visible animation into a 1fps slideshow
+        // ("laggt dann frameweise bis zum Ende der Animation")
+        if (_autoFreezeCountdown > 0) NotifyInteraction();
         // auto-freeze gate, from a live incident ("char hat grad random T-Pose gemacht"): a banner
         // hijack triggers auto-reinit, and the freeze countdown then fired while the rebuilt clone
         // was STILL LOADING its model — snapshot froze the load/T-pose permanently. The countdown
