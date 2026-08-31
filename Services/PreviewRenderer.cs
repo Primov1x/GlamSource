@@ -366,6 +366,14 @@ public sealed unsafe class PreviewRenderer : IDisposable
     /// <summary>Per-frame update/render. Must be called on Framework thread.</summary>
     public void Tick()
     {
+        // Freeze-pointer hygiene, learned from a REAL crash (AccessViolation in
+        // ApplyOrCaptureFrozenPose inside the detour, live crash dump): the pointer was only
+        // refreshed on the frames that reached the render section at the bottom — every early
+        // return below (native UI hijacking the slot and REBUILDING the clone is the killer:
+        // the old skeleton gets freed) left the detour stomping freed memory. Clear it FIRST,
+        // every Tick; only a frame that actually reaches a valid render re-arms it. A one-frame
+        // freeze gap is invisible (the pose is static anyway); a stale pointer is a crash.
+        _freezeSkeleton = 0;
         if (!_initialized)
         {
             // ponytail: deferred warmup — Initialize(0) queued a source; resolve a real
