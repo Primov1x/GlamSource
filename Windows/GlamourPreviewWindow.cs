@@ -346,6 +346,8 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
     }
 
     private long _lastCameraReinitMs;
+    private long _lastEquipSeedCheckMs;
+    private ulong _lastEquipHash;
     // patch breaker: repeated Tick exceptions mean the native structs no longer look like we
     // expect (typical after a game patch) — kill the preview feature for the session with ONE
     // clear log line instead of throwing every frame and risking worse. The rest of the plugin
@@ -371,6 +373,27 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
             }
             return;
         }
+        // Re-seed the worn gear when it CHANGES — the one-time init seed left the _items array
+        // (what the renderer actually shows as worn gear) permanently stale after a class or gear
+        // switch: old class' outfit, missing feet, missing weapon (all reported live). Checked
+        // twice a second via a cheap hash, skipped while a target is being viewed.
+        if (Environment.TickCount64 - _lastEquipSeedCheckMs > 500 && _targetManager.Target == null)
+        {
+            _lastEquipSeedCheckMs = Environment.TickCount64;
+            try
+            {
+                ulong hash = 17;
+                foreach (var s in _glamour.GetSelfEquipment())
+                    hash = hash * 31 + (s.GlamourItemId ?? s.ActualItemId) * 131 + s.Stain0 + (ulong)s.Stain1 * 7;
+                if (hash != _lastEquipHash)
+                {
+                    _lastEquipHash = hash;
+                    SeedSelfEquipmentOnce();
+                }
+            }
+            catch { /* best effort */ }
+        }
+
         // Self-heal, from a live incident: AgentBannerParty repeatedly hijacked the shared slot
         // and its release left CharaView WITHOUT a camera (debug showed cameraDistance:null) —
         // every camera call silently no-opped ("Kamera hat garnicht funktioniert") and the last
