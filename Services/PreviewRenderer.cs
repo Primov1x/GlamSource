@@ -650,10 +650,19 @@ public sealed unsafe class PreviewRenderer : IDisposable
     private long _drawCallCount;
     private long _drawCallWindowStartMs;
 
+    // Alpha-channel probe of the captured render target. The transparent-backdrop flood-fill is a
+    // dead end for dark outfits — but IF the CharaView target's alpha channel already distinguishes
+    // character from backdrop (e.g. backdrop stays at clear-alpha while character geometry writes
+    // opaque), the real mask existed all along and we've just been discarding it in the JPEG path.
+    // min/max over sampled pixels answers that in one glance at /api/preview3d/debug:
+    // min==max==255 → alpha is useless (all opaque); a spread → there's a real mask to use.
+    private byte _alphaMin = 255;
+    private byte _alphaMax;
+
     public readonly record struct WebCaptureStats(
         bool StagingReady, long FramesEncoded, long FramesSkipped, long CaptureErrors,
         long LastFrameBytes, long LastEncodeDurationMs, string? LastError, int StagingWidth, int StagingHeight,
-        bool NativeUiOwnsSlot, double DrawCallsPerSecond);
+        bool NativeUiOwnsSlot, double DrawCallsPerSecond, byte AlphaMin, byte AlphaMax);
 
     /// <summary>Snapshot of the web MJPEG capture pipeline's health — thread-safe plain field reads,
     /// same as LatestWebJpeg.</summary>
@@ -664,7 +673,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
         return new(
             _webStaging[0].Get() != null, _webFramesEncoded, _webFramesSkipped, _webCaptureErrors,
             _lastFrameBytes, _lastEncodeDurationMs, _lastCaptureError, (int)_webStagingWidth, (int)_webStagingHeight,
-            _nativeUiOwnsSlot, drawCallsPerSecond);
+            _nativeUiOwnsSlot, drawCallsPerSecond, _alphaMin, _alphaMax);
     }
 
     /// <summary>Latest JPEG-encoded frame for the web-UI MJPEG stream (see WebUiService's
@@ -828,6 +837,24 @@ public sealed unsafe class PreviewRenderer : IDisposable
                     {
                         try
                         {
+                            // alpha probe (see _alphaMin doc) — every 61st pixel, prime stride so
+                            // the sample grid doesn't align with image structure
+                            if (isBgra)
+                            {
+                                byte amin = 255, amax = 0;
+                                for (var y2 = 0; y2 < h; y2 += 7)
+                                {
+                                    var row = y2 * rowPitch;
+                                    for (var x2 = 0; x2 < w; x2 += 11)
+                                    {
+                                        var a = rawFrameBuffer[row + x2 * 4 + 3];
+                                        if (a < amin) amin = a;
+                                        if (a > amax) amax = a;
+                                    }
+                                }
+                                _alphaMin = amin;
+                                _alphaMax = amax;
+                            }
                             var png = transparent;
                             var encoded = png
                                 ? EncodeChromaKeyedPngFromBuffer(rawFrameBuffer, w, h, rowPitch, isBgra)

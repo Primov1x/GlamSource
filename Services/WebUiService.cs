@@ -532,6 +532,11 @@ public sealed class WebUiService : IDisposable
                 lastError = stats?.LastError,
                 nativeUiOwnsSlot = stats?.NativeUiOwnsSlot ?? false,
                 drawCallsPerSecond = Math.Round(stats?.DrawCallsPerSecond ?? 0, 1),
+                // alpha probe of the raw render target — min==max==255 means no usable mask;
+                // any spread means the game hands us the character cutout for free (see
+                // PreviewRenderer._alphaMin doc comment)
+                alphaMin = stats?.AlphaMin ?? 0,
+                alphaMax = stats?.AlphaMax ?? 0,
                 latestFrameAvailable = renderer?.LatestWebJpeg != null,
                 previewGearOverrideSlots = _webPreviewGear.Keys.Select(s => s.ToString()).ToArray(),
                 // the actual "is it smooth" answer, no /xllog needed — live while a stream is
