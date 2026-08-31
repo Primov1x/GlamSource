@@ -2091,6 +2091,12 @@ public sealed unsafe class PreviewRenderer : IDisposable
             _pendingRecopyFrames = 0;
             _retryWarmup = false;
             _warmupSource = nint.Zero;
+            // weapon state MUST NOT survive a reset — Release() destroys the clone but not this
+            // flag, so the rebuilt clone's very first weaponMode-gated Tick re-ran the #13 spawn
+            // immediately ("selbst zurücksetzen nicht": weapons persisted through reset).
+            _weaponDrawn = false;
+            _weaponOnly = false;
+            _weaponSetupPending = false;
         }
     }
 
