@@ -346,11 +346,31 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
     }
 
     private long _lastCameraReinitMs;
+    // patch breaker: repeated Tick exceptions mean the native structs no longer look like we
+    // expect (typical after a game patch) — kill the preview feature for the session with ONE
+    // clear log line instead of throwing every frame and risking worse. The rest of the plugin
+    // (lookup, web UI, 3D viewer) keeps working.
+    private int _tickErrorStreak;
+    private bool _previewDead;
 
     private void OnFrameworkTick(IFramework fw)
     {
-        if (!_clientState.IsLoggedIn) return;
-        _renderer.Tick();
+        if (!_clientState.IsLoggedIn || _previewDead) return;
+        try
+        {
+            _renderer.Tick();
+            _tickErrorStreak = 0;
+        }
+        catch (Exception ex)
+        {
+            if (++_tickErrorStreak >= 10)
+            {
+                _previewDead = true;
+                _log.Error($"[GlamourPreviewWindow] preview disabled after {_tickErrorStreak} consecutive Tick errors — likely a game patch, update the plugin. Last: {ex}");
+                try { _renderer.Release(); } catch { /* best effort */ }
+            }
+            return;
+        }
         // Self-heal, from a live incident: AgentBannerParty repeatedly hijacked the shared slot
         // and its release left CharaView WITHOUT a camera (debug showed cameraDistance:null) —
         // every camera call silently no-opped ("Kamera hat garnicht funktioniert") and the last

@@ -128,9 +128,15 @@ public sealed unsafe class PreviewRenderer : IDisposable
             }
         }
         _frozenModel = null; // fresh snapshot on (re-)freeze
+        _freezeDetourErrors = 0; // explicit re-freeze = user gets a fresh set of strikes
         _freezePose = true;
         _updateBonePhysicsHook.Enable();
     }
+
+    // breaker: repeated caught errors in the detour mean our assumptions about the skeleton
+    // layout no longer hold (game patch territory) — a caught managed exception today can be an
+    // uncatchable AccessViolation tomorrow. Three strikes and freeze turns itself off.
+    private int _freezeDetourErrors;
 
     private nint UpdateBonePhysicsDetour(nint a1)
     {
@@ -141,7 +147,16 @@ public sealed unsafe class PreviewRenderer : IDisposable
             var skeletonPtr = _freezeSkeleton;
             if (_freezePose && skeletonPtr != 0) ApplyOrCaptureFrozenPose((Skeleton*)skeletonPtr);
         }
-        catch (Exception ex) { _lastCaptureError = $"freeze detour: {ex.Message}"; }
+        catch (Exception ex)
+        {
+            _lastCaptureError = $"freeze detour: {ex.Message}";
+            if (++_freezeDetourErrors >= 3)
+            {
+                _freezePose = false; // detour-side only — Disable() must not run on this thread
+                _freezeSkeleton = 0;
+                _log.Warning($"[PreviewRenderer] freeze disabled itself after {_freezeDetourErrors} detour errors (game patch?): {ex.Message}");
+            }
+        }
         return result;
     }
 
@@ -716,6 +731,9 @@ public sealed unsafe class PreviewRenderer : IDisposable
     private byte[]? _rawDepthBuffer;
     private int _rawDepthRowPitch;
     private bool _rawDepthValid;
+    // set when the depth target fails validation (dims mismatch after a game patch) — depth path
+    // stays off for the session, transparent mode falls back to the flood-fill
+    private bool _depthPathBroken;
 
     // ponytail: "es reicht auch eine Standaufnahme, der Char muss sich nicht aktiv bewegen" —
     // don't spend GPU/CPU capturing a smooth video nobody's watching. Full-rate (EncodeThrottleMs)
@@ -1067,6 +1085,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
     /// before that slot's COLOR copy so both land in the same frame (see _depthStaging's comment).</summary>
     private void IssueDepthCopy(ComPtr<ID3D11Device> device, ComPtr<ID3D11DeviceContext> context, int slot)
     {
+        if (_depthPathBroken) return;
         var gameTex = GetCharaViewDepthTexture();
         if (gameTex == null || gameTex->D3D11Texture2D == null)
         {
@@ -1076,6 +1095,16 @@ public sealed unsafe class PreviewRenderer : IDisposable
         var depthTex = (ID3D11Texture2D*)gameTex->D3D11Texture2D;
         D3D11_TEXTURE2D_DESC desc;
         depthTex->GetDesc(&desc);
+        // patch guard: the depth target MUST match the color RT's dimensions. A shifted struct
+        // after a game patch can yield a pointer that happens to be a valid-but-WRONG texture —
+        // dims are the cheap tell. Mismatch = permanently disable the depth path this session.
+        if (desc.Width != _webStagingWidth || desc.Height != _webStagingHeight)
+        {
+            _depthPathBroken = true;
+            _lastCaptureError = $"depth target dims {desc.Width}x{desc.Height} != color RT {_webStagingWidth}x{_webStagingHeight} — depth path disabled (game patch?)";
+            _log.Warning($"[PreviewRenderer] {_lastCaptureError}");
+            return;
+        }
         if (_depthStaging[0].Get() == null || desc.Width != _depthWidth || desc.Height != _depthHeight || desc.Format != _depthFormat)
         {
             for (var i = 0; i < WebStagingBufferCount; i++) { _depthStaging[i].Dispose(); _depthStaging[i] = default; }
