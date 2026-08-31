@@ -549,17 +549,19 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         // ponytail: only overwrite _snapshot when we actually have a target; null-flicker keeps the last one.
         if (!_pinned && _recentOverride == null)
         {
+            IReadOnlyList<EquipmentSlot>? live = null;
             if (currentTarget != null)
             {
-                var live = _glamour.TryGetVisibleGlamour(currentTarget.ObjectIndex) ?? _glamour.GetTargetEquipment();
+                live = _glamour.TryGetVisibleGlamour(currentTarget.ObjectIndex) ?? _glamour.GetTargetEquipment();
                 MaybePushRecentForTarget(currentTarget, live);
-                _snapshot = live ?? _snapshot;
+                if (live != null && live.Count > 0) _snapshot = live;
             }
-            else if (Environment.TickCount64 - _lastSelfSnapshotMs > 2000)
+            // SELF fallback also when a target yields nothing — targeting an NPC/object made the
+            // player-path return empty AND starved the self-path forever: empty slot list, naked
+            // clone (reported live as "bin trotzdem nackt"). Throttled: this walks the inventory
+            // every call, per-frame it measurably cost fps.
+            if ((live == null || live.Count == 0) && Environment.TickCount64 - _lastSelfSnapshotMs > 2000)
             {
-                // no target — the slot list follows SELF, but throttled to 2x/s: GetSelfEquipment
-                // goes through Glamourer IPC, and calling it EVERY framework tick halved the
-                // game's frame rate (drawCalls/s 80 -> 40, measured live)
                 _lastSelfSnapshotMs = Environment.TickCount64;
                 var self = _glamour.GetSelfEquipment();
                 if (self.Count > 0) _snapshot = self;
