@@ -400,6 +400,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
         // ponytail: seed a few refresh frames so early renders can't be clobbered by agent activity.
         _pendingRecopyFrames = 3;
         _autoFreezeCountdown = AutoFreezeDelayFrames; // freeze-by-default, see field comment
+        _pendingIdleReset = true; // strip any copied mid-action stance (crafting etc.), see field comment
     }
 
     /// <summary>Request N future Ticks to re-copy from the source provider (fixes ApplyState frame-lag and Examine hijack).</summary>
@@ -556,6 +557,14 @@ public sealed unsafe class PreviewRenderer : IDisposable
 
         var ch = agent->CharaView.GetCharacter();
         if (ch == null) return;
+
+        // post-init idle reset (see _pendingIdleReset) — once, as soon as the clone is loaded
+        if (_pendingIdleReset && agent->CharaView.CharacterLoaded)
+        {
+            _pendingIdleReset = false;
+            ch->Timeline.BaseOverride = 0;
+            ch->Timeline.TimelineSequencer.PlayTimeline(3); // 3 = plain idle
+        }
 
         // emote pose (see _emoteTimelineId's comment) — BaseOverride re-pinned every tick,
         // PlayTimeline once per selection for the immediate blend
@@ -840,6 +849,11 @@ public sealed unsafe class PreviewRenderer : IDisposable
     private ushort _emoteTimelineId;
     private bool _emotePlayPending;
     private bool _emoteClearPending;
+    // set by DoInitialize: once the clone reports loaded, force it onto the plain idle timeline
+    // ONCE — a reset while the source char is mid-action (seen live: crafting = T-pose ON AN
+    // ANVIL) copies that action state into the clone; PlayTimeline(3) drops the copied stance
+    // and its timeline-bound props before the auto-freeze can snapshot the mess.
+    private bool _pendingIdleReset;
 
     /// <summary>Play a looping ActionTimeline on the preview clone (0 = back to normal idle).
     /// Framework thread. Ids come from the Emote sheet's ActionTimeline column.</summary>
