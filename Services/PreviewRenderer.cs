@@ -7,6 +7,7 @@ using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Kernel;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Render;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
+using FFXIVClientStructs.Havok.Animation.Rig;
 using FFXIVClientStructs.Havok.Common.Base.Math.QsTransform;
 using System.Collections.Generic;
 using GlamSource.Core;
@@ -73,35 +74,77 @@ public sealed unsafe class PreviewRenderer : IDisposable
         agent->CharaView.DoUpdate = !suspend;
     }
 
-    // Pose freeze, third approach — the one posing plugins actually ship. Neither suspending our
-    // copies nor DoUpdate=false stopped the animation (both tried live), because the CharaView's
-    // character keeps getting animated by the game's own animation system regardless. Brio's
-    // SkeletonService (decompiled, not guessed) freezes by OVERWRITING the skeleton's hkaPose bone
-    // transforms every frame after the animation update ran — the animation still runs, its result
-    // just gets stomped before it's rendered. Brio needs a native FinalizeSkeletons sig-scan hook
-    // for that window; we don't: Tick() already sits between CharaView.Update() and .Render(),
-    // which is the same causal slot, reached through code we own.
+    // Pose freeze, FOURTH approach — the one that matches how posing plugins actually hook the
+    // engine. History: (1) suspending our CopyFromCharacter calls — no effect; (2) DoUpdate=false —
+    // no effect; (3) overwriting hkaPose Local/ModelPose arrays from Tick() — no effect. (3) failed
+    // because the skeleton update (animation sampling, SyncModelSpace, physics) runs inside the
+    // game's render task (Framework.TaskRenderGraphicsRender), AFTER UiBuilder.Draw — whatever we
+    // write in Tick() gets recomputed before it's ever rendered. Brio's fix (read from its actual
+    // source, Brio/Game/Posing/SkeletonService.cs): hook the engine's UpdateBonePhysics function
+    // (their comment: "all the main skeleton stuff like positions, IK and physics is done at this
+    // point"), call the original FIRST, then overwrite bones via hkaPose.AccessBoneModelSpace —
+    // which also maintains Havok's sync flags, unlike raw array writes. Signature string is Brio's,
+    // verbatim. Unlike Brio we freeze exactly ONE skeleton (the CharaView clone), so no entity
+    // system — just a pointer refreshed every Tick and compared in the detour.
+    private const string UpdateBonePhysicsSig = "48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 57 41 54 41 56 48 83 EC ?? 48 8B 59 ?? 45 33 E4";
+    private delegate nint UpdateBonePhysicsDelegate(nint a1);
+    private Dalamud.Hooking.Hook<UpdateBonePhysicsDelegate>? _updateBonePhysicsHook;
     private bool _freezePose;
-    private hkQsTransformf[][]? _frozenLocal; // per partial skeleton, per bone
-    private hkQsTransformf[][]? _frozenModel;
+    private nint _freezeSkeleton; // Render.Skeleton* of the CharaView clone, refreshed each Tick while frozen, 0 = don't touch
+    private hkQsTransformf[][]? _frozenModel; // per partial skeleton, per bone, model space
 
-    /// <summary>Freeze the previewed character's pose: snapshot the skeleton on the next Tick, then
-    /// rewrite it every Tick until unfrozen. Framework thread.</summary>
+    /// <summary>Freeze the previewed character's pose: snapshot the skeleton once, then stomp the
+    /// engine's freshly-computed pose with it every frame from inside the UpdateBonePhysics hook.
+    /// Framework thread. Installs the hook lazily on first use; disables (not disposes) on unfreeze.</summary>
     public void SetFreezePose(bool freeze)
     {
-        _freezePose = freeze;
-        if (!freeze) { _frozenLocal = null; _frozenModel = null; }
+        if (!freeze)
+        {
+            _freezePose = false;
+            _freezeSkeleton = 0;
+            _frozenModel = null;
+            _updateBonePhysicsHook?.Disable();
+            return;
+        }
+        if (_updateBonePhysicsHook == null)
+        {
+            try
+            {
+                var addr = _sigScanner.ScanText(UpdateBonePhysicsSig);
+                _updateBonePhysicsHook = _gameInterop.HookFromAddress<UpdateBonePhysicsDelegate>(addr, UpdateBonePhysicsDetour);
+            }
+            catch (Exception ex)
+            {
+                // sig broke on a game patch — freeze silently unavailable until the sig's updated
+                _lastCaptureError = $"freeze hook sig scan failed: {ex.Message}";
+                _log.Warning($"[PreviewRenderer] UpdateBonePhysics sig scan failed, freeze unavailable: {ex.Message}");
+                return;
+            }
+        }
+        _frozenModel = null; // fresh snapshot on (re-)freeze
+        _freezePose = true;
+        _updateBonePhysicsHook.Enable();
     }
 
-    private void ApplyOrCaptureFrozenPose(Character* ch)
+    private nint UpdateBonePhysicsDetour(nint a1)
     {
-        var drawObject = ch->GameObject.DrawObject;
-        if (drawObject == null) return;
-        var skeleton = ((FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase*)drawObject)->Skeleton;
-        if (skeleton == null || skeleton->PartialSkeletonCount == 0) return;
+        var result = _updateBonePhysicsHook!.Original(a1);
+        // never let anything escape into the engine's hot path — a bad frame here is a crash
+        try
+        {
+            var skeletonPtr = _freezeSkeleton;
+            if (_freezePose && skeletonPtr != 0) ApplyOrCaptureFrozenPose((Skeleton*)skeletonPtr);
+        }
+        catch (Exception ex) { _lastCaptureError = $"freeze detour: {ex.Message}"; }
+        return result;
+    }
 
+    private void ApplyOrCaptureFrozenPose(Skeleton* skeleton)
+    {
+        if (skeleton == null || skeleton->PartialSkeletonCount == 0) return;
         var partialCount = skeleton->PartialSkeletonCount;
-        // (re-)capture: first freeze Tick, or skeleton shape changed under us (e.g. gear swap)
+
+        // (re-)capture: first frozen frame, or skeleton shape changed under us (e.g. gear swap)
         var capture = _frozenModel == null || _frozenModel.Length != partialCount;
         if (!capture)
         {
@@ -114,39 +157,32 @@ public sealed unsafe class PreviewRenderer : IDisposable
 
         if (capture)
         {
-            _frozenLocal = new hkQsTransformf[partialCount][];
-            _frozenModel = new hkQsTransformf[partialCount][];
+            var frozen = new hkQsTransformf[partialCount][];
             for (var p = 0; p < partialCount; p++)
             {
                 var pose = skeleton->PartialSkeletons[p].GetHavokPose(0);
-                var n = pose == null ? 0 : System.Math.Min(pose->LocalPose.Length, pose->ModelPose.Length);
-                _frozenLocal[p] = new hkQsTransformf[n];
-                _frozenModel[p] = new hkQsTransformf[n];
-                for (var i = 0; i < n; i++)
-                {
-                    _frozenLocal[p][i] = pose->LocalPose[i];
-                    _frozenModel[p][i] = pose->ModelPose[i];
-                }
+                var n = pose == null ? 0 : pose->ModelPose.Length;
+                frozen[p] = new hkQsTransformf[n];
+                for (var i = 0; i < n; i++) frozen[p][i] = pose->ModelPose[i];
             }
+            _frozenModel = frozen;
             return; // this frame renders the just-captured pose anyway
         }
 
-        // restore both spaces + mark both in sync, so whichever direction the engine derives from
-        // (SyncModelSpace/SyncLocalSpace) it finds our snapshot and no dirty flag triggers a rebuild
         for (var p = 0; p < partialCount; p++)
         {
             var pose = skeleton->PartialSkeletons[p].GetHavokPose(0);
             if (pose == null) continue;
-            var frozenL = _frozenLocal![p];
             var frozenM = _frozenModel![p];
-            var n = System.Math.Min(frozenM.Length, System.Math.Min(pose->LocalPose.Length, pose->ModelPose.Length));
+            var n = System.Math.Min(frozenM.Length, pose->ModelPose.Length);
             for (var i = 0; i < n; i++)
             {
-                pose->LocalPose[i] = frozenL[i];
-                pose->ModelPose[i] = frozenM[i];
+                // AccessBoneModelSpace (not raw ModelPose[i] writes) so Havok's sync flags stay
+                // correct — Brio's ApplySnapshot does exactly this. DontPropagate: we set EVERY
+                // bone absolutely, nothing derives from parents.
+                var t = pose->AccessBoneModelSpace(i, hkaPose.PropagateOrNot.DontPropagate);
+                if (t != null) *t = frozenM[i];
             }
-            pose->ModelInSync = 1;
-            pose->LocalInSync = 1;
         }
     }
 
@@ -256,11 +292,16 @@ public sealed unsafe class PreviewRenderer : IDisposable
         _ => -1,
     };
 
-    public PreviewRenderer(IFramework framework, IPluginLog log)
+    public PreviewRenderer(IFramework framework, IPluginLog log, Dalamud.Game.ISigScanner sigScanner, IGameInteropProvider gameInterop)
     {
         _framework = framework;
         _log = log;
+        _sigScanner = sigScanner;
+        _gameInterop = gameInterop;
     }
+
+    private readonly Dalamud.Game.ISigScanner _sigScanner;
+    private readonly IGameInteropProvider _gameInterop;
 
     public bool IsInitialized => _initialized;
 
@@ -452,7 +493,16 @@ public sealed unsafe class PreviewRenderer : IDisposable
         if (ch == null) return;
 
         agent->CharaView.Update(_counter, ch);
-        if (_freezePose) ApplyOrCaptureFrozenPose(ch);
+        // freeze: refresh the clone's skeleton pointer for the UpdateBonePhysics detour (which runs
+        // in the game's render task, where the pose is actually computed — writing bones HERE was
+        // attempt 3 and did nothing, see the freeze block's comment)
+        if (_freezePose)
+        {
+            var freezeDrawObject = ch->GameObject.DrawObject;
+            _freezeSkeleton = freezeDrawObject != null
+                ? (nint)((FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase*)freezeDrawObject)->Skeleton
+                : 0;
+        }
         agent->CharaView.Render(_counter++);
     }
 
@@ -1048,6 +1098,9 @@ public sealed unsafe class PreviewRenderer : IDisposable
     public void Release()
     {
         _log.Info("[PreviewRenderer] Release() called");
+        // the clone (and its skeleton) is about to die — stop the freeze detour touching it
+        _freezeSkeleton = 0;
+        _frozenModel = null;
         if (!_initialized) { _log.Info("[PreviewRenderer] Release() no-op, not initialized"); return; }
         try
         {
@@ -1079,6 +1132,12 @@ public sealed unsafe class PreviewRenderer : IDisposable
     public void Dispose()
     {
         _log.Info($"[PreviewRenderer] Dispose() called, _initialized={_initialized}");
+        // hook first, and unconditionally — it may exist even if CharaView never initialized,
+        // and a live detour surviving plugin unload is a guaranteed crash
+        _freezePose = false;
+        _freezeSkeleton = 0;
+        _updateBonePhysicsHook?.Dispose();
+        _updateBonePhysicsHook = null;
         if (!_initialized) return;
         // Dispose can be called off-frame; hop to Framework thread for the Release.
         try { _framework.RunOnFrameworkThread(Release).Wait(); }

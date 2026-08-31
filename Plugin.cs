@@ -30,6 +30,8 @@ public class Plugin : IAsyncDalamudPlugin
     [PluginService] internal static IObjectTable ObjectTable { get; private set; } = null!;
     [PluginService] internal static IFramework Framework { get; private set; } = null!;
     [PluginService] internal static ICondition Condition { get; private set; } = null!;
+    [PluginService] internal static Dalamud.Game.ISigScanner SigScanner { get; private set; } = null!;
+    [PluginService] internal static IGameInteropProvider GameInterop { get; private set; } = null!;
 
 
     private readonly IDalamudPluginInterface _pluginInterface;
@@ -147,7 +149,7 @@ public class Plugin : IAsyncDalamudPlugin
             Log);
         WindowSystem.AddWindow(shellWindow);
 
-        previewRenderer = new PreviewRenderer(Framework, Log);
+        previewRenderer = new PreviewRenderer(Framework, Log, SigScanner, GameInterop);
         previewWindow = new GlamourPreviewWindow(previewRenderer, Framework, ClientState, ObjectTable, TargetManager, PluginInterface, Log, GlamourServiceOverride ?? gameDataService);
         WindowSystem.AddWindow(previewWindow);
         shellWindow.PreviewWindow = previewWindow;

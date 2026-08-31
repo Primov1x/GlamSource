@@ -1,6 +1,6 @@
 # Character-Tab Web-Preview — Stand & Doku
 
-Stand: 0.0.0.162. Betrifft die Web-UI (`Services/WebUiPage.cs`/`WebUiService.cs`) und die
+Stand: 0.0.0.164. Betrifft die Web-UI (`Services/WebUiPage.cs`/`WebUiService.cs`) und die
 CharaView-Anbindung (`Services/PreviewRenderer.cs`, `Windows/GlamourPreviewWindow.cs`,
 `Windows/GlamSourceShellWindow.cs`). Für den Release-Prozess selbst siehe [`../RELEASING.md`](../RELEASING.md).
 
@@ -49,25 +49,33 @@ ein `<canvas>` gezeichnet (kein `<img src=multipart>` — siehe "Warum kein `<im
 - **🩺 Preview-Stream-Debug**: `GET /api/preview3d/debug` inline im Tab — Frames encoded/skipped,
   Fehler, aktuelle/letzte Stream-fps, Zoom-Wert, Kamera-Distanz, Draw()-Aufrufrate.
 
-## Einfrieren: dritter Versuch (0.0.0.162, Brio-Technik) — im Test
+## Einfrieren: vierter Versuch (0.0.0.164, nativer Hook) — im Test
 
-Nach den zwei gescheiterten Flag-Versuchen (unten dokumentiert) wurde Brio (etabliertes
-Posing-Plugin) dekompiliert: es friert NICHT über irgendein Flag ein, sondern **überschreibt die
-Havok-Skeleton-Bone-Transforms (`hkaPose.LocalPose`/`ModelPose`) jeden Frame** mit einem Snapshot —
-die Spiel-Animation läuft weiter, ihr Ergebnis wird nur vor dem Rendern plattgestampft. Brio braucht
-dafür einen nativen Signatur-Scan-Hook (`FinalizeSkeletons`); wir nicht — `PreviewRenderer.Tick()`
-sitzt bereits zwischen `CharaView.Update()` und `.Render()`, derselbe kausale Zeitpunkt.
+Versuch 3 (0.0.0.162, Bone-Arrays aus `Tick()` überschreiben) ist live gescheitert — Ursache jetzt
+verstanden: das Skeleton-Update (Animation-Sampling, `SyncModelSpace`, Physik) läuft im Render-Task
+des Spiels (`Framework.TaskRenderGraphicsRender`), also NACH `UiBuilder.Draw` — was wir in Tick()
+schreiben, wird danach komplett neu berechnet, bevor es je gerendert wird.
 
-Umsetzung (`PreviewRenderer.SetFreezePose` + `ApplyOrCaptureFrozenPose`): beim Einschalten wird die
-aktuelle Pose einmal gesnapshottet (alle `hkQsTransformf` pro Partial-Skeleton, identisches
-Traversal wie `SkeletonPoseService.Capture` im 3D-Viewer), danach jeden Tick zurückgeschrieben
-(beide Spaces + `ModelInSync`/`LocalInSync` gesetzt). Ändert sich die Skeleton-Form (Gear-Wechsel),
-wird automatisch neu gesnapshottet. Risiko klein: nur Schreiben in ein Transform-Array, das wir seit
-Wochen erfolgreich lesen — schlimmster Fall "Pose sieht falsch aus", kein Crash-Pfad.
+Versuch 4 macht es exakt wie Brio (Quellcode gelesen, `Brio/Game/Posing/SkeletonService.cs`):
 
-**Noch nicht live verifiziert** — falls es wieder nicht greift, wäre der nächste Verdächtige, dass
-das Spiel die Pose NACH unserem Tick()-Schreiben noch einmal neu berechnet (dann bräuchte es doch
-Brios FinalizeSkeletons-Hook-Punkt).
+- Nativer Hook auf die Engine-Funktion **`UpdateBonePhysics`** (Brios Signatur wortwörtlich
+  übernommen; Brios Kommentar dazu: "all the main skeleton stuff like positions, IK and physics is
+  done at this point"). Original zuerst aufrufen, DANACH unsere Bones überschreiben — die Engine
+  kommt nicht mehr dazu, sie vor dem Rendern erneut zu stampfen.
+- Schreiben via **`hkaPose.AccessBoneModelSpace`** statt roher Array-Writes — pflegt Havoks
+  Sync-Flags korrekt (auch das macht Brio so, `ApplySnapshot`).
+- Anders als Brio (die ein ganzes Entity-System verwalten) frieren wir genau EIN Skeleton ein: den
+  CharaView-Klon. `Tick()` refresht jeden Frame den `Render.Skeleton*`-Zeiger des Klons; der Detour
+  vergleicht/nutzt nur den. `Release()`/`Dispose()` nullen den Zeiger, bevor der Klon stirbt;
+  Dispose disposed den Hook unconditional (lebender Detour nach Plugin-Unload = sicherer Crash).
+- Hook wird lazy beim ersten Einfrieren installiert, bei Unfreeze nur disabled. Bricht die Signatur
+  bei einem Spiel-Patch, schlägt der Sig-Scan fehl → Freeze still deaktiviert, Fehler im
+  Debug-Endpoint (`lastError`) sichtbar, kein Crash.
+
+**Noch nicht live verifiziert.** Ktisis-Alternative (mehrere Engine-Funktionen komplett neutralisieren:
+`SyncModelSpace`, `CalcBoneModelSpace`, LookAtIK, KineDriver …) wäre der Plan B, ist aber global
+(friert ALLES ein, deshalb ist Ktisis GPose-only) — für unseren Ein-Charakter-Fall ist Brios
+Overwrite-nach-Physik der sauberere Single-Point-Ansatz.
 
 ## Bekannte Limitierung: Einfrieren funktioniert nicht (Versuche 1+2, historisch)
 
@@ -127,6 +135,23 @@ vorkommt) ist keine Option: kein `BackgroundColor`/`ClearColor`/`StudioColor`-Fe
 oder der Basisklasse `CharaView` vorhanden (0.0.0.161 nachgeprüft, echte Struct-Definition), die
 Studio-Backdrop-Farbe ist fest im Spiel verdrahtet. Ohne so eine Datenquelle ist das nicht robust
 lösbar, nur für bestimmte (helle) Outfits brauchbar.
+
+**Neue Spur (0.0.0.163/164, Recherche)**: Struktur-Indizien sprechen dafür, dass der Alpha-Kanal
+des Rendertargets die Charakter-Maske BEREITS enthält und wir sie bisher schlicht weggeworfen haben
+(JPEG kennt kein Alpha, der PNG-Pfad überschreibt Alpha mit dem Flood-Fill-Ergebnis):
+
+- Der graue Studio-Hintergrund ist laut FFXIVClientStructs ein **separates UI-Asset**
+  (`RaptureAtkModule.CharaViewDefaultBackgroundTexture` = `ui/common/CharacterBg.tex`), das die UI
+  HINTER die CharaView-Textur komponiert — dafür muss die Textur selbst Alpha tragen.
+- Der Portrait-Editor (`CharaViewPortrait.BackgroundState` 0="nichts") behandelt Hintergrund
+  ebenfalls als eigene, abschaltbare Ebene.
+
+Empirischer Test eingebaut: `alphaMin`/`alphaMax` im Debug-Endpoint (Sonde über das rohe
+BGRA-Rendertarget). `min==max==255` → Alpha nutzlos, Spur tot. Spread → Maske gratis vorhanden,
+Fix wird trivial (Flood-Fill löschen, vorhandenes Alpha in PNG durchreichen). Fallback falls Alpha
+flach: Depth-/G-Buffer des CharaView (`RenderTargetManager`, Offset 0x360) als Geometrie-Maske
+kopieren — Hintergrund hat keine Geometrie, Depth bleibt auf Clear-Wert (dieselbe Technik wie die
+bekannten ReShade-"transparente Screenshots" der GPose-Community).
 
 ## Bekannte Limitierung: fremde Agents können den Render-Slot übernehmen
 
