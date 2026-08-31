@@ -776,12 +776,20 @@ public sealed unsafe class PreviewRenderer : IDisposable
 
     public bool OrthoEnabled => _orthoEnabled;
 
+    // Wider stage ("Box größer — bei Emotes sind Teile abgehakt, wie die Hand"): the camera's
+    // AspectRatio field is writable too. Rendering a WIDER world window into the same 576-wide
+    // texture horizontally squeezes the pixels; the client CSS stretches the canvas back out
+    // (aspect-ratio + object-fit:fill in WebUiPage). ~33% more room at the sides for a small
+    // horizontal sharpness cost. Native aspect is 576/960 = 0.6.
+    private const float PreviewAspect = 0.8f;
+
     private void ApplyOrtho(AgentTryon* agent)
     {
-        if (!_orthoEnabled) return;
         var sceneCam = agent->CharaView.Camera;
         if (sceneCam == null || sceneCam->RenderCamera == null) return;
         var rc = sceneCam->RenderCamera;
+        rc->AspectRatio = PreviewAspect; // both projections — the client always un-stretches
+        if (!_orthoEnabled) return;
         rc->IsOrtho = true;
         rc->OrthoHeight = OrthoBaseHeight / _zoom;
     }
@@ -1158,7 +1166,12 @@ public sealed unsafe class PreviewRenderer : IDisposable
 
         // 1) drain whichever pending buffer's GPU copy has actually finished — at most one encode
         // per Draw() call (matches EncodeThrottleMs's intent: cap encode cost, not skip it entirely).
-        var effectiveThrottleMs = now - _lastInteractionMs < InteractionWindowMs ? EncodeThrottleMs : IdleEncodeThrottleMs;
+        // three-tier rate: full during interaction; ~30fps while the pose is UNFROZEN (a live
+        // animation at 1fps is a slideshow, and encode is ~1ms since the fast PNG writer — cheap);
+        // 1fps only when frozen AND idle (a static image needs no video).
+        var effectiveThrottleMs = now - _lastInteractionMs < InteractionWindowMs ? EncodeThrottleMs
+            : !_freezePose ? 33
+            : IdleEncodeThrottleMs;
         if (now - _lastEncodeTickMs >= effectiveThrottleMs)
         {
             for (var i = 0; i < WebStagingBufferCount; i++)

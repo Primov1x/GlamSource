@@ -67,10 +67,11 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 .slot img{width:32px;height:32px;border-radius:5px}
 .slot .g{color:var(--success);font-size:12px}
 .slot .s{color:var(--muted);font-size:11px}
-/* aspect-ratio matches the render target (576x960) so the RT edge IS the canvas edge — a real
-   camera zoom that cuts the char does it at the viewport border like any 3D product viewer,
-   never at an invisible wall in the middle of the picture (that was the "box" feeling). */
-#preview3d{background:transparent;border:0;margin:0 auto 14px;cursor:grab;display:none;height:70vh;aspect-ratio:576/960;object-fit:contain}
+/* aspect-ratio = the WORLD aspect the server camera renders (PreviewRenderer.PreviewAspect, 0.8 —
+   wider than the RT's native 0.6 for more side room, "bei Emotes sind Teile abgehakt"), with
+   object-fit:fill stretching the horizontally-squeezed pixels back out. RT edge = canvas edge
+   stays true, so clipping still happens at the viewport border like any 3D product viewer. */
+#preview3d{background:transparent;border:0;margin:0 auto 14px;cursor:grab;display:none;height:70vh;aspect-ratio:0.8;object-fit:fill}
 #preview3d.active{cursor:grabbing}
 #preview3d.panning{cursor:ns-resize}
 #p3dspin.active{color:var(--accent);font-weight:600}

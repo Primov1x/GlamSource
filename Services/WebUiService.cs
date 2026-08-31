@@ -452,8 +452,12 @@ public sealed class WebUiService : IDisposable
             // Emote sheet: ActionTimeline[0] = the standing loop timeline. No unlock filter on
             // purpose — the timeline layer has no ownership gate, unowned emotes render fine
             // (purely client-side, see PreviewRenderer's emote comment).
+            // EmoteMode != 0 = persistent stateful poses (sit/ground-sit/doze/pose variants) —
+            // exactly the "static" set; one-shot emotes and dances carry mode 0 and are excluded
+            // ("nimm alle raus, nur welche die statisch sind, keine Tänze")
             var emotes = Plugin.DataManager.GetExcelSheet<Lumina.Excel.Sheets.Emote>()!
-                .Where(e => e.ActionTimeline.Count > 0 && e.ActionTimeline[0].RowId != 0 && !string.IsNullOrEmpty(e.Name.ExtractText()))
+                .Where(e => e.EmoteMode.RowId != 0
+                    && e.ActionTimeline.Count > 0 && e.ActionTimeline[0].RowId != 0 && !string.IsNullOrEmpty(e.Name.ExtractText()))
                 .Select(e => new { name = e.Name.ExtractText(), timelineId = e.ActionTimeline[0].RowId })
                 .OrderBy(e => e.name)
                 .ToArray();
