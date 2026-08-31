@@ -1204,6 +1204,11 @@ public sealed unsafe class PreviewRenderer : IDisposable
                 var data = bmp.LockBits(rect, System.Drawing.Imaging.ImageLockMode.ReadWrite, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
                 var basePtr = (byte*)data.Scan0;
                 var stride = data.Stride;
+                // backdrop bool per pixel, kept for the erode pass below — reuses the flood-fill
+                // path's scratch array (never both active: one encode at a time, different modes)
+                if (_chromaVisited == null || _chromaVisited.Length != width * height)
+                    _chromaVisited = new bool[width * height];
+                var isBackdrop = _chromaVisited;
                 for (var y = 0; y < height; y++)
                 {
                     // nearest-neighbor into the depth buffer if resolutions differ
@@ -1212,8 +1217,24 @@ public sealed unsafe class PreviewRenderer : IDisposable
                     for (var x = 0; x < width; x++)
                     {
                         var dx = depthW == width ? x : x * depthW / width;
-                        if (System.Math.Abs(ReadDepth(dx, dy) - reference) <= eps)
-                            row[x * 4 + 3] = 0; // backdrop — depth untouched by any geometry
+                        var backdrop = System.Math.Abs(ReadDepth(dx, dy) - reference) <= eps;
+                        isBackdrop[y * width + x] = backdrop;
+                        if (backdrop) row[x * 4 + 3] = 0; // depth untouched by any geometry
+                    }
+                }
+                // erode 1px: silhouette-edge pixels are antialiased blends of character AND backdrop
+                // color (a faint bright fringe on dark outfits) — kill any kept pixel that touches
+                // backdrop. 4-neighborhood, single pass, reads the UN-eroded mask so it can't chain.
+                for (var y = 0; y < height; y++)
+                {
+                    var row = basePtr + y * stride;
+                    for (var x = 0; x < width; x++)
+                    {
+                        var i2 = y * width + x;
+                        if (isBackdrop[i2]) continue;
+                        if ((x > 0 && isBackdrop[i2 - 1]) || (x < width - 1 && isBackdrop[i2 + 1])
+                            || (y > 0 && isBackdrop[i2 - width]) || (y < height - 1 && isBackdrop[i2 + width]))
+                            row[x * 4 + 3] = 0;
                     }
                 }
                 bmp.UnlockBits(data);
