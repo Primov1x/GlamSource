@@ -397,6 +397,39 @@ public sealed unsafe class PreviewRenderer : IDisposable
     /// <summary>Debug: fire a real AgentTryon.TryOn (WILL open the Fitting Room briefly). Framework thread.</summary>
     public void DebugTryOn(uint itemId) => AgentTryon.TryOn(0, itemId, 0, 0, 0, false);
 
+    // Silent try-on fill — the weapon breakthrough. vf10 renders weapons ONLY from the agent's
+    // internal TryOnItems array (upstream FFXIVClientStructs documents it at 0x370: 14 entries of
+    // 0x1C — our own live memory-diff against a real TryOn() confirmed the layout byte-for-byte:
+    // +0xC Id, +0x14 IconId). clib's TryOnSilent recipe: clear all entries to the 0xE sentinel,
+    // fill entry 0, set TryOnItemsChanged (0x364) and DisplayGear (0x367) — NO TryOn() call, no
+    // Fitting Room window. Raw offsets because the shipped struct predates the upstream update.
+    public void SetAgentTryOnWeapon(uint itemId, byte equipSlotCategory, byte stain0, byte stain1, uint iconId)
+    {
+        var agent = AgentTryon.Instance();
+        if (agent == null) return;
+        var b = (byte*)agent;
+        for (var i = 0; i < 14; i++)
+        {
+            var e = b + 0x370 + i * 0x1C;
+            new Span<byte>(e, 0x1C).Clear();
+            e[0] = 0xE; // empty-state sentinel (clib)
+        }
+        if (itemId != 0)
+        {
+            var e0 = b + 0x370;
+            e0[0] = equipSlotCategory;
+            e0[2] = stain0;
+            e0[3] = stain1;
+            e0[8] = (byte)(stain0 != 0 ? 1 : 0); // HasStain0
+            e0[9] = (byte)(stain1 != 0 ? 1 : 0); // HasStain1
+            *(uint*)(e0 + 0x0C) = itemId;
+            *(uint*)(e0 + 0x14) = iconId;
+        }
+        b[0x364] = 1; // TryOnItemsChanged
+        b[0x365] = 1; // GearItemsChanged — refresh the own-gear list too
+        b[0x367] = 1; // DisplayGear — render the character's own equipment alongside
+    }
+
     /// <summary>Full weapon-pipeline state dump for live diagnosis. Framework thread.</summary>
     public string GetWeaponStateDump()
     {

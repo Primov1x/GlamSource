@@ -543,11 +543,30 @@ public sealed class WebUiService : IDisposable
             && bool.TryParse(query["on"], out var weaponOn))
         {
             _shell.PreviewWindow?.Renderer.NotifyInteraction();
-            // (an agent-TryOn attempt lived here briefly — it opened the REAL Fitting Room window;
-            // weapons now load via DrawData.LoadWeapon on the clone, see PreviewRenderer path #5)
-            _framework.RunOnFrameworkThread(() => _shell.PreviewWindow?.Renderer.SetWeaponDrawn(weaponOn));
-            _log.Information($"[WebUi] preview3d weapon shown: {weaponOn}");
-            return Json(new { ok = true, weapon = weaponOn });
+            // silent try-on: fill the agent's internal TryOnItems with the current mainhand —
+            // the ONLY channel vf10 renders weapons from (see SetAgentTryOnWeapon)
+            uint mhId = 0, mhIcon = 0; byte mhCat = 0, mhS0 = 0, mhS1 = 0;
+            if (weaponOn)
+            {
+                var mh = _shell.DebugSnapshot.FirstOrDefault(s => s.Slot == EquipmentSlotType.MainHand);
+                if (mh != null)
+                {
+                    mhId = mh.GlamourItemId ?? mh.ActualItemId;
+                    mhS0 = mh.Stain0; mhS1 = mh.Stain1;
+                    var row = _detail.GameData.GetExcelSheet<Lumina.Excel.Sheets.Item>()?.GetRowOrDefault(mhId);
+                    mhCat = (byte)(row?.EquipSlotCategory.RowId ?? 1);
+                    mhIcon = row?.Icon ?? 0;
+                }
+            }
+            _framework.RunOnFrameworkThread(() =>
+            {
+                var r = _shell.PreviewWindow?.Renderer;
+                if (r == null) return;
+                r.SetAgentTryOnWeapon(weaponOn ? mhId : 0, mhCat, mhS0, mhS1, mhIcon);
+                r.SetWeaponDrawn(weaponOn);
+            });
+            _log.Information($"[WebUi] preview3d weapon shown: {weaponOn} (silent tryon item {mhId}, cat {mhCat})");
+            return Json(new { ok = true, weapon = weaponOn, mainHandId = mhId });
         }
 
         if (method == "POST" && path == "/api/action/preview3d/ortho" && _configuration.WebUiLive3DPreview
