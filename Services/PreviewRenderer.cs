@@ -613,10 +613,9 @@ public sealed unsafe class PreviewRenderer : IDisposable
         // plane — tune based on feel, same as before.
         var target = Math.Clamp(zoom, 0.5f, 80.0f);
         var current = _zoom;
-        // smart framing: refuse to zoom IN while the char already touches the RT border — going
-        // closer would clip him at the invisible edge ("nie in einer Box wirken"). Zooming OUT
-        // always allowed.
-        if (target > current && _charTouchesBorder) return;
+        // (an earlier hard "no zoom-in while border touched" gate lived here — killed zooming
+        // entirely because the default framing already touches the border; the gentle ease-out
+        // in Tick() is the whole smart-framing mechanism now)
         _zoom = target;
         if (!_initialized || target == current) return;
 
@@ -777,8 +776,12 @@ public sealed unsafe class PreviewRenderer : IDisposable
                     var d = isFloat ? *(float*)p : (p[0] | (p[1] << 8) | (p[2] << 16)) / 16777215f;
                     return d != 0f && d != 1f; // not the clear value = geometry = character
                 }
+                // top + sides only — the BOTTOM edge is always touched (feet stand on the frame's
+                // lower border even at default framing), counting it froze the zoom entirely
+                // ("kann 0 zoomen, springt instant zurück"). Real mid-picture clipping happens at
+                // the sides (arms mid-rotation) and top (head).
                 for (var x = inset; x < depthW - inset && !touch; x += 2)
-                    touch = CharAt(x, inset) || CharAt(x, depthH - 1 - inset);
+                    touch = CharAt(x, inset);
                 for (var y = inset; y < depthH - inset && !touch; y += 2)
                     touch = CharAt(inset, y) || CharAt(depthW - 1 - inset, y);
             }
