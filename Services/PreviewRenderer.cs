@@ -1132,12 +1132,15 @@ public sealed unsafe class PreviewRenderer : IDisposable
         // tool (WEAPON_SLOT_SYSTEM, per clib: "used for crafter's tool"). Correct rule: show a
         // slot iff it actually carries a model — an unequipped slot's Id is 0 regardless of name.
         wch->DrawData.IsWeaponHidden = false;
+        // HideWeapons(false) unhides ALL THREE slots unconditionally — live-verified it stomped
+        // the empty System slot's IsHidden back to false right after we'd set it true (id=0 slot
+        // showing anyway, "die waffe ist da 3x"). Our per-model-id filter has to run AFTER it.
+        wch->DrawData.HideWeapons(false);
         for (var i = 0; i < 3; i++)
         {
             ref var slotData = ref wch->DrawData.Weapon((DrawDataContainer.WeaponSlot)i);
             slotData.IsHidden = slotData.ModelId.Id == 0;
         }
-        wch->DrawData.HideWeapons(false);
     }
 
     private int _weaponVerifyCountdown; // diagnostic: check the draw objects a second after loading
