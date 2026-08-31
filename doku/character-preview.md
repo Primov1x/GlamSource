@@ -1,6 +1,6 @@
 # Character-Tab Web-Preview — Stand & Doku
 
-Stand: 0.0.0.176. Betrifft die Web-UI (`Services/WebUiPage.cs`/`WebUiService.cs`) und die
+Stand: 0.0.0.177. Betrifft die Web-UI (`Services/WebUiPage.cs`/`WebUiService.cs`) und die
 CharaView-Anbindung (`Services/PreviewRenderer.cs`, `Windows/GlamourPreviewWindow.cs`,
 `Windows/GlamSourceShellWindow.cs`). Für den Release-Prozess selbst siehe [`../RELEASING.md`](../RELEASING.md).
 

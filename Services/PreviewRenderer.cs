@@ -503,6 +503,11 @@ public sealed unsafe class PreviewRenderer : IDisposable
         // ponytail: re-applied every tick — CopyFromCharacter above mirrors the live character's
         // ModelData wholesale, which stomps this flag back to "drawn" each frame otherwise.
         agent->CharaView.ToggleDrawWeapon(_weaponDrawn);
+        // ToggleDrawWeapon alone wasn't enough: in combat the live char's drawn weapon still
+        // showed up in the preview (reported live). HideWeapon is the real visibility flag on
+        // TryonCharaView (separate from the drawn/sheathed stance) — keep the preview weaponless
+        // unless explicitly requested.
+        agent->CharaView.HideWeapon = !_weaponDrawn;
 
         var ch = agent->CharaView.GetCharacter();
         if (ch == null) return;
