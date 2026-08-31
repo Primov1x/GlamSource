@@ -378,7 +378,7 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
         // (what the renderer actually shows as worn gear) permanently stale after a class or gear
         // switch: old class' outfit, missing feet, missing weapon (all reported live). Checked
         // twice a second via a cheap hash, skipped while a target is being viewed.
-        if (Environment.TickCount64 - _lastEquipSeedCheckMs > 500 && _targetManager.Target == null)
+        if (Environment.TickCount64 - _lastEquipSeedCheckMs > 3000 && _targetManager.Target == null)
         {
             _lastEquipSeedCheckMs = Environment.TickCount64;
             try

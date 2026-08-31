@@ -1353,7 +1353,11 @@ public sealed unsafe class PreviewRenderer : IDisposable
         // three-tier rate: full during interaction; ~30fps while the pose is UNFROZEN (a live
         // animation at 1fps is a slideshow, and encode is ~1ms since the fast PNG writer — cheap);
         // 1fps only when frozen AND idle (a static image needs no video).
-        var effectiveThrottleMs = now - _lastInteractionMs < InteractionWindowMs ? EncodeThrottleMs
+        // transparent (PNG) frames are 10x the bytes of JPEG — pushing 60 of them per second into
+        // Browsingway's Chromium made the OVERLAY itself stutter ("kann kaum den Viewer bewegen");
+        // 30fps is indistinguishable for a rotate gesture and halves the decode load
+        var fullRateMs = _transparentBackdropEnabled ? 33L : EncodeThrottleMs;
+        var effectiveThrottleMs = now - _lastInteractionMs < InteractionWindowMs ? fullRateMs
             : !_freezePose ? 33
             : IdleEncodeThrottleMs;
         if (now - _lastEncodeTickMs >= effectiveThrottleMs)

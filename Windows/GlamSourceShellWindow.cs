@@ -555,7 +555,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
                 MaybePushRecentForTarget(currentTarget, live);
                 _snapshot = live ?? _snapshot;
             }
-            else if (Environment.TickCount64 - _lastSelfSnapshotMs > 500)
+            else if (Environment.TickCount64 - _lastSelfSnapshotMs > 2000)
             {
                 // no target — the slot list follows SELF, but throttled to 2x/s: GetSelfEquipment
                 // goes through Glamourer IPC, and calling it EVERY framework tick halved the
