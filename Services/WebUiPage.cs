@@ -67,7 +67,10 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 .slot img{width:32px;height:32px;border-radius:5px}
 .slot .g{color:var(--success);font-size:12px}
 .slot .s{color:var(--muted);font-size:11px}
-#preview3d{background:transparent;border:0;margin-bottom:14px;cursor:grab;display:none;width:100%;height:70vh;object-fit:contain}
+/* aspect-ratio matches the render target (576x960) so the RT edge IS the canvas edge — a real
+   camera zoom that cuts the char does it at the viewport border like any 3D product viewer,
+   never at an invisible wall in the middle of the picture (that was the "box" feeling). */
+#preview3d{background:transparent;border:0;margin:0 auto 14px;cursor:grab;display:none;height:70vh;aspect-ratio:576/960;object-fit:contain}
 /* transparent mode: no special background — the spotlight behind the char is drawn INTO the
    canvas under the same zoom/pan transform (see p3dRedraw), so it moves and scales WITH the char.
    A fixed CSS glow (tried) reads as a frame again the moment the char is dragged off-center. */
@@ -276,27 +279,21 @@ async function loadPreview3DDebug(){
   catch(e){ pre.textContent='Fehler: '+e }
 }
 
-// Digital viewport ("Box"-Fix): the game camera stays at its default wide framing so the character
-// is ALWAYS fully inside the render target — no more clipping at the target's invisible edges when
-// zooming/panning ("char ist in einer box"). Zoom (wheel, cursor-centered) and pan (right-drag)
-// are a pure canvas transform on the latest received frame: zero server round-trips, works at full
-// smoothness even while the idle throttle has the stream at 1fps. Rotate stays server-side (the
-// camera really orbits). Trade-off: heavy zoom magnifies 576x960 source pixels (soft image) — a
-// sharper source needs the native render target enlarged (researched, separate step if wanted).
-let p3dBitmap=null,p3dScale=1,p3dOx=0,p3dOy=0;
+// Real-camera 3D viewer ("wie ein 3D-Produkt: char fest, Kamera bewegt sich"): rotate, zoom AND
+// pan all drive the GAME camera server-side — perspective actually changes and the image stays
+// sharp at every zoom (renders at native RT resolution; the earlier digital canvas-zoom just
+// magnified pixels, "unscharf wie sau"). The "box" feeling is handled in CSS instead: the canvas
+// aspect matches the render target, so any clipping happens at the viewport border like in every
+// real 3D product viewer (see #preview3d's comment).
+let p3dBitmap=null;
 function p3dRedraw(){
   const canvas=$('#preview3d');
   const ctx=canvas.getContext('2d');
-  ctx.setTransform(1,0,0,1,0,0);
   // clear — a transparent PNG frame would otherwise leave the previous frame's pixels showing
   ctx.clearRect(0,0,canvas.width,canvas.height);
   if(!p3dBitmap)return;
-  ctx.imageSmoothingEnabled=true;
-  ctx.imageSmoothingQuality='high'; // best browser-side upscale for the digital zoom
-  ctx.setTransform(p3dScale,0,0,p3dScale,p3dOx,p3dOy);
   if(document.body.classList.contains('p3dtransparent')){
-    // spotlight lives in bitmap space — same transform as the char, so it follows every zoom/pan
-    // ("frei beweglich ohne Box-Gefühl": nothing on screen stays fixed relative to the viewport)
+    // soft spotlight behind the char (readability for dark outfits on the dark UI, no hard edges)
     const bw=p3dBitmap.width,bh=p3dBitmap.height;
     const g=ctx.createRadialGradient(bw/2,bh*0.46,0,bw/2,bh*0.46,bh*0.5);
     g.addColorStop(0,'rgba(255,255,255,.14)');
@@ -306,9 +303,8 @@ function p3dRedraw(){
     ctx.fillRect(bw/2-bh*0.5,bh*0.46-bh*0.5,bh,bh);
   }
   ctx.drawImage(p3dBitmap,0,0);
-  ctx.setTransform(1,0,0,1,0,0);
 }
-function p3dResetView(){p3dScale=1;p3dOx=0;p3dOy=0;p3dRedraw()}
+function p3dResetView(){p3dRedraw()}
 
 (function initPreview3DDrag(){
   const canvas=$('#preview3d');
@@ -325,27 +321,15 @@ function p3dResetView(){p3dScale=1;p3dOx=0;p3dOy=0;p3dRedraw()}
     if(!p3dDragging&&!p3dPanning)return;
     const dx=e.clientX-p3dLastX, dy=e.clientY-p3dLastY;
     p3dLastX=e.clientX;p3dLastY=e.clientY;
-    if(p3dPanning){
-      // CSS px to canvas px (canvas is object-fit-scaled in the page)
-      const rect=canvas.getBoundingClientRect();
-      const k=canvas.width/rect.width;
-      p3dOx+=dx*k;p3dOy+=dy*k;
-      p3dRedraw();
-    } else post(`/api/action/preview3d/rotate?dx=${(dx*0.75).toFixed(2)}&dy=${(dy*0.75).toFixed(2)}`);
+    if(p3dPanning) post(`/api/action/preview3d/pan?dx=${(dx*0.75).toFixed(2)}&dy=${(dy*0.75).toFixed(2)}`);
+    else post(`/api/action/preview3d/rotate?dx=${(dx*0.75).toFixed(2)}&dy=${(dy*0.75).toFixed(2)}`);
   });
   canvas.addEventListener('wheel',e=>{
     e.preventDefault();
     const rect=canvas.getBoundingClientRect();
-    // cursor position in canvas pixels — zoom around it so the point under the mouse stays put
-    const cx=(e.clientX-rect.left)*canvas.width/rect.width;
-    const cy=(e.clientY-rect.top)*canvas.height/rect.height;
-    const factor=Math.exp(-e.deltaY*0.002);
-    const next=Math.min(16,Math.max(0.5,p3dScale*factor));
-    const f=next/p3dScale;
-    p3dOx=cx-f*(cx-p3dOx);
-    p3dOy=cy-f*(cy-p3dOy);
-    p3dScale=next;
-    p3dRedraw();
+    const px=((e.clientX-rect.left)/rect.width*2-1).toFixed(3); // -1..1, canvas-center-relative
+    const py=((e.clientY-rect.top)/rect.height*2-1).toFixed(3);
+    post(`/api/action/preview3d/zoomat?delta=${(-e.deltaY*0.002).toFixed(3)}&px=${px}&py=${py}`);
   },{passive:false});
 })();
 
