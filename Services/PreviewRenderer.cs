@@ -817,6 +817,10 @@ public sealed unsafe class PreviewRenderer : IDisposable
     public void SetWeaponDrawn(bool drawn)
     {
         _weaponDrawn = drawn;
+        // poses are mutually exclusive ("besser wäre: Reset + Waffe zeigen"): drawing the weapon
+        // mid-emote played the draw animation INSIDE the emote pose — clear the emote back to
+        // idle first, the stance change then runs from a clean base
+        if (_emoteTimelineId != 0) { _emoteClearPending = true; _emoteTimelineId = 0; _emotePlayPending = false; }
         ThawForAnimation();
     }
 
@@ -844,6 +848,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
         if (timelineId == 0 && _emoteTimelineId != 0) _emoteClearPending = true;
         _emoteTimelineId = timelineId;
         _emotePlayPending = timelineId != 0;
+        _weaponDrawn = false; // mutually exclusive with the weapon stance, same reason as above
         ThawForAnimation();
     }
 

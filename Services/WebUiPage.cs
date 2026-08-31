@@ -186,6 +186,7 @@ async function loadEmoteList(){
 
 async function setEmote(id){
   await post(`/api/action/preview3d/emote?timelineId=${id}`);
+  $('#p3dweapon').classList.remove('active'); // server sheathes on emote select — mirror it
 }
 function stopPreview3D(){
   if(p3dAbort){p3dAbort.abort();p3dAbort=null}
@@ -215,6 +216,7 @@ async function toggleWeapon(){
   const on=!btn.classList.contains('active');
   await post(`/api/action/preview3d/weapon?on=${on}`);
   btn.classList.toggle('active',on);
+  $('#p3demote').value='0'; // server clears the emote when the weapon toggles — mirror it
 }
 
 async function toggleOrtho(){
