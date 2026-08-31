@@ -906,6 +906,18 @@ public sealed unsafe class PreviewRenderer : IDisposable
         SetWeaponDrawn(on);
     }
 
+    /// <summary>Feed a weapon through the AGENT's try-on channel — the way the real Fitting Room
+    /// shows weapons: TryonCharaView.DoUpdate's own struct doc says Update "fetches data from
+    /// agent too", and weapons ignored every ModelData-side path we tried (raw writes,
+    /// SetItemSlotData, SetModelData — all verified dead for weapons live). TryOn() without Show()
+    /// stores the item agent-side without opening the in-game addon (the warmup has done exactly
+    /// this since day one, no window ever appeared). Framework thread.</summary>
+    public void TryOnWeapon(uint itemId)
+    {
+        if (itemId == 0) return;
+        AgentTryon.TryOn(0, itemId, 0, 0, 0, false);
+    }
+
     /// <summary>Push the CharaView's OWN ModelData through the engine's SetModelData member —
     /// the missing link for weapons: raw byte writes into ModelData (CopyFromCharacter, the raw
     /// slot writers) update gear via Update()'s diffing, but WEAPON draw objects only ever spawn
