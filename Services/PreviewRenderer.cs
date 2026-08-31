@@ -927,7 +927,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
         for (var i = 0; i < 3; i++)
         {
             var model = src->DrawData.Weapon((DrawDataContainer.WeaponSlot)i).ModelId;
-            clone->DrawData.LoadWeapon((DrawDataContainer.WeaponSlot)i, model, 0, 0, 0, 0);
+            clone->DrawData.LoadWeapon((DrawDataContainer.WeaponSlot)i, model, 0, 0, 0, 0, false);
         }
     }
 
