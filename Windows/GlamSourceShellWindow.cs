@@ -554,10 +554,11 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
                 MaybePushRecentForTarget(currentTarget, live);
                 _snapshot = live ?? _snapshot;
             }
-            else if (_snapshot.Count == 0)
+            else
             {
-                // no target and nothing captured yet — the preview shows SELF, so the slot list
-                // should too (web UI showed "No snapshot" beside a fully rendered character)
+                // no target — the preview shows SELF, so the slot list follows self EVERY frame
+                // (the first version only filled when empty: after a class/glam change the list
+                // stayed permanently stale, reported live)
                 var self = _glamour.GetSelfEquipment();
                 if (self.Count > 0) _snapshot = self;
             }

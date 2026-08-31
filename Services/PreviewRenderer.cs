@@ -672,8 +672,18 @@ public sealed unsafe class PreviewRenderer : IDisposable
         // hijack triggers auto-reinit, and the freeze countdown then fired while the rebuilt clone
         // was STILL LOADING its model — snapshot froze the load/T-pose permanently. The countdown
         // only ticks while the CharaView itself says the character finished loading.
-        if (_autoFreezeCountdown > 0 && agent->CharaView.CharacterLoaded
-            && --_autoFreezeCountdown == 0 && !_freezePose) SetFreezePose(true);
+        // countdown ALWAYS ticks — gating the tick itself on CharacterLoaded deadlocked the whole
+        // pipeline after a class switch (loaded stays false while the model rebuilds, countdown
+        // freezes, and the thaw-settle copy pause waits on the countdown => copies paused forever,
+        // stale glam, invisible weapons; reported live). Only the freeze SNAPSHOT still waits for
+        // a loaded character (the T-pose guard); if not loaded yet, re-arm and try again shortly.
+        if (_autoFreezeCountdown > 0 && --_autoFreezeCountdown == 0 && !_freezePose)
+        {
+            // snapshot only when the model is loaded AND the post-init idle reset already played
+            // (otherwise the reset button still froze a T-pose, reported live) — else retry soon
+            if (agent->CharaView.CharacterLoaded && !_pendingIdleReset) SetFreezePose(true);
+            else _autoFreezeCountdown = 30;
+        }
 
         // freeze: refresh the clone's skeleton pointer for the UpdateBonePhysics detour (which runs
         // in the game's render task, where the pose is actually computed — writing bones HERE was
