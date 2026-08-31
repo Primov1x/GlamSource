@@ -378,7 +378,10 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
         // (what the renderer actually shows as worn gear) permanently stale after a class or gear
         // switch: old class' outfit, missing feet, missing weapon (all reported live). Checked
         // twice a second via a cheap hash, skipped while a target is being viewed.
-        if (Environment.TickCount64 - _lastEquipSeedCheckMs > 3000 && _targetManager.Target == null)
+        // IsInitialized gate: without it the first hash check could run BEFORE the renderer was
+        // ready — the seed wrote into nothing, the hash got stored anyway, and with unchanged
+        // gear no reseed ever fired again (live: slot list fine, clone permanently naked)
+        if (_renderer.IsInitialized && Environment.TickCount64 - _lastEquipSeedCheckMs > 3000 && _targetManager.Target == null)
         {
             _lastEquipSeedCheckMs = Environment.TickCount64;
             try
