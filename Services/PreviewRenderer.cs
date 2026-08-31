@@ -753,6 +753,21 @@ public sealed unsafe class PreviewRenderer : IDisposable
             var wch = agent->CharaView.GetCharacter();
             if (wch != null)
             {
+                // Weapon path #13 (Brio's ActorSpawnService mechanism, never tried here): run the
+                // NATIVE full character-setup copy on the clone. Brio-spawned client objects render
+                // weapons because CharacterSetup.CopyFromCharacter builds the weapon draw objects
+                // through the real setup pipeline — not the UI-level ModelData copy CharaView uses.
+                // One-shot on weapon-mode activation; the per-tick flag clears below keep it shown.
+                if (_weaponSetupPending)
+                {
+                    var srcAddr = _sourceProvider?.Invoke() ?? nint.Zero;
+                    if (srcAddr != nint.Zero)
+                    {
+                        wch->CharacterSetup.CopyFromCharacter((Character*)srcAddr, CharacterSetupContainer.CopyFlags.None);
+                        _weaponSetupPending = false;
+                        _log.Info("[PreviewRenderer] weapon path #13: CharacterSetup.CopyFromCharacter applied to clone");
+                    }
+                }
                 // the ROOT flags (state-dump proven: hidden=True, ddWeaponHidden=True while the
                 // model+draw object were long since correct): the clone's DrawData hidden flags
                 // stay set and the engine re-derives invisibility from them every frame, overruling
@@ -1102,6 +1117,9 @@ public sealed unsafe class PreviewRenderer : IDisposable
     // SetModelData (weapons ignored), and agent TryOn() opened the real Fitting Room window.
     private bool _weaponLoadPending;
 
+    // weapon path #13: one-shot native CharacterSetup copy onto the clone (Brio spawn mechanism)
+    private bool _weaponSetupPending;
+
     private int _weaponVerifyCountdown; // diagnostic: check the draw objects a second after loading
 
     private void LoadWeaponsOntoClone(Character* clone)
@@ -1135,6 +1153,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
         // mid-emote played the draw animation INSIDE the emote pose — clear the emote back to
         // idle first, the stance change then runs from a clean base
         if (_emoteTimelineId != 0) { _emoteClearPending = true; _emoteTimelineId = 0; _emotePlayPending = false; }
+        if (drawn) _weaponSetupPending = true; // weapon path #13, applied next Tick
         // NOTE: the LoadWeapon-on-clone path and the DoUpdate shutdown are gone — they were
         // compensations built while a per-tick DoUpdate=true bug (fixed in 234) wiped _items every
         // frame. With _items surviving, the weapon is already IN _items slot 0 via the gear seed;
