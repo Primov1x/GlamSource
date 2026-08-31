@@ -683,11 +683,19 @@ public sealed unsafe class PreviewRenderer : IDisposable
         {
             var wch = agent->CharaView.GetCharacter();
             if (wch != null)
+            {
+                // the ROOT flags (state-dump proven: hidden=True, ddWeaponHidden=True while the
+                // model+draw object were long since correct): the clone's DrawData hidden flags
+                // stay set and the engine re-derives invisibility from them every frame, overruling
+                // a bare IsVisible force. Clear container + per-slot + draw object, every tick.
+                wch->DrawData.IsWeaponHidden = false;
                 for (var i = 0; i < 3; i++)
                 {
-                    var wd = wch->DrawData.Weapon((DrawDataContainer.WeaponSlot)i).DrawObject;
-                    if (wd != null) wd->IsVisible = true;
+                    ref var slotData = ref wch->DrawData.Weapon((DrawDataContainer.WeaponSlot)i);
+                    slotData.IsHidden = false;
+                    if (slotData.DrawObject != null) slotData.DrawObject->IsVisible = true;
                 }
+            }
         }
 
         var ch = agent->CharaView.GetCharacter();
