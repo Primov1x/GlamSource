@@ -458,7 +458,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
             for (var i = 0; i < 3; i++)
             {
                 var dd = ch->DrawData.Weapon((DrawDataContainer.WeaponSlot)i);
-                sb.Append($"clone.dd.weapon{i}({(DrawDataContainer.WeaponSlot)i}): id={dd.ModelId.Id} type={dd.ModelId.Type} drawObj={(nint)dd.DrawObject:X} vis={(dd.DrawObject != null ? dd.DrawObject->IsVisible : false)} hidden={dd.IsHidden} | ");
+                sb.Append($"clone.dd.weapon{i}({(DrawDataContainer.WeaponSlot)i}): id={dd.ModelId.Id} type={dd.ModelId.Type} drawObj={(nint)dd.DrawObject:X} weaponPtr={(nint)dd.Weapon:X} vis={(dd.DrawObject != null ? dd.DrawObject->IsVisible : false)} hidden={dd.IsHidden} state=0x{dd.State:X2} | ");
             }
             // 4th, never-touched slot: DrawDataContainer._unkWeaponData @ 0x160 — checking whether
             // a residual/duplicate draw object lives here, outside the 3 slots we manage.
