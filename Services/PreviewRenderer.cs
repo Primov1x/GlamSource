@@ -559,13 +559,34 @@ public sealed unsafe class PreviewRenderer : IDisposable
             }
         }
 
-        // Weapon-only showcase, done BY HAND: zero the 10 gear slots after every copy path above
-        // ran (they'd restore the outfit otherwise), weapons untouched. The native
-        // HideOtherEquipment flag was dead on our INACTIVE agent — it's consumed by the active
-        // Fitting Room flow, the full model kept rendering (reported live).
-        if (_weaponOnly)
-            for (var i = 0; i < 10; i++)
-                SetCharaViewEquipmentSlotRaw((byte)i, 0);
+        // Weapon-only showcase v3 ("es soll NUR die Waffe anzeigen"): hide the character's BODY
+        // draw object entirely, keep the weapons' own draw objects visible — they're separate
+        // scene objects attached to the (now invisible, still animating) skeleton, so a drawn
+        // weapon floats in mid-air where the hand is. Gear-slot zeroing (v2) still showed the
+        // naked body; the native flag (v1) did nothing on an inactive agent. Re-applied every
+        // tick — the engine may reset visibility.
+        {
+            var cloneCh = agent->CharaView.GetCharacter();
+            var bodyDraw = cloneCh != null ? cloneCh->GameObject.DrawObject : null;
+            if (bodyDraw != null)
+            {
+                if (_weaponOnly)
+                {
+                    bodyDraw->IsVisible = false;
+                    for (var i = 0; i < 3; i++)
+                    {
+                        var w = cloneCh->DrawData.Weapon((DrawDataContainer.WeaponSlot)i).DrawObject;
+                        if (w != null) w->IsVisible = true;
+                    }
+                    _weaponOnlyHidBody = true;
+                }
+                else if (_weaponOnlyHidBody)
+                {
+                    _weaponOnlyHidBody = false;
+                    bodyDraw->IsVisible = true;
+                }
+            }
+        }
 
         // ponytail: re-applied every tick — CopyFromCharacter above mirrors the live character's
         // ModelData wholesale, which stomps this flag back to "drawn" each frame otherwise.
@@ -865,6 +886,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
     // item" checkbox drives the same field). The body itself stays — CharaView always renders a
     // character — but bare-skinned with just the weapon it reads as a weapon showcase.
     private bool _weaponOnly;
+    private bool _weaponOnlyHidBody; // restore flag for the body draw object's visibility
 
     /// <summary>Weapon showcase mode: weapon DRAWN (glow/effects only show drawn — sheathed rest
     /// position was rejected live), all other gear hidden. Framework thread.</summary>
