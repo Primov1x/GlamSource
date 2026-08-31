@@ -606,6 +606,12 @@ public sealed class WebUiService : IDisposable
             return Json(new { ok = true });
         }
 
+        if (method == "GET" && path == "/api/debug/weaponstate")
+        {
+            var dump = _framework.RunOnFrameworkThread(() => _shell.PreviewWindow?.Renderer.GetWeaponStateDump() ?? "no renderer").GetAwaiter().GetResult();
+            return Json(new { dump });
+        }
+
         if (method == "POST" && path == "/api/debug/seed")
         {
             var report = _framework.RunOnFrameworkThread(() => _shell.PreviewWindow?.SeedSelfEquipmentOnceProbe() ?? "no preview window").GetAwaiter().GetResult();

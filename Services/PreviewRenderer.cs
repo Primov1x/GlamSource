@@ -376,6 +376,29 @@ public sealed unsafe class PreviewRenderer : IDisposable
         return $"{sys}={(kill ? "KILLED" : "running")}";
     }
 
+    /// <summary>Full weapon-pipeline state dump for live diagnosis. Framework thread.</summary>
+    public string GetWeaponStateDump()
+    {
+        if (!_initialized) return "not initialized";
+        var agent = AgentTryon.Instance();
+        if (agent == null) return "no agent";
+        ref var md = ref agent->CharaView.ModelData;
+        var w0 = *(WeaponModelId*)((byte*)Unsafe.AsPointer(ref md) + 0x70); // _weaponModelIds[0], internal field
+        var ch = agent->CharaView.GetCharacter();
+        var sb = new System.Text.StringBuilder();
+        sb.Append($"mode: weaponDrawn={_weaponDrawn} weaponOnly={_weaponOnly} | ");
+        sb.Append($"flags: HideWeapon={agent->CharaView.HideWeapon} DrawWeapon={agent->CharaView.DrawWeapon} DoUpdate={agent->CharaView.DoUpdate} md.WeaponHidden={md.WeaponHidden} | ");
+        sb.Append($"md.weapon0: id={w0.Id} type={w0.Type} variant={w0.Variant} | ");
+        if (ch != null)
+        {
+            var dd = ch->DrawData.Weapon(DrawDataContainer.WeaponSlot.MainHand);
+            sb.Append($"clone.dd.weapon0: id={dd.ModelId.Id} type={dd.ModelId.Type} drawObj={(nint)dd.DrawObject:X} vis={(dd.DrawObject != null ? dd.DrawObject->IsVisible : false)} hidden={dd.IsHidden} | ");
+            sb.Append($"clone: ddWeaponHidden={ch->DrawData.IsWeaponHidden} mode={ch->Mode}");
+        }
+        else sb.Append("clone: null");
+        return sb.ToString();
+    }
+
     public string DebugKillState =>
         $"tick={_killTick} capture={_killCapture} depth={_killDepth} freezehook={_killFreezeHook} texhook={!(_createTexture2DHook?.IsEnabled ?? false)}";
 
