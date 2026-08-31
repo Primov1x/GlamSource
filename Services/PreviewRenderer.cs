@@ -652,11 +652,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
         // Update and wipe _items — the "permanently naked clone" (diagnosed via the force-seed
         // probe: 12 slots written, still naked). The engine's own default is left alone; weapon
         // mode keeps it off via the false-branch below.
-        if (weaponMode)
-        {
-            agent->CharaView.ModelData.WeaponHidden = false;
-            agent->CharaView.DoUpdate = false;
-        }
+        if (weaponMode) agent->CharaView.ModelData.WeaponHidden = false;
         // The weapon DrawObject spawns fine but its own IsVisible flag stays FALSE (log-verified:
         // drawObject=non-null, objVisible=False) — force it every tick while a weapon mode is on,
         // same as the weapon-only body-hide loop already did for its case.
@@ -1031,7 +1027,10 @@ public sealed unsafe class PreviewRenderer : IDisposable
         // mid-emote played the draw animation INSIDE the emote pose — clear the emote back to
         // idle first, the stance change then runs from a clean base
         if (_emoteTimelineId != 0) { _emoteClearPending = true; _emoteTimelineId = 0; _emotePlayPending = false; }
-        if (drawn) _weaponLoadPending = true; // LoadWeapon on the clone next Tick — see the path-#5 comment
+        // NOTE: the LoadWeapon-on-clone path and the DoUpdate shutdown are gone — they were
+        // compensations built while a per-tick DoUpdate=true bug (fixed in 234) wiped _items every
+        // frame. With _items surviving, the weapon is already IN _items slot 0 via the gear seed;
+        // showing it is just HideWeapon=false + the stance toggle.
         ThawForAnimation();
     }
 
