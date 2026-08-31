@@ -779,8 +779,20 @@ public sealed unsafe class PreviewRenderer : IDisposable
     // ponytail: neutral preview default — no weapon/tool in hand until the user opts in.
     private bool _weaponDrawn;
 
-    /// <summary>Show/hide the mainhand weapon model in the preview. Re-applied every Tick.</summary>
-    public void SetWeaponDrawn(bool drawn) => _weaponDrawn = drawn;
+    /// <summary>Show/hide the mainhand weapon model in the preview. Re-applied every Tick.
+    /// Also thaws a frozen pose for a moment: the drawn/sheathed switch plays a stance animation —
+    /// with the skeleton frozen the visible pose never changes (reported live: "Waffe zeigen macht
+    /// nix"). Unfreeze, let the stance settle (~1.5s via the auto-freeze countdown, which also
+    /// waits for CharacterLoaded), re-freeze in the new stance automatically.</summary>
+    public void SetWeaponDrawn(bool drawn)
+    {
+        _weaponDrawn = drawn;
+        if (_freezePose)
+        {
+            SetFreezePose(false);
+            _autoFreezeCountdown = 90;
+        }
+    }
 
     public void Reset()
     {
