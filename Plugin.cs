@@ -267,6 +267,10 @@ public class Plugin : IAsyncDalamudPlugin
     private int _bwWindowIdRetryFrames = 600;
     private const float BwOverlayWidth = 1190f;
     private const float BwOverlayHeight = 845f; // titlebar + nav + 660px panels + toolbar + paddings
+    private const float BwOverlayMinHeight = 42f; // just the titlebar
+    // set by the web UI's minimize button (WebUiService /api/action/overlay/minimize) — the page
+    // collapses its content AND the actual ImGui window shrinks to the title bar
+    public static volatile bool BwOverlayMinimized;
 
     private void PinBrowsingwayOverlaySize()
     {
@@ -290,7 +294,8 @@ public class Plugin : IAsyncDalamudPlugin
             catch (Exception ex) { _log.Warning($"[Plugin] Browsingway window id lookup failed: {ex.Message}"); }
             if (_bwWindowId == null) return;
         }
-        Dalamud.Bindings.ImGui.ImGui.SetWindowSize(_bwWindowId, new System.Numerics.Vector2(BwOverlayWidth, BwOverlayHeight), Dalamud.Bindings.ImGui.ImGuiCond.Always);
+        var h = BwOverlayMinimized ? BwOverlayMinHeight : BwOverlayHeight;
+        Dalamud.Bindings.ImGui.ImGui.SetWindowSize(_bwWindowId, new System.Numerics.Vector2(BwOverlayWidth, h), Dalamud.Bindings.ImGui.ImGuiCond.Always);
     }
     private string _lastRecentKey = "";
 

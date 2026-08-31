@@ -140,6 +140,7 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
     <button onclick="resetPreview3D()" title="Kompletter Neuaufbau — falls das Bild feststeckt oder was Falsches zeigt">Zurücksetzen</button>
     <span class="tbl">Pose</span>
     <button id="p3dweapon" onclick="toggleWeapon()" title="Waffe ziehen (Standard: aus) — für geglamte Waffen; setzt ein aktives Emote zurück">Waffe</button>
+    <button id="p3dweapononly" onclick="toggleWeaponOnly()" title="Waffen-Studio: Waffe gezogen, alle andere Ausrüstung ausgeblendet">Nur Waffe</button>
     <select id="p3demote" onchange="setEmote(this.value)" title="Statische Emote-Pose (rein clientseitig — auch nicht freigeschaltete funktionieren); steckt die Waffe weg"><option value="0">Emote: Idle</option></select>
     <a href="#" onclick="loadPreview3DDebug();return false" style="font-size:12px" title="fps, Fehler, Frame-Größe">Debug</a>
   </div>
@@ -173,6 +174,7 @@ function toggleMinimize(){
   uiMinimized=!uiMinimized;
   $('#app').style.display=uiMinimized?'none':'';
   $('#btn-min').textContent=uiMinimized?'▢':'–';
+  post('/api/action/overlay/minimize?on='+uiMinimized); // shrink the actual ImGui window too
   if(uiMinimized)stopPreview3D();
   else if(currentTab==='character'){loadSnapshot();startPreview3D()}
 }
@@ -237,6 +239,15 @@ async function toggleWeapon(){
   await post(`/api/action/preview3d/weapon?on=${on}`);
   btn.classList.toggle('active',on);
   $('#p3demote').value='0'; // server clears the emote when the weapon toggles — mirror it
+}
+
+async function toggleWeaponOnly(){
+  const btn=$('#p3dweapononly');
+  const on=!btn.classList.contains('active');
+  await post(`/api/action/preview3d/weapononly?on=${on}`);
+  btn.classList.toggle('active',on);
+  $('#p3dweapon').classList.toggle('active',on); // implies weapon drawn
+  $('#p3demote').value='0';
 }
 
 function stopAutoSpin(){

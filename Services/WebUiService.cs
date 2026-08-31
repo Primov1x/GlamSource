@@ -485,6 +485,23 @@ public sealed class WebUiService : IDisposable
             return Json(new { ok = true, timelineId = emoteTimelineId });
         }
 
+        if (method == "POST" && path == "/api/action/preview3d/weapononly" && _configuration.WebUiLive3DPreview
+            && bool.TryParse(query["on"], out var weaponOnlyOn))
+        {
+            _shell.PreviewWindow?.Renderer.NotifyInteraction();
+            _framework.RunOnFrameworkThread(() => _shell.PreviewWindow?.Renderer.SetWeaponOnly(weaponOnlyOn));
+            _log.Information($"[WebUi] preview3d weapon-only: {weaponOnlyOn}");
+            return Json(new { ok = true, weaponOnly = weaponOnlyOn });
+        }
+
+        if (method == "POST" && path == "/api/action/overlay/minimize" && bool.TryParse(query["on"], out var minimizeOn))
+        {
+            // the page collapses its own content; this tells the PLUGIN to shrink the actual
+            // Browsingway ImGui window too (see Plugin.PinBrowsingwayOverlaySize)
+            Plugin.BwOverlayMinimized = minimizeOn;
+            return Json(new { ok = true, minimized = minimizeOn });
+        }
+
         if (method == "POST" && path == "/api/action/preview3d/weapon" && _configuration.WebUiLive3DPreview
             && bool.TryParse(query["on"], out var weaponOn))
         {

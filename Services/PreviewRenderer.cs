@@ -567,6 +567,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
         // TryonCharaView (separate from the drawn/sheathed stance) — keep the preview weaponless
         // unless explicitly requested.
         agent->CharaView.HideWeapon = !_weaponDrawn;
+        agent->CharaView.HideOtherEquipment = _weaponOnly; // re-applied every tick like the rest
 
         var ch = agent->CharaView.GetCharacter();
         if (ch == null) return;
@@ -840,6 +841,18 @@ public sealed unsafe class PreviewRenderer : IDisposable
 
     // ponytail: neutral preview default — no weapon/tool in hand until the user opts in.
     private bool _weaponDrawn;
+    // "Waffe only": weapon-focus mode — weapon drawn + every OTHER equipment piece hidden via the
+    // native TryonCharaView.HideOtherEquipment flag (the Fitting Room's own "show only tried-on
+    // item" checkbox drives the same field). The body itself stays — CharaView always renders a
+    // character — but bare-skinned with just the weapon it reads as a weapon showcase.
+    private bool _weaponOnly;
+
+    /// <summary>Weapon showcase mode: weapon drawn, all other gear hidden. Framework thread.</summary>
+    public void SetWeaponOnly(bool on)
+    {
+        _weaponOnly = on;
+        SetWeaponDrawn(on); // implies the drawn stance (and the mutual-exclusive emote clear + thaw)
+    }
 
     /// <summary>Show/hide the mainhand weapon model in the preview. Re-applied every Tick.
     /// Also thaws a frozen pose for a moment: the drawn/sheathed switch plays a stance animation —
@@ -888,6 +901,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
         _emoteTimelineId = timelineId;
         _emotePlayPending = timelineId != 0;
         _weaponDrawn = false; // mutually exclusive with the weapon stance, same reason as above
+        _weaponOnly = false;
         ThawForAnimation();
     }
 
