@@ -29,9 +29,11 @@ body{background:transparent;color:var(--text);font:14px/1.5 "Segoe UI",system-ui
 #titlebar button{background:none;border:1px solid var(--border);color:var(--muted);width:22px;height:22px;border-radius:4px;cursor:pointer;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center}
 #titlebar button:hover{border-color:var(--gold);color:var(--gold)}
 #titlebar button svg{width:12px;height:12px;fill:currentColor}
-/* no min-height: the app panel ENDS right after the toolbar — the leftover dark filler below it
-   was reported as unwanted ("den Rest Rand wegmachen"); the page body is transparent anyway */
-#app{background:linear-gradient(180deg,#17161494,#141312f0),var(--bg);padding:16px 22px 10px}
+/* FIXED standard size ("Standard-Größe festsetzen"): the content is a hard pixel layout —
+   resizing the Browsingway overlay only reveals/clips transparent padding, the UI itself never
+   reflows or scales. No min-height: the panel ends right after the toolbar. */
+#app{background:linear-gradient(180deg,#17161494,#141312f0),var(--bg);padding:16px 22px 10px;width:1190px}
+#titlebar{width:1190px}
 nav{display:flex;gap:2px;margin-bottom:16px;border-bottom:1px solid var(--border)}
 nav button{background:transparent;border:0;border-bottom:2px solid transparent;color:var(--muted);padding:8px 20px;cursor:pointer;font-size:13px;letter-spacing:1px;text-transform:uppercase;transition:.15s}
 nav button:hover{color:var(--text)}
@@ -80,12 +82,12 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
    wider than the RT's native 0.6 for more side room, "bei Emotes sind Teile abgehakt"), with
    object-fit:fill stretching the horizontally-squeezed pixels back out. RT edge = canvas edge
    stays true, so clipping still happens at the viewport border like any 3D product viewer. */
-#preview3d{background:transparent;border:0;margin:0 auto 14px;cursor:grab;display:none;height:70vh;aspect-ratio:0.8;object-fit:fill}
+#preview3d{background:transparent;border:0;margin:0 auto 14px;cursor:grab;display:none;height:640px;aspect-ratio:0.8;object-fit:fill}
 /* character tab layout: slots | model | detail — panel scrolls internally, page never does */
 #charlayout{display:grid;grid-template-columns:minmax(190px,230px) 1fr minmax(280px,360px);gap:14px;align-items:start}
-#charslots{display:flex;flex-direction:column;gap:6px;max-height:72vh;overflow-y:auto}
+#charslots{display:flex;flex-direction:column;gap:6px;max-height:660px;overflow-y:auto}
 #charslots .slot{padding:6px 8px}
-#chardetail{max-height:72vh;min-height:200px;overflow-y:auto;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:10px}
+#chardetail{max-height:660px;min-height:200px;overflow-y:auto;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:10px}
 #chardetail>.empty{justify-content:center;margin-top:80px}
 #chardetail .header img{width:40px;height:40px}
 .tbl{color:var(--gold-dim);font-size:10px;text-transform:uppercase;letter-spacing:1.5px;margin-left:10px}

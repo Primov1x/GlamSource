@@ -514,7 +514,11 @@ public sealed unsafe class PreviewRenderer : IDisposable
             // copy itself and then sticks to the clone. While the live char is in an occupied
             // mode (crafting/gathering/etc.), simply don't copy — the clone keeps the last clean
             // state; copying resumes the moment the action ends.
-            if (addr != nint.Zero)
+            // Also paused while a thaw-for-animation window runs (and no forced recopy is queued):
+            // the per-tick copy stomped the clone's own transition mid-play — the unsheathe anim
+            // visibly aborted back to idle. The clone is already synced; nothing is lost.
+            var thawSettling = _autoFreezeCountdown > 0 && _pendingRecopyFrames == 0;
+            if (addr != nint.Zero && !thawSettling)
             {
                 var srcMode = ((Character*)addr)->Mode;
                 if (srcMode is CharacterModes.Normal or CharacterModes.Mounted or CharacterModes.EmoteLoop or CharacterModes.InPositionLoop)
@@ -854,9 +858,11 @@ public sealed unsafe class PreviewRenderer : IDisposable
 
     private void ThawForAnimation()
     {
-        if (!_freezePose) { if (_autoFreezeCountdown > 0) _autoFreezeCountdown = 90; return; }
+        // 150 ticks (~2.5s): the unsheathe animation is ~1s and the first refreeze window (90)
+        // caught it mid-transition ("Animation bricht irgendwie ab und geht ins Idle zurück")
+        if (!_freezePose) { if (_autoFreezeCountdown > 0) _autoFreezeCountdown = 150; return; }
         SetFreezePose(false);
-        _autoFreezeCountdown = 90;
+        _autoFreezeCountdown = 150;
     }
 
     // Emote pose — Brio's mechanism (their ActionTimelineCapability, works on any Character*, no
