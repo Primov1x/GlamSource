@@ -321,15 +321,15 @@ function p3dResetView(){p3dRedraw()}
     if(!p3dDragging&&!p3dPanning)return;
     const dx=e.clientX-p3dLastX, dy=e.clientY-p3dLastY;
     p3dLastX=e.clientX;p3dLastY=e.clientY;
-    if(p3dPanning) post(`/api/action/preview3d/pan?dx=${(dx*0.75).toFixed(2)}&dy=${(dy*0.75).toFixed(2)}`);
+    // char stays PINNED ("wie ein 3D-Produkt"): right-drag only rides the camera up/down the
+    // character (dy), never sideways — horizontal pan would push him out of center.
+    if(p3dPanning) post(`/api/action/preview3d/pan?dx=0&dy=${(dy*0.75).toFixed(2)}`);
     else post(`/api/action/preview3d/rotate?dx=${(dx*0.75).toFixed(2)}&dy=${(dy*0.75).toFixed(2)}`);
   });
   canvas.addEventListener('wheel',e=>{
     e.preventDefault();
-    const rect=canvas.getBoundingClientRect();
-    const px=((e.clientX-rect.left)/rect.width*2-1).toFixed(3); // -1..1, canvas-center-relative
-    const py=((e.clientY-rect.top)/rect.height*2-1).toFixed(3);
-    post(`/api/action/preview3d/zoomat?delta=${(-e.deltaY*0.002).toFixed(3)}&px=${px}&py=${py}`);
+    // plain center zoom — zoom-to-cursor shifted the char around the frame ("nicht festgepinnt")
+    post(`/api/action/preview3d/zoom?delta=${(-e.deltaY*0.002).toFixed(3)}`);
   },{passive:false});
 })();
 
