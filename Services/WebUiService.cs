@@ -392,6 +392,7 @@ public sealed class WebUiService : IDisposable
                 }),
                 activeRecentName = _shell.DebugActiveRecentName,
                 isRecentOverrideActive = _shell.DebugIsRecentOverrideActive,
+                pinned = _shell.DebugPinned,
             });
         }
 
@@ -603,6 +604,17 @@ public sealed class WebUiService : IDisposable
             _shell.PreviewWindow?.Renderer.NotifyInteraction();
             _log.Information("[WebUi] preview3d/reset — forced Release()+Initialize()");
             return Json(new { ok = true });
+        }
+
+        if (method == "GET" && path == "/api/debug/selfequip")
+        {
+            // direct probe: what does GetSelfEquipment actually return right now?
+            try
+            {
+                var eq = _framework.RunOnFrameworkThread(() => _glamour.GetSelfEquipment()).GetAwaiter().GetResult();
+                return Json(new { count = eq.Count, slots = eq.Select(s => new { slot = s.Slot.ToString(), id = s.GlamourItemId ?? s.ActualItemId }).ToArray() });
+            }
+            catch (Exception ex) { return Json(new { error = ex.ToString() }); }
         }
 
         if (method == "POST" && path == "/api/debug/kill")

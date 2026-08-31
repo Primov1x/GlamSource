@@ -92,6 +92,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
     public IReadOnlyList<EquipmentSlot> DebugSnapshot => _recentOverride ?? _snapshot;
     public string? DebugActiveRecentName => _activeRecentName;
     public bool DebugIsRecentOverrideActive => _recentOverride != null;
+    public bool DebugPinned => _pinned;
     // ponytail: which snapshot source Renderer currently uses; guards provider re-install on state change.
     private enum ProviderKind { None, Recent, Pinned, Target, Self }
     private ProviderKind _lastProviderKind = ProviderKind.None;
