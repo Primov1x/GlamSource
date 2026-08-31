@@ -770,14 +770,15 @@ public sealed unsafe class PreviewRenderer : IDisposable
                 }
                 else
                 {
-                    // outside weapon mode the #13-spawned draw objects PERSIST on the clone — hide
-                    // them, and drop the drawn stance so re-entry starts holstered like vanilla
+                    // outside weapon mode the #13-spawned draw objects PERSIST on the clone —
+                    // must hide via the SAME native call as ApplyWeaponVisibility: manual
+                    // DrawObject->IsVisible pokes proved inert for weapon slots (live: weapons
+                    // stayed visible even with weaponMode never activated this whole session —
+                    // this branch's own poke never actually hid them once spawned).
                     wch->Timeline.Flags3 &= unchecked((byte)~0x40);
+                    wch->DrawData.HideWeapons(true);
                     for (var i = 0; i < 3; i++)
-                    {
-                        ref var slotData = ref wch->DrawData.Weapon((DrawDataContainer.WeaponSlot)i);
-                        if (slotData.DrawObject != null) slotData.DrawObject->IsVisible = false;
-                    }
+                        wch->DrawData.Weapon((DrawDataContainer.WeaponSlot)i).IsHidden = true;
                 }
             }
         }
