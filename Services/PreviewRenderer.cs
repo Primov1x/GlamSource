@@ -1122,9 +1122,11 @@ public sealed unsafe class PreviewRenderer : IDisposable
     /// as ortho/ApplyOrtho. Called both before and after Update().</summary>
     private static unsafe void ApplyWeaponVisibility(Character* wch)
     {
-        // the ROOT flags (state-dump proven): the clone's DrawData hidden flags stay set and the
-        // engine re-derives invisibility from them every frame — clear container + per-slot +
-        // draw object, every call.
+        // Manual DrawObject->IsVisible poking never stuck (live: vis=False persisted through
+        // repeated pre+post-Update forcing). DrawDataContainer.HideWeapons(bool) is the CANONICAL
+        // native function — the same one /displayarms and the sheathe toggle use — so it handles
+        // whatever bookkeeping the raw flag write was missing. hide=false shows every currently
+        // non-hidden weapon slot; per-slot IsHidden below decides which slots that is.
         // WeaponSlot has 3 entries (MainHand/OffHand/System) and the setup copy spawns all three
         // unconditionally. WRONG earlier guess: System is NOT junk — it's the crafter's SECOND
         // tool (WEAPON_SLOT_SYSTEM, per clib: "used for crafter's tool"). Correct rule: show a
@@ -1132,12 +1134,10 @@ public sealed unsafe class PreviewRenderer : IDisposable
         wch->DrawData.IsWeaponHidden = false;
         for (var i = 0; i < 3; i++)
         {
-            var slot = (DrawDataContainer.WeaponSlot)i;
-            ref var slotData = ref wch->DrawData.Weapon(slot);
-            var show = slotData.ModelId.Id != 0;
-            slotData.IsHidden = !show;
-            if (slotData.DrawObject != null) slotData.DrawObject->IsVisible = show;
+            ref var slotData = ref wch->DrawData.Weapon((DrawDataContainer.WeaponSlot)i);
+            slotData.IsHidden = slotData.ModelId.Id == 0;
         }
+        wch->DrawData.HideWeapons(false);
     }
 
     private int _weaponVerifyCountdown; // diagnostic: check the draw objects a second after loading
