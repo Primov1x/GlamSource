@@ -450,6 +450,10 @@ public sealed class WebUiService : IDisposable
         if (method == "POST" && path == "/api/action/preview3d/transparent" && _configuration.WebUiLive3DPreview
             && bool.TryParse(query["on"], out var transparentOn))
         {
+            // full-rate window so the first PNG frame lands immediately — without this the idle
+            // throttle kept serving the old opaque JPEG for up to a second after toggling
+            // (reported live as "ich muss erst leicht ranzoomen damit transparent greift")
+            _shell.PreviewWindow?.Renderer.NotifyInteraction();
             // ponytail: experimental — see PreviewRenderer.SetTransparentBackdrop's doc comment for
             // the naive-chroma-key caveat. "mach mal nen Aus/An-Schalter für trans, dann kann ich es
             // mir anschauen" — this is that switch.

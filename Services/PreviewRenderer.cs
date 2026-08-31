@@ -694,10 +694,6 @@ public sealed unsafe class PreviewRenderer : IDisposable
     private byte[]? _rawDepthBuffer;
     private int _rawDepthRowPitch;
     private bool _rawDepthValid;
-    // cached clear value of the depth target — constant per session, see the reference block in
-    // EncodeDepthMaskedPngFromBuffer for why it must not be re-derived per frame
-    private float _depthClearValue;
-    private bool _depthClearKnown;
 
     // ponytail: "es reicht auch eine Standaufnahme, der Char muss sich nicht aktiv bewegen" —
     // don't spend GPU/CPU capturing a smooth video nobody's watching. Full-rate (EncodeThrottleMs)
@@ -1045,7 +1041,6 @@ public sealed unsafe class PreviewRenderer : IDisposable
         {
             for (var i = 0; i < WebStagingBufferCount; i++) { _depthStaging[i].Dispose(); _depthStaging[i] = default; }
             _rawDepthValid = false;
-            _depthClearKnown = false; // format/size changed — cached clear value may not apply anymore
             var stagingDesc = desc with
             {
                 Usage = D3D11_USAGE.D3D11_USAGE_STAGING,
@@ -1169,48 +1164,14 @@ public sealed unsafe class PreviewRenderer : IDisposable
                     return (p[0] | (p[1] << 8) | (p[2] << 16)) / 16777215f;
                 }
 
-                // Clear-value reference. First version used the median of the 4 corners — broke
-                // live the moment pan/zoom pushed the character over the corners ("hoch und runter
-                // bringt background kurzzeitig zurück"): with corners covered by geometry the
-                // reference flips and the whole mask collapses. The clear value is CONSTANT for the
-                // session though, so determine it once robustly (mode over the whole border — clear
-                // pixels are bit-identical, geometry pixels aren't) and cache it; every later frame
-                // just reuses the cached value no matter where the character sits.
-                float reference;
-                if (_depthClearKnown)
-                {
-                    reference = _depthClearValue;
-                }
-                else
-                {
-                    // mode over sampled border depths — tiny candidate table beats a dictionary
-                    // here (plain arrays, not stackalloc Spans: ref structs can't be captured by
-                    // the Tally local function; this path runs only until the cache locks in)
-                    var candidates = new float[8];
-                    var counts = new int[8];
-                    var candidateCount = 0;
-                    var total = 0;
-                    void Tally(float d)
-                    {
-                        total++;
-                        for (var c = 0; c < candidateCount; c++)
-                            if (candidates[c] == d) { counts[c]++; return; }
-                        if (candidateCount < 8) { candidates[candidateCount] = d; counts[candidateCount++] = 1; }
-                    }
-                    for (var x = 0; x < depthW; x += 4) { Tally(ReadDepth(x, 0)); Tally(ReadDepth(x, depthH - 1)); }
-                    for (var y = 0; y < depthH; y += 4) { Tally(ReadDepth(0, y)); Tally(ReadDepth(depthW - 1, y)); }
-                    var best = 0;
-                    for (var c = 1; c < candidateCount; c++) if (counts[c] > counts[best]) best = c;
-                    reference = candidates[best];
-                    // cache only from a high-confidence frame — >60% of the border agreeing on one
-                    // exact value can only be the clear value, never character geometry
-                    if (counts[best] > total * 6 / 10)
-                    {
-                        _depthClearValue = reference;
-                        _depthClearKnown = true;
-                    }
-                }
-                const float eps = 1e-5f;
+                // No learned reference at all. Two prior versions derived the clear value from the
+                // image (corner median, then border mode + cache) and BOTH broke live the moment
+                // the character covered the sampled area ("beim Ranzoomen verschwindet der Char":
+                // border = all character, learned reference = character depth, character keyed out).
+                // A depth buffer is only ever CLEARED to exactly 0.0 or 1.0 — real geometry never
+                // lands bit-exactly on either. Backdrop = bit-exact 0 or max, done: correct at any
+                // zoom, from the first frame, nothing to learn or cache.
+                bool IsClear(float d) => d == 0f || d == 1f;
 
                 using var bmp = EncodeSourceBitmap(width, height, rowPitch, (nint)colorPtr, isBgra);
                 var rect = new System.Drawing.Rectangle(0, 0, width, height);
@@ -1230,7 +1191,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
                     for (var x = 0; x < width; x++)
                     {
                         var dx = depthW == width ? x : x * depthW / width;
-                        var backdrop = System.Math.Abs(ReadDepth(dx, dy) - reference) <= eps;
+                        var backdrop = IsClear(ReadDepth(dx, dy));
                         isBackdrop[y * width + x] = backdrop;
                         if (backdrop) row[x * 4 + 3] = 0; // depth untouched by any geometry
                     }

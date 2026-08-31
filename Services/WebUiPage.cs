@@ -71,9 +71,6 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
    camera zoom that cuts the char does it at the viewport border like any 3D product viewer,
    never at an invisible wall in the middle of the picture (that was the "box" feeling). */
 #preview3d{background:transparent;border:0;margin:0 auto 14px;cursor:grab;display:none;height:70vh;aspect-ratio:576/960;object-fit:contain}
-/* transparent mode: no special background — the spotlight behind the char is drawn INTO the
-   canvas under the same zoom/pan transform (see p3dRedraw), so it moves and scales WITH the char.
-   A fixed CSS glow (tried) reads as a frame again the moment the char is dragged off-center. */
 #preview3d.active{cursor:grabbing}
 #preview3d.panning{cursor:ns-resize}
 #p3dspin.active{color:var(--accent);font-weight:600}
@@ -187,7 +184,6 @@ async function toggleTransparent(){
   const on=!btn.classList.contains('active');
   await post(`/api/action/preview3d/transparent?on=${on}`);
   btn.classList.toggle('active',on);
-  document.body.classList.toggle('p3dtransparent',on); // see the CSS rule — soft spotlight behind the floating char
 }
 
 async function toggleFreeze(){
@@ -292,16 +288,8 @@ function p3dRedraw(){
   // clear — a transparent PNG frame would otherwise leave the previous frame's pixels showing
   ctx.clearRect(0,0,canvas.width,canvas.height);
   if(!p3dBitmap)return;
-  if(document.body.classList.contains('p3dtransparent')){
-    // soft spotlight behind the char (readability for dark outfits on the dark UI, no hard edges)
-    const bw=p3dBitmap.width,bh=p3dBitmap.height;
-    const g=ctx.createRadialGradient(bw/2,bh*0.46,0,bw/2,bh*0.46,bh*0.5);
-    g.addColorStop(0,'rgba(255,255,255,.14)');
-    g.addColorStop(.55,'rgba(255,255,255,.05)');
-    g.addColorStop(1,'rgba(255,255,255,0)');
-    ctx.fillStyle=g;
-    ctx.fillRect(bw/2-bh*0.5,bh*0.46-bh*0.5,bh,bh);
-  }
+  // no spotlight, no backdrop of any kind — "kein Schein, soll ins Webview integriert sein":
+  // the transparent char composites straight onto the page like any other element
   ctx.drawImage(p3dBitmap,0,0);
 }
 function p3dResetView(){p3dRedraw()}
