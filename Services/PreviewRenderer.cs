@@ -764,6 +764,11 @@ public sealed unsafe class PreviewRenderer : IDisposable
                     if (srcAddr != nint.Zero)
                     {
                         wch->CharacterSetup.CopyFromCharacter((Character*)srcAddr, CharacterSetupContainer.CopyFlags.None);
+                        // stance, ONE-SHOT only: per-tick forcing (246) made the game re-evaluate
+                        // the weapon attach every frame — duplicate weapon, one floating, no anim.
+                        // Set drawn once right after the setup copy; the thaw window that
+                        // SetWeaponDrawn opened lets the transition play out.
+                        if (_weaponDrawn) wch->Timeline.Flags3 |= 0x40; // bit6 = IsWeaponDrawn
                         _weaponSetupPending = false;
                         _log.Info("[PreviewRenderer] weapon path #13: CharacterSetup.CopyFromCharacter applied to clone");
                     }
@@ -772,10 +777,6 @@ public sealed unsafe class PreviewRenderer : IDisposable
                 // model+draw object were long since correct): the clone's DrawData hidden flags
                 // stay set and the engine re-derives invisibility from them every frame, overruling
                 // a bare IsVisible force. Clear container + per-slot + draw object, every tick.
-                // stance: path #13's native copy left the weapon HOLSTERED ("waffe da, aber
-                // holstered"). TimelineContainer.Flags3 bit6 = IsWeaponDrawn — force drawn each
-                // tick while the stance is requested; the timeline system derives the pose from it.
-                if (_weaponDrawn) wch->Timeline.Flags3 |= 0x40;
                 wch->DrawData.IsWeaponHidden = false;
                 for (var i = 0; i < 3; i++)
                 {
