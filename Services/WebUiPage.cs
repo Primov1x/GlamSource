@@ -166,7 +166,7 @@ function showTab(t){
     $('#view-'+x).style.display=x===t?'':'none';
     $('#tab-'+x).classList.toggle('active',x===t);
   }
-  if(t==='character'){loadSnapshot();startPreview3D()}else{stopPreview3D()}
+  if(t==='character'){loadSnapshot(true);startPreview3D()}else{stopPreview3D()}
 }
 
 // minimize to the title bar (Dalamud-style collapse isn't possible for a Browsingway page — the
@@ -178,7 +178,7 @@ function toggleMinimize(){
   $('#btn-min').textContent=uiMinimized?'▢':'–';
   post('/api/action/overlay/minimize?on='+uiMinimized); // shrink the actual ImGui window too
   if(uiMinimized)stopPreview3D();
-  else if(currentTab==='character'){loadSnapshot();startPreview3D()}
+  else if(currentTab==='character'){loadSnapshot(true);startPreview3D()}
 }
 
 // --- 3D preview (opt-in, see Settings > 3D Preview) ---
@@ -479,8 +479,13 @@ const SLOT_DE={MainHand:'Hauptwaffe',OffHand:'Nebenwaffe',Head:'Kopf',Body:'Rump
   Legs:'Beine',Feet:'Füße',Ears:'Ohrringe',Necklace:'Halskette',Neck:'Halskette',
   Bracelets:'Armreif',Wrists:'Armreif',RingRight:'Ring (rechts)',RingLeft:'Ring (links)'};
 
-async function loadSnapshot(){
+let lastSnapshotHash=null;
+async function loadSnapshot(force){
   const d=await fetch('/api/snapshot').then(r=>r.json());
+  // only touch the DOM (and reload every icon <img>) on an actual change — class/gear switch or a
+  // Recent/person click — not on every poll tick ("icons aktualisieren nur bei aktivem switch")
+  if(!force && d.hash===lastSnapshotHash)return;
+  lastSnapshotHash=d.hash;
   const slots=(d.slots??[]).map(s=>{
     const id=s.glamourItemId??s.actualItemId;
     if(!id)return'';

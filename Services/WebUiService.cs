@@ -389,8 +389,16 @@ public sealed class WebUiService : IDisposable
         {
             var itemSheet = _detail.GameData.GetExcelSheet<Lumina.Excel.Sheets.Item>();
             uint IconOf(uint id) => id == 0 ? 0u : (uint)(itemSheet?.GetRowOrDefault(id)?.Icon ?? 0);
+            // ponytail: cheap content hash so the client can poll without re-rendering (and
+            // reloading every icon <img>) unless something actually changed — "icons aktualisieren
+            // soll nur passieren wenn aktiv ein switch passiert", not on every poll tick.
+            ulong hash = 17;
+            foreach (var s in _shell.DebugSnapshot)
+                hash = hash * 31 + (s.GlamourItemId ?? s.ActualItemId) * 131 + s.Stain0 + (ulong)s.Stain1 * 7;
+            hash = hash * 31 + (ulong)(_shell.DebugActiveRecentName?.GetHashCode() ?? 0);
             return Json(new
             {
+                hash,
                 slots = _shell.DebugSnapshot.Select(s => new
                 {
                     Slot = s.Slot.ToString(), // enum name, not its number — the web UI shows this raw
