@@ -766,25 +766,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
                 }
                 if (weaponMode)
                 {
-                    // the ROOT flags (state-dump proven): the clone's DrawData hidden flags stay
-                    // set and the engine re-derives invisibility from them every frame — clear
-                    // container + per-slot + draw object, every tick.
-                    // WeaponSlot has 3 entries (MainHand/OffHand/System) and the setup copy spawns
-                    // all three unconditionally. WRONG earlier guess: System is NOT junk — it's
-                    // the crafter's SECOND tool (WEAPON_SLOT_SYSTEM, per clib: "used for crafter's
-                    // tool"). Hardcoding which slot to hide by NAME was backwards for crafters
-                    // (hid their real second tool, "immer noch 3 stück" persisted from whatever the
-                    // true empty slot was). Correct rule: show a slot iff it actually carries a
-                    // model — an unequipped slot's Id is 0 regardless of which named slot it is.
-                    wch->DrawData.IsWeaponHidden = false;
-                    for (var i = 0; i < 3; i++)
-                    {
-                        var slot = (DrawDataContainer.WeaponSlot)i;
-                        ref var slotData = ref wch->DrawData.Weapon(slot);
-                        var show = slotData.ModelId.Id != 0;
-                        slotData.IsHidden = !show;
-                        if (slotData.DrawObject != null) slotData.DrawObject->IsVisible = show;
-                    }
+                    ApplyWeaponVisibility(wch);
                 }
                 else
                 {
@@ -877,6 +859,10 @@ public sealed unsafe class PreviewRenderer : IDisposable
         ApplyOrtho(agent);
         agent->CharaView.Update(_counter, ch);
         ApplyOrtho(agent);
+        // live-verified (/api/debug/weaponstate): drawObj vis=False right after the pre-Update
+        // force even though hidden=False — CharaView.Update() itself stomps weapon draw-object
+        // visibility back off ("packt sie direkt wieder ein"). Re-force after, same as ortho above.
+        if (weaponMode) ApplyWeaponVisibility(ch);
 
         if (_scaleWindowTicks > 0 && --_scaleWindowTicks == 0) _scaleCharaViewAllocs = false;
         // while thawed-for-animation (weapon stance / emote settling), keep the stream at full
@@ -1129,6 +1115,30 @@ public sealed unsafe class PreviewRenderer : IDisposable
 
     // weapon path #13: one-shot native CharacterSetup copy onto the clone (Brio spawn mechanism)
     private bool _weaponSetupPending;
+
+    /// <summary>Force weapon draw-object visibility per the clone's actual equipped models.
+    /// Live-verified (/api/debug/weaponstate) the force done only BEFORE CharaView.Update() gets
+    /// stomped back to invisible BY Update() itself — same "engine re-derives every frame" pattern
+    /// as ortho/ApplyOrtho. Called both before and after Update().</summary>
+    private static unsafe void ApplyWeaponVisibility(Character* wch)
+    {
+        // the ROOT flags (state-dump proven): the clone's DrawData hidden flags stay set and the
+        // engine re-derives invisibility from them every frame — clear container + per-slot +
+        // draw object, every call.
+        // WeaponSlot has 3 entries (MainHand/OffHand/System) and the setup copy spawns all three
+        // unconditionally. WRONG earlier guess: System is NOT junk — it's the crafter's SECOND
+        // tool (WEAPON_SLOT_SYSTEM, per clib: "used for crafter's tool"). Correct rule: show a
+        // slot iff it actually carries a model — an unequipped slot's Id is 0 regardless of name.
+        wch->DrawData.IsWeaponHidden = false;
+        for (var i = 0; i < 3; i++)
+        {
+            var slot = (DrawDataContainer.WeaponSlot)i;
+            ref var slotData = ref wch->DrawData.Weapon(slot);
+            var show = slotData.ModelId.Id != 0;
+            slotData.IsHidden = !show;
+            if (slotData.DrawObject != null) slotData.DrawObject->IsVisible = show;
+        }
+    }
 
     private int _weaponVerifyCountdown; // diagnostic: check the draw objects a second after loading
 
