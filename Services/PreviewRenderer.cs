@@ -279,15 +279,29 @@ public sealed unsafe class PreviewRenderer : IDisposable
         // the real FFXIVClientStructs.dll, not guessed — this is what the earlier "someone else's
         // portrait" reports (Adventure Plate, then a stranger's portrait with no clean repro) were:
         // different agents, same shared-slot mechanism, needing the same guard.
+        // Six more agents carry their own CharaView field (found by grepping FFXIVClientStructs for
+        // every "...CharaView" struct, not just the ones we'd already tripped over live): dye
+        // preview (Colorant), gearset preview (GearSet), the Character Inspect window, and the
+        // Mirage Plate ("Glamour Plate") editor itself. Same shared-slot mechanism, same guard.
         var charaCard = AgentCharaCard.Instance();
         var bannerParty = AgentBannerParty.Instance();
         var bannerMip = AgentBannerMIP.Instance();
+        var colorant = AgentColorant.Instance();
+        var gearSet = AgentGearSet.Instance();
+        var inspect = AgentInspect.Instance();
+        var miragePlate = AgentMiragePrismMiragePlate.Instance();
+        var status = AgentStatus.Instance();
         if (agent->AgentInterface.IsAgentActive()
             || (charaCard != null && charaCard->AgentInterface.IsAgentActive())
             || (bannerParty != null && bannerParty->AgentBannerInterface.AgentInterface.IsAgentActive())
-            || (bannerMip != null && bannerMip->AgentBannerInterface.AgentInterface.IsAgentActive()))
+            || (bannerMip != null && bannerMip->AgentBannerInterface.AgentInterface.IsAgentActive())
+            || (colorant != null && colorant->AgentInterface.IsAgentActive())
+            || (gearSet != null && gearSet->AgentInterface.IsAgentActive())
+            || (inspect != null && inspect->AgentInterface.IsAgentActive())
+            || (miragePlate != null && miragePlate->AgentInterface.IsAgentActive())
+            || (status != null && status->AgentInterface.IsAgentActive()))
         {
-            if (!_nativeUiOwnsSlot) _log.Info($"[PreviewRenderer] native UI took over the CharaView slot (tryon={agent->AgentInterface.IsAgentActive()} charaCard={charaCard != null && charaCard->AgentInterface.IsAgentActive()} bannerParty={bannerParty != null && bannerParty->AgentBannerInterface.AgentInterface.IsAgentActive()} bannerMip={bannerMip != null && bannerMip->AgentBannerInterface.AgentInterface.IsAgentActive()}) — pausing our render/capture until it releases it");
+            if (!_nativeUiOwnsSlot) _log.Info($"[PreviewRenderer] native UI took over the CharaView slot (tryon={agent->AgentInterface.IsAgentActive()} charaCard={charaCard != null && charaCard->AgentInterface.IsAgentActive()} bannerParty={bannerParty != null && bannerParty->AgentBannerInterface.AgentInterface.IsAgentActive()} bannerMip={bannerMip != null && bannerMip->AgentBannerInterface.AgentInterface.IsAgentActive()} colorant={colorant != null && colorant->AgentInterface.IsAgentActive()} gearSet={gearSet != null && gearSet->AgentInterface.IsAgentActive()} inspect={inspect != null && inspect->AgentInterface.IsAgentActive()} miragePlate={miragePlate != null && miragePlate->AgentInterface.IsAgentActive()} status={status != null && status->AgentInterface.IsAgentActive()}) — pausing our render/capture until it releases it");
             _nativeUiOwnsSlot = true;
             return;
         }

@@ -1,6 +1,6 @@
 # Character-Tab Web-Preview — Stand & Doku
 
-Stand: 0.0.0.160. Betrifft die Web-UI (`Services/WebUiPage.cs`/`WebUiService.cs`) und die
+Stand: 0.0.0.161. Betrifft die Web-UI (`Services/WebUiPage.cs`/`WebUiService.cs`) und die
 CharaView-Anbindung (`Services/PreviewRenderer.cs`, `Windows/GlamourPreviewWindow.cs`,
 `Windows/GlamSourceShellWindow.cs`). Für den Release-Prozess selbst siehe [`../RELEASING.md`](../RELEASING.md).
 
@@ -62,21 +62,35 @@ Zwei Versuche, beide live getestet, **keiner hat funktioniert**:
    echte FFXIVClientStructs.dll gefunden, Name legte "steuert ob CharaView überhaupt fortschreibt"
    nahe) — **auch das hat nichts geändert**, per Nutzer-Rückmeldung "nicht geklappt".
 
-Vermutung (nicht verifiziert): `agent->CharaView.GetCharacter()` liefert vermutlich direkt einen
-Zeiger auf das ECHTE, laufende Spieler-Objekt zurück, unabhängig von beiden obigen Flags —
-`Update(_counter, ch)` synct dann bei jedem Tick von diesem live-animierenden Objekt, egal was wir
-sonst einstellen. Um das wirklich zu entkoppeln, bräuchte man entweder:
+Dritte Recherche (0.0.0.161, gegen die echte FFXIVClientStructs-Struct-Definition, nicht geraten):
+`TryonCharaView` hat schlicht **kein** Pause/Freeze-Feld — die 16 dokumentierten Felder sind
+State/ClientObjectId/CameraType/Camera/Agent/ModelData/Race/Sex/ZoomRatio/FreeCompanyCrestBitfield/
+CharacterDataCopied/CharacterLoaded plus Callbacks, dazu die Sicht-Flags (`DoUpdate`,
+`HideOtherEquipment`, `HideVisor`, `HideWeapon`, `CloseVisor`, `HideVieraEars`, `DrawWeapon`) — keins
+davon steuert die interne Animation. `CharaView.Update(counter, charRef)` schreibt offenbar bei
+jedem Tick in ein internes Character-Objekt weiter, unabhängig von `DoUpdate` (das Feld steuert nur,
+ob vom Agent überhaupt neu geholt wird — bestätigt der gescheiterte zweite Versuch).
 
+Interessant, aber keine Lösung: der **verwandte** Struct `CharaViewPortrait` (Portrait-Editor,
+anderer Agent) hat tatsächlich `IsAnimationPaused()`/`ToggleAnimationPlayback(bool)` — echtes
+Freeze existiert also im Spiel, nur nicht auf dem Struct, das wir benutzen (`TryonCharaView`). Das
+umzubauen hieße: kompletter Wechsel der Renderslot-Anbindung von `AgentTryon` auf einen
+Portrait-Agent — deutlich größerer Umbau als der Wunsch wert ist, nicht angefasst.
+
+9 Byte am Ende von `TryonCharaView` (0x31F–0x327) sind in FFXIVClientStructs undokumentiert — könnten
+theoretisch sowas wie ein Pause-Flag enthalten, aber ohne echte Reverse-Engineering-Session reines
+Blindraten an rohen Speicher-Offsets. Nicht versucht (Crash-Risiko, keine Grundlage).
+
+Verbleibende, nicht versuchte Optionen:
 - ein komplett eigenes, "gefälschtes" Character-Objekt im Speicher (Nutzer-Idee) — riskant, echte
   Spiel-Speicherstruktur nachbauen, hohe Crash-Gefahr, nicht ohne tiefe native Recherche versucht.
-- oder einen anderen, bisher nicht gefundenen Hebel in `TryonCharaView`/`AgentTryon`, der die
-  Animations-Quelle wirklich von der Live-Referenz trennt.
+- Umstieg auf `CharaViewPortrait`/dessen Agent statt `TryonCharaView` — hat das gesuchte Feature,
+  aber größerer Architektur-Umbau.
 
-**Stand: nicht weiter verfolgt** (Nutzer-Entscheidung: "nicht geklappt, schreib in die docs, nix
-mehr fixen"). Für den ursprünglichen Anwendungsfall (statischer Snapshot) existiert im **3D-Viewer**-
-Tab bereits ein funktionierendes, komplett unabhängiges System (`🧍 Idle`-Button, eigenes
-`SkeletonPose`-Snapshot statt Live-Objekt-Referenz) — hat andere Nachteile (Shader-Näherung statt
-echter Spiel-Renderer), aber friert wirklich ein.
+**Stand: nicht weiter verfolgt.** Für den ursprünglichen Anwendungsfall (statischer Snapshot)
+existiert im **3D-Viewer**-Tab bereits ein funktionierendes, komplett unabhängiges System
+(`🧍 Idle`-Button, eigenes `SkeletonPose`-Snapshot statt Live-Objekt-Referenz) — hat andere Nachteile
+(Shader-Näherung statt echter Spiel-Renderer), aber friert wirklich ein.
 
 ## Bekannte Limitierung: Transparenter Hintergrund
 
@@ -86,19 +100,32 @@ abhebt. Bei überwiegend schwarzer Kleidung vor dem dunklen Hintergrund gibt's *
 an der Silhouette — der Flood-Fill läuft dann einfach durch die Kleidung durch (live beobachtet,
 Char komplett bis auf helle Details verschwunden). CharaView liefert keine echten Alpha-/Tiefendaten
 zum Trennen von Hintergrund und Charakter (im FFXIVClientStructs-Feld-Dump von `TryonCharaView`
-nachgeschaut — nichts Vergleichbares vorhanden). Ohne so eine Datenquelle ist das nicht robust
+nachgeschaut — nichts Vergleichbares vorhanden). Auch eine gezielt gesetzte Greenscreen-Backdrop-Farbe
+(würde das Problem umgehen — Flood-Fill gegen eine Farbe, die im Charakter garantiert nicht
+vorkommt) ist keine Option: kein `BackgroundColor`/`ClearColor`/`StudioColor`-Feld in `TryonCharaView`
+oder der Basisklasse `CharaView` vorhanden (0.0.0.161 nachgeprüft, echte Struct-Definition), die
+Studio-Backdrop-Farbe ist fest im Spiel verdrahtet. Ohne so eine Datenquelle ist das nicht robust
 lösbar, nur für bestimmte (helle) Outfits brauchbar.
 
 ## Bekannte Limitierung: fremde Agents können den Render-Slot übernehmen
 
-CharaView läuft über einen geteilten Slot (`AgentTryon`, Slot 2). Andere Spiel-UIs (Glamour-Plate-
-Editor, Fitting Room, Adventurer-Plate-Karte `AgentCharaCard`, Party-"Gruppenfoto"-Banner
-`AgentBannerParty`/`AgentBannerMIP`) nutzen denselben Mechanismus und können den Slot kurzzeitig
-kapern — dann zeigt die Vorschau fremden Inhalt (live beobachtet: fremdes Adventure-Plate,
-fremdes Spieler-Portrait). `PreviewRenderer.Tick()` prüft `IsAgentActive()` auf allen vier bekannten
-Agents und pausiert währenddessen (kein Schreiben/Rendern, Stream friert auf letztem echten Frame
-ein). Deckt vermutlich nicht JEDEN denkbaren Übernahme-Weg ab — beim erneuten Auftreten: Debug-Feld
-`nativeUiOwnsSlot` checken, sonst hilft nur "🔄 Preview zurücksetzen" von Hand.
+CharaView läuft über einen geteilten Slot (`AgentTryon`, Slot 2). Andere Spiel-UIs, die eine eigene
+`...CharaView`-Struct besitzen (per Grep gegen FFXIVClientStructs gefunden, nicht nur die live
+beobachteten), nutzen denselben Mechanismus und können den Slot kurzzeitig kapern — dann zeigt die
+Vorschau fremden Inhalt (live beobachtet: fremdes Adventure-Plate, fremdes Spieler-Portrait).
+`PreviewRenderer.Tick()` prüft `IsAgentActive()` auf inzwischen **neun** Agents und pausiert
+währenddessen (kein Schreiben/Rendern, Stream friert auf letztem echten Frame ein):
+
+- `AgentTryon` (Fitting Room, Glamour Plate) — live beobachtet
+- `AgentCharaCard` (Adventurer Plate) — live beobachtet
+- `AgentBannerParty` / `AgentBannerMIP` (Party-"Gruppenfoto") — live beobachtet
+- `AgentColorant` (Dye-Vorschau), `AgentGearSet` (Gearset-Vorschau), `AgentInspect`
+  (Charakter-Inspizieren-Fenster), `AgentMiragePrismMiragePlate` (Glamour-Plate-Editor selbst),
+  `AgentStatus` — nicht live beobachtet, aber besitzen laut Struct-Dump je ein eigenes
+  `...CharaView`-Feld, also selbes Risiko; präventiv mit demselben Guard versehen (0.0.0.161).
+
+Deckt vermutlich immer noch nicht JEDEN denkbaren Übernahme-Weg ab — beim erneuten Auftreten:
+Debug-Feld `nativeUiOwnsSlot` checken, sonst hilft nur "🔄 Preview zurücksetzen" von Hand.
 
 ## Warum kein `<img src="...">` für den Stream
 
@@ -160,12 +187,17 @@ native ImGui-Fenster offen war (die Dispatch-Logik lief nur innerhalb `DrawChara
   parallele CI-Läufe gestartet, die sich beim Hochladen ins selbe `LATEST`-Release überholt haben
   → Dalamud-Installer-Fehler "Distributed plugin version does not match repo version". Fix:
   `concurrency`+`cancel-in-progress` im Workflow, bricht den älteren Lauf bei neuem Push ab.
+- Slot-Kaper-Guard auf 5 weitere Agents erweitert (`AgentColorant`, `AgentGearSet`, `AgentInspect`,
+  `AgentMiragePrismMiragePlate`, `AgentStatus`) — per Grep gegen FFXIVClientStructs gefunden, nicht
+  live beobachtet, präventiv abgedeckt (0.0.0.161).
 
 ## Offene Punkte
 
-- **Pose einfrieren funktioniert nicht** (siehe Limitierung oben) — zwei Versuche gescheitert,
-  nicht weiter verfolgt auf Nutzer-Wunsch.
+- **Pose einfrieren funktioniert nicht** (siehe Limitierung oben) — drei Recherchen (zwei
+  Code-Versuche + eine Struct-Analyse), kein Freeze-Feld in `TryonCharaView` vorhanden, nicht
+  weiter verfolgt.
 - Transparenz bei dunklen Outfits (siehe Limitierung oben) — kein sauberer Fix in Sicht ohne echte
-  Alpha-/Tiefendaten vom Spiel.
-- Native-Slot-Übernahme (siehe Limitierung oben) — deckt bekannte 4 Agents ab, evtl. nicht alle.
+  Alpha-/Tiefendaten vom Spiel; auch kein Greenscreen-Backdrop-Feld verfügbar.
+- Native-Slot-Übernahme (siehe Limitierung oben) — deckt jetzt bekannte 9 Agents ab, evtl. nicht
+  alle.
 - Pan-Skalierung (`PanCamera`-Aufrufe) ist geschätzt/ungetunt, kein exaktes Einheiten-Wissen.

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "rtk": {
+      "source": "akillness/oh-my-skills",
+      "sourceType": "github",
+      "skillPath": ".agent-skills/rtk/SKILL.md",
+      "computedHash": "325d3035112fc88d9c4efbbcf17dff21867b615fac9079a609619fa6820c1a12"
+    }
+  }
+}
