@@ -273,9 +273,20 @@ public class Plugin : IAsyncDalamudPlugin
     public static volatile bool BwOverlayMinimized;
     public static volatile bool BwPinKilled; // stutter-bisect switch for the per-frame SetWindowSize
 
+    private long _lastBwPinMs;
+    private bool _lastBwMinimized;
+
     private void PinBrowsingwayOverlaySize()
     {
         if (!Configuration.WebUiEnabled || BwPinKilled) return;
+        // BISECTED LIVE: calling SetWindowSize EVERY frame was THE stutter ("stottert nur wenn
+        // das WebGUI aufgeht" — killing exactly this switch cured it). A per-frame Always-pin
+        // forces Browsingway into continuous resize/relayout. Re-pin every 2s (still beats any
+        // manual resize attempt within moments) and immediately when minimize toggles.
+        var minimizedChanged = BwOverlayMinimized != _lastBwMinimized;
+        if (!minimizedChanged && Environment.TickCount64 - _lastBwPinMs < 2000) return;
+        _lastBwPinMs = Environment.TickCount64;
+        _lastBwMinimized = BwOverlayMinimized;
         if (_bwWindowId == null)
         {
             if (_bwWindowIdRetryFrames-- % 120 != 0) return; // look up at most every ~2s
