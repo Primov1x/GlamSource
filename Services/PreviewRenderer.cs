@@ -681,6 +681,10 @@ public sealed unsafe class PreviewRenderer : IDisposable
     private byte[]? _rawDepthBuffer;
     private int _rawDepthRowPitch;
     private bool _rawDepthValid;
+    // cached clear value of the depth target — constant per session, see the reference block in
+    // EncodeDepthMaskedPngFromBuffer for why it must not be re-derived per frame
+    private float _depthClearValue;
+    private bool _depthClearKnown;
 
     // ponytail: "es reicht auch eine Standaufnahme, der Char muss sich nicht aktiv bewegen" —
     // don't spend GPU/CPU capturing a smooth video nobody's watching. Full-rate (EncodeThrottleMs)
@@ -1028,6 +1032,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
         {
             for (var i = 0; i < WebStagingBufferCount; i++) { _depthStaging[i].Dispose(); _depthStaging[i] = default; }
             _rawDepthValid = false;
+            _depthClearKnown = false; // format/size changed — cached clear value may not apply anymore
             var stagingDesc = desc with
             {
                 Usage = D3D11_USAGE.D3D11_USAGE_STAGING,
@@ -1151,12 +1156,47 @@ public sealed unsafe class PreviewRenderer : IDisposable
                     return (p[0] | (p[1] << 8) | (p[2] << 16)) / 16777215f;
                 }
 
-                // clear-value reference from the corners; they agree in any normal framing —
-                // if a corner is covered by geometry, the min/max spread check falls back to the
-                // most common corner value being outnumbered 3:1 (median-of-4 via pair-mid).
-                Span<float> corners = [ReadDepth(0, 0), ReadDepth(depthW - 1, 0), ReadDepth(0, depthH - 1), ReadDepth(depthW - 1, depthH - 1)];
-                corners.Sort();
-                var reference = (corners[1] + corners[2]) * 0.5f; // median — robust to one covered corner
+                // Clear-value reference. First version used the median of the 4 corners — broke
+                // live the moment pan/zoom pushed the character over the corners ("hoch und runter
+                // bringt background kurzzeitig zurück"): with corners covered by geometry the
+                // reference flips and the whole mask collapses. The clear value is CONSTANT for the
+                // session though, so determine it once robustly (mode over the whole border — clear
+                // pixels are bit-identical, geometry pixels aren't) and cache it; every later frame
+                // just reuses the cached value no matter where the character sits.
+                float reference;
+                if (_depthClearKnown)
+                {
+                    reference = _depthClearValue;
+                }
+                else
+                {
+                    // mode over sampled border depths — tiny candidate table beats a dictionary
+                    // here (plain arrays, not stackalloc Spans: ref structs can't be captured by
+                    // the Tally local function; this path runs only until the cache locks in)
+                    var candidates = new float[8];
+                    var counts = new int[8];
+                    var candidateCount = 0;
+                    var total = 0;
+                    void Tally(float d)
+                    {
+                        total++;
+                        for (var c = 0; c < candidateCount; c++)
+                            if (candidates[c] == d) { counts[c]++; return; }
+                        if (candidateCount < 8) { candidates[candidateCount] = d; counts[candidateCount++] = 1; }
+                    }
+                    for (var x = 0; x < depthW; x += 4) { Tally(ReadDepth(x, 0)); Tally(ReadDepth(x, depthH - 1)); }
+                    for (var y = 0; y < depthH; y += 4) { Tally(ReadDepth(0, y)); Tally(ReadDepth(depthW - 1, y)); }
+                    var best = 0;
+                    for (var c = 1; c < candidateCount; c++) if (counts[c] > counts[best]) best = c;
+                    reference = candidates[best];
+                    // cache only from a high-confidence frame — >60% of the border agreeing on one
+                    // exact value can only be the clear value, never character geometry
+                    if (counts[best] > total * 6 / 10)
+                    {
+                        _depthClearValue = reference;
+                        _depthClearKnown = true;
+                    }
+                }
                 const float eps = 1e-5f;
 
                 using var bmp = EncodeSourceBitmap(width, height, rowPitch, (nint)colorPtr, isBgra);
