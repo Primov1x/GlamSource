@@ -138,6 +138,12 @@ public sealed unsafe class PreviewRenderer : IDisposable
     // uncatchable AccessViolation tomorrow. Three strikes and freeze turns itself off.
     private int _freezeDetourErrors;
 
+    // set false once per framework tick (in Tick()); the engine calls UpdateBonePhysics once PER
+    // SKELETON per frame — without this gate the full clone-bone rewrite ran once per nearby
+    // character (50 people in town = 50x the work), which tanked the game's fps in crowds
+    // (measured live: drawCalls/s 80 alone vs 34 in town).
+    private volatile bool _freezeAppliedThisFrame;
+
     private nint UpdateBonePhysicsDetour(nint a1)
     {
         var result = _updateBonePhysicsHook!.Original(a1);
@@ -145,7 +151,11 @@ public sealed unsafe class PreviewRenderer : IDisposable
         try
         {
             var skeletonPtr = _freezeSkeleton;
-            if (_freezePose && skeletonPtr != 0) ApplyOrCaptureFrozenPose((Skeleton*)skeletonPtr);
+            if (_freezePose && skeletonPtr != 0 && !_freezeAppliedThisFrame)
+            {
+                _freezeAppliedThisFrame = true;
+                ApplyOrCaptureFrozenPose((Skeleton*)skeletonPtr);
+            }
         }
         catch (Exception ex)
         {
@@ -414,6 +424,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
     /// <summary>Per-frame update/render. Must be called on Framework thread.</summary>
     public void Tick()
     {
+        _freezeAppliedThisFrame = false; // re-arm the once-per-frame freeze gate (see the detour)
         // Freeze-pointer hygiene, learned from a REAL crash (AccessViolation in
         // ApplyOrCaptureFrozenPose inside the detour, live crash dump): the pointer was only
         // refreshed on the frames that reached the render section at the bottom — every early
