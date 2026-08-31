@@ -1580,7 +1580,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
     }
 
     /// <summary>raw = h rows of (1 filter byte + w*4 RGBA bytes), filter 0 everywhere.</summary>
-    private static byte[] WritePngRgba(byte[] raw, int w, int h)
+    internal static byte[] WritePngRgba(byte[] raw, int w, int h)
     {
         using var ms = new MemoryStream(raw.Length / 3);
         ms.Write(stackalloc byte[] { 137, 80, 78, 71, 13, 10, 26, 10 });
