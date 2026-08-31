@@ -353,25 +353,36 @@ public sealed class WebUiService : IDisposable
         {
             // Icons straight from the GAME data — xivapi's icon CDN is frozen and 404s on every
             // item newer than its snapshot (reported live: new weapons/gear showed no icon at all).
-            var folder = iconId / 1000 * 1000;
-            var tex = Plugin.DataManager.GetFile<Lumina.Data.Files.TexFile>($"ui/icon/{folder:D6}/{iconId:D6}_hr1.tex")
-                ?? Plugin.DataManager.GetFile<Lumina.Data.Files.TexFile>($"ui/icon/{folder:D6}/{iconId:D6}.tex");
-            if (tex == null) return ("404 Not Found", "text/plain", Encoding.UTF8.GetBytes("no icon"));
-            var w = tex.Header.Width;
-            var h = tex.Header.Height;
-            var bgra = tex.ImageData; // Lumina converts to B8G8R8A8
-            var raw = new byte[h * (1 + w * 4)];
-            for (var y = 0; y < h; y++)
+            try
             {
-                var dst = y * (1 + w * 4);
-                raw[dst++] = 0;
-                var src = y * w * 4;
-                for (var x = 0; x < w; x++, src += 4, dst += 4)
+                var folder = iconId / 1000 * 1000;
+                var tex = Plugin.DataManager.GetFile<Lumina.Data.Files.TexFile>($"ui/icon/{folder:D6}/{iconId:D6}_hr1.tex")
+                    ?? Plugin.DataManager.GetFile<Lumina.Data.Files.TexFile>($"ui/icon/{folder:D6}/{iconId:D6}.tex");
+                if (tex == null) return ("404 Not Found", "text/plain", Encoding.UTF8.GetBytes("no icon"));
+                var w = tex.Header.Width;
+                var h = tex.Header.Height;
+                var bgra = tex.ImageData; // Lumina converts to B8G8R8A8
+                if (bgra.Length < w * h * 4) return ("404 Not Found", "text/plain", Encoding.UTF8.GetBytes("bad tex"));
+                var raw = new byte[h * (1 + w * 4)];
+                for (var y = 0; y < h; y++)
                 {
-                    raw[dst] = bgra[src + 2]; raw[dst + 1] = bgra[src + 1]; raw[dst + 2] = bgra[src]; raw[dst + 3] = bgra[src + 3];
+                    var dst = y * (1 + w * 4);
+                    raw[dst++] = 0;
+                    var src = y * w * 4;
+                    for (var x = 0; x < w; x++, src += 4, dst += 4)
+                    {
+                        raw[dst] = bgra[src + 2]; raw[dst + 1] = bgra[src + 1]; raw[dst + 2] = bgra[src]; raw[dst + 3] = bgra[src + 3];
+                    }
                 }
+                return ("200 OK", "image/png", PreviewRenderer.WritePngRgba(raw, w, h));
             }
-            return ("200 OK", "image/png", PreviewRenderer.WritePngRgba(raw, w, h));
+            catch (Exception ex)
+            {
+                // a handful of icons killed the connection outright (curl code 000, reported live
+                // as "icons fehlen wieder") — an unguarded decode exception tore the socket down
+                _log.Warning($"[WebUi] icon {iconId} failed: {ex.Message}");
+                return ("404 Not Found", "text/plain", Encoding.UTF8.GetBytes(ex.Message));
+            }
         }
 
         if (method == "GET" && path == "/api/snapshot")
