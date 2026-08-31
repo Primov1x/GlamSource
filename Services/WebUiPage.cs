@@ -308,6 +308,9 @@ function p3dRedraw(){
     const r=P3D_LOUPE_R,m=P3D_LOUPE_MAG,x=p3dLoupeX,y=p3dLoupeY;
     ctx.save();
     ctx.beginPath();ctx.arc(x,y,r,0,7);ctx.clip();
+    // clear the circle FIRST — with a transparent frame, the magnified crop's transparent pixels
+    // otherwise let the unmagnified base image show through underneath ("seh sachen doppelt")
+    ctx.clearRect(x-r,y-r,2*r,2*r);
     ctx.imageSmoothingEnabled=false; // crisp native pixels inside the loupe
     ctx.drawImage(p3dBitmap,x-r/m,y-r/m,2*r/m,2*r/m,x-r,y-r,2*r,2*r);
     ctx.restore();
