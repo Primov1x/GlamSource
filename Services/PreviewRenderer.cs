@@ -583,6 +583,15 @@ public sealed unsafe class PreviewRenderer : IDisposable
             ch->Timeline.BaseOverride = 0;
             ch->Timeline.TimelineSequencer.PlayTimeline(3); // 3 = normal idle (Brio's reset value)
         }
+        else if (!_weaponDrawn)
+        {
+            // Default state: PIN plain idle every tick. The per-tick CopyFromCharacter mirrors the
+            // live char's action state — while the player crafts, the clone picked up the crafting
+            // loop INCLUDING its timeline-bound prop (live report: an anvil rendering under the
+            // char). A one-time reset at init wasn't enough, the next copy brought it back.
+            // Skipped while the weapon stance is on (BaseOverride 3 would fight the drawn idle).
+            ch->Timeline.BaseOverride = 3;
+        }
 
         // smart framing, ease-out half ("nie in einer Box wirken"): if the char clips the RT
         // border (arm swung past the edge mid-rotation, or a zoom fine front-on but not side-on),

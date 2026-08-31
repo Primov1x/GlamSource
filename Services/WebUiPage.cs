@@ -29,7 +29,7 @@ body{background:transparent;color:var(--text);font:14px/1.5 "Segoe UI",system-ui
 #titlebar button{background:none;border:1px solid var(--border);color:var(--muted);width:22px;height:22px;border-radius:4px;cursor:pointer;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center}
 #titlebar button:hover{border-color:var(--gold);color:var(--gold)}
 #titlebar button svg{width:12px;height:12px;fill:currentColor}
-#app{background:linear-gradient(180deg,#17161494,#141312f0),var(--bg);padding:16px 22px;max-width:1200px;min-height:calc(100vh - 36px)}
+#app{background:linear-gradient(180deg,#17161494,#141312f0),var(--bg);padding:16px 22px;min-height:calc(100vh - 36px)}
 nav{display:flex;gap:2px;margin-bottom:16px;border-bottom:1px solid var(--border)}
 nav button{background:transparent;border:0;border-bottom:2px solid transparent;color:var(--muted);padding:8px 20px;cursor:pointer;font-size:13px;letter-spacing:1px;text-transform:uppercase;transition:.15s}
 nav button:hover{color:var(--text)}
@@ -66,12 +66,14 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 @keyframes spin{to{transform:rotate(360deg)}}
 .row img,.matrow img,.slot img,.header img{background:var(--panel2);object-fit:contain}
 .snapgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin-top:14px}
-/* gear slot tiles, in-game character-sheet look: square icon in a gold-hairline frame */
-.slot{display:flex;align-items:center;gap:10px;background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--border);border-radius:6px;padding:8px 10px;cursor:pointer;transition:.12s}
-.slot:hover{border-color:var(--gold);box-shadow:0 0 6px rgba(200,167,94,.25)}
-.slot img{width:34px;height:34px;border-radius:4px;border:1px solid var(--gold-dim);flex-shrink:0}
-.slot .g{color:var(--success);font-size:11px}
-.slot .s{color:var(--muted);font-size:11px}
+/* gear slot tiles, in-game character-sheet look: framed square icon on a gradient tile,
+   small-caps slot label above the item name, subtle gold glow on hover */
+.slot{display:flex;align-items:center;gap:11px;background:linear-gradient(180deg,#28251f,#1c1a16);border:1px solid var(--border);border-radius:6px;padding:7px 10px;cursor:pointer;transition:.12s;position:relative}
+.slot:hover{border-color:var(--gold);box-shadow:0 0 8px rgba(200,167,94,.3);background:linear-gradient(180deg,#2e2a22,#211e18)}
+.slot img{width:40px;height:40px;border-radius:4px;border:1px solid var(--gold-dim);flex-shrink:0;box-shadow:inset 0 0 6px rgba(0,0,0,.7);background:radial-gradient(circle at 32% 26%,#343026,#181510)}
+.slot .lbl{color:var(--gold-dim);font-size:9px;text-transform:uppercase;letter-spacing:1.2px;line-height:1.1}
+.slot .nm{font-size:12.5px;line-height:1.25;color:var(--text)}
+.slot .glam{position:absolute;top:6px;right:8px;color:var(--success);font-size:9px;letter-spacing:.5px;text-transform:uppercase}
 /* aspect-ratio = the WORLD aspect the server camera renders (PreviewRenderer.PreviewAspect, 0.8 —
    wider than the RT's native 0.6 for more side room, "bei Emotes sind Teile abgehakt"), with
    object-fit:fill stretching the horizontally-squeezed pixels back out. RT edge = canvas edge
@@ -81,7 +83,8 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 #charlayout{display:grid;grid-template-columns:minmax(190px,230px) 1fr minmax(280px,360px);gap:14px;align-items:start}
 #charslots{display:flex;flex-direction:column;gap:6px;max-height:72vh;overflow-y:auto}
 #charslots .slot{padding:6px 8px}
-#chardetail{max-height:72vh;overflow-y:auto;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:10px}
+#chardetail{max-height:72vh;min-height:200px;overflow-y:auto;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:10px}
+#chardetail>.empty{justify-content:center;margin-top:80px}
 #chardetail .header img{width:40px;height:40px}
 .tbl{color:var(--gold-dim);font-size:10px;text-transform:uppercase;letter-spacing:1.5px;margin-left:10px}
 .p3dtoolbar{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--border);border-radius:8px;padding:8px 12px}
@@ -120,7 +123,7 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
        Clicking a slot opens the lookup RIGHT THERE (no tab switch, panel scrolls internally, the
        page itself never scrolls). -->
   <div id="charlayout">
-    <div id="charslots"><div class="empty" id="snapinfo">Loading…</div></div>
+    <div id="charslots"><div class="empty"><span class="spinner"></span></div></div>
     <div>
       <canvas id="preview3d"></canvas>
       <div class="empty" id="p3dhint" style="display:none;font-size:12px">Click 🔓 above to lock the overlay, then drag the model to rotate.</div>
@@ -474,19 +477,23 @@ function npcRow(s){
   return`<tr><td>${esc(s.npcName)}</td><td class="muted">${esc(loc)}</td><td>${map}</td></tr>`;
 }
 
+// slot enum names -> in-game style German labels
+const SLOT_DE={MainHand:'Hauptwaffe',OffHand:'Nebenwaffe',Head:'Kopf',Body:'Rumpf',Hands:'Hände',
+  Legs:'Beine',Feet:'Füße',Ears:'Ohrringe',Necklace:'Halskette',Neck:'Halskette',
+  Bracelets:'Armreif',Wrists:'Armreif',RingRight:'Ring (rechts)',RingLeft:'Ring (links)'};
+
 async function loadSnapshot(){
-  const info=$('#snapinfo');
-  if(info)info.innerHTML='<span class="spinner"></span>Loading…';
   const d=await fetch('/api/snapshot').then(r=>r.json());
   const slots=(d.slots??[]).map(s=>{
     const id=s.glamourItemId??s.actualItemId;
     if(!id)return'';
     const name=s.glamourItemName??s.actualItemName??'';
+    const lbl=SLOT_DE[s.slot]??s.slot;
     // opens the lookup in the RIGHT-SIDE panel — no tab switch, no page scroll
-    return`<div class="slot" onclick="showItemPanel(${id})">${img(s.iconId,32)}<div><div>${esc(name)}</div><div class="${s.isGlamoured?'g':'s'}">${esc(s.slot)}${s.isGlamoured?' · glamoured':''}</div></div></div>`;
+    return`<div class="slot" onclick="showItemPanel(${id})">${img(s.iconId,40)}<div><div class="lbl">${esc(lbl)}</div><div class="nm">${esc(name)}</div></div>${s.isGlamoured?'<span class="glam">Glam</span>':''}</div>`;
   }).join('');
-  const head=d.activeRecentName?`<div class="empty" id="snapinfo">Viewing: ${esc(d.activeRecentName)}</div>`
-    :(slots?'':'<div class="empty" id="snapinfo">No snapshot — open the Character tab in-game first.</div>');
+  const head=d.activeRecentName?`<div class="empty">Ansicht: ${esc(d.activeRecentName)}</div>`
+    :(slots?'':'<div class="empty">Keine Daten — Charakter noch nicht erfasst.</div>');
   $('#charslots').innerHTML=head+slots;
 }
 

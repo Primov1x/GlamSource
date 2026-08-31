@@ -357,7 +357,7 @@ public sealed class WebUiService : IDisposable
             {
                 slots = _shell.DebugSnapshot.Select(s => new
                 {
-                    s.Slot,
+                    Slot = s.Slot.ToString(), // enum name, not its number — the web UI shows this raw
                     s.ActualItemId,
                     s.ActualItemName,
                     s.GlamourItemId,
