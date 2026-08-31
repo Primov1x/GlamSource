@@ -673,7 +673,10 @@ public sealed unsafe class PreviewRenderer : IDisposable
     // the frustum sideways while zooming. The game recomputes the projection from these fields
     // each frame, so they're reapplied every Tick right before our Render() call.
     private bool _orthoEnabled = true; // default on — the whole point of the viewer
-    private const float OrthoBaseHeight = 2.6f; // world-units frame height at zoom 1 (tall race + hat fits)
+    // matches the engine's own default OrthoHeight (2.0241 read back live via the debug endpoint)
+    // — the first guess of 2.6 framed the char noticeably smaller than the perspective default
+    // ("ist halt sehr weit weg")
+    private const float OrthoBaseHeight = 2.0241f;
 
     /// <summary>Toggle the orthographic projection. Framework thread.</summary>
     public void SetOrtho(bool enabled)
