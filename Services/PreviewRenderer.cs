@@ -509,8 +509,17 @@ public sealed unsafe class PreviewRenderer : IDisposable
         if (_sourceProvider != null && !_suspendCharacterCopy && !overlayActive)
         {
             var addr = _sourceProvider();
+            // Contamination guard at the SOURCE — the anvil saga's final form: neither the idle
+            // pin nor the mode stomp helped, because the craft FACILITY PROP rides in with the
+            // copy itself and then sticks to the clone. While the live char is in an occupied
+            // mode (crafting/gathering/etc.), simply don't copy — the clone keeps the last clean
+            // state; copying resumes the moment the action ends.
             if (addr != nint.Zero)
-                agent->CharaView.ModelData.CopyFromCharacter((Character*)addr);
+            {
+                var srcMode = ((Character*)addr)->Mode;
+                if (srcMode is CharacterModes.Normal or CharacterModes.Mounted or CharacterModes.EmoteLoop or CharacterModes.InPositionLoop)
+                    agent->CharaView.ModelData.CopyFromCharacter((Character*)addr);
+            }
             if (_pendingRecopyFrames > 0) _pendingRecopyFrames--;
         }
 

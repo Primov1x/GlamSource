@@ -29,7 +29,9 @@ body{background:transparent;color:var(--text);font:14px/1.5 "Segoe UI",system-ui
 #titlebar button{background:none;border:1px solid var(--border);color:var(--muted);width:22px;height:22px;border-radius:4px;cursor:pointer;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center}
 #titlebar button:hover{border-color:var(--gold);color:var(--gold)}
 #titlebar button svg{width:12px;height:12px;fill:currentColor}
-#app{background:linear-gradient(180deg,#17161494,#141312f0),var(--bg);padding:16px 22px;min-height:calc(100vh - 36px)}
+/* no min-height: the app panel ENDS right after the toolbar — the leftover dark filler below it
+   was reported as unwanted ("den Rest Rand wegmachen"); the page body is transparent anyway */
+#app{background:linear-gradient(180deg,#17161494,#141312f0),var(--bg);padding:16px 22px 10px}
 nav{display:flex;gap:2px;margin-bottom:16px;border-bottom:1px solid var(--border)}
 nav button{background:transparent;border:0;border-bottom:2px solid transparent;color:var(--muted);padding:8px 20px;cursor:pointer;font-size:13px;letter-spacing:1px;text-transform:uppercase;transition:.15s}
 nav button:hover{color:var(--text)}
