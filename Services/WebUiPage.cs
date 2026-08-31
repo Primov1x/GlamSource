@@ -68,11 +68,12 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 .slot .g{color:var(--success);font-size:12px}
 .slot .s{color:var(--muted);font-size:11px}
 #preview3d{background:transparent;border:0;margin-bottom:14px;cursor:grab;display:none;width:100%;height:70vh;object-fit:contain}
-/* transparent-backdrop mode: the char PNG is transparent, but #app's own dark background painted
-   a solid box behind it — reported live as "schwarz verschwindet, die Box ist immer noch da"
-   (black char on black page = invisible; the dark #app rectangle IS the box). While the mode is
-   on, let the game show through the whole app area (Browsingway composites transparent pixels). */
-body.p3dtransparent #app{background:transparent}
+/* transparent-backdrop mode. First fix made the whole #app see-through — rejected live ("char
+   sollte nur in der webview frei schweben, nicht dass der webview background fehlt"). What's
+   actually wanted: page background stays, the char floats freely and stays READABLE — a black
+   outfit on the dark UI was invisible. Product-viewer spotlight: a soft radial glow behind the
+   char, no hard edges anywhere, so nothing reads as a "box". */
+body.p3dtransparent #preview3d{background:radial-gradient(ellipse 55% 42% at 50% 46%,rgba(255,255,255,.14),rgba(255,255,255,.05) 55%,transparent 78%)}
 #preview3d.active{cursor:grabbing}
 #preview3d.panning{cursor:ns-resize}
 #p3dspin.active{color:var(--accent);font-weight:600}
@@ -186,7 +187,7 @@ async function toggleTransparent(){
   const on=!btn.classList.contains('active');
   await post(`/api/action/preview3d/transparent?on=${on}`);
   btn.classList.toggle('active',on);
-  document.body.classList.toggle('p3dtransparent',on); // see the CSS rule — kills the dark box behind the char
+  document.body.classList.toggle('p3dtransparent',on); // see the CSS rule — soft spotlight behind the floating char
 }
 
 async function toggleFreeze(){
