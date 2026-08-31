@@ -647,10 +647,16 @@ public sealed unsafe class PreviewRenderer : IDisposable
         agent->CharaView.HideWeapon = !weaponMode;
         // ModelData carries its OWN WeaponHidden byte (0x89) that CopyFromCharacter refreshes from
         // the live char every tick — clear it in weapon mode or the copied "sheathed/hidden" state
-        // wins. And DoUpdate=false while a weapon shows: vf10's agent-fetch would stomp the
-        // ModelData weapon fields with the agent's EMPTY try-on data every Update otherwise.
-        agent->CharaView.ModelData.WeaponHidden = !weaponMode ? agent->CharaView.ModelData.WeaponHidden : false;
-        agent->CharaView.DoUpdate = !weaponMode;
+        // wins. DoUpdate is deliberately NOT touched here anymore: 224 forced it TRUE every tick
+        // outside weapon mode, which made vf10 fetch the INACTIVE agent's empty try-on data every
+        // Update and wipe _items — the "permanently naked clone" (diagnosed via the force-seed
+        // probe: 12 slots written, still naked). The engine's own default is left alone; weapon
+        // mode keeps it off via the false-branch below.
+        if (weaponMode)
+        {
+            agent->CharaView.ModelData.WeaponHidden = false;
+            agent->CharaView.DoUpdate = false;
+        }
         // The weapon DrawObject spawns fine but its own IsVisible flag stays FALSE (log-verified:
         // drawObject=non-null, objVisible=False) — force it every tick while a weapon mode is on,
         // same as the weapon-only body-hide loop already did for its case.
