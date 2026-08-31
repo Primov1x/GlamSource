@@ -559,6 +559,14 @@ public sealed unsafe class PreviewRenderer : IDisposable
             }
         }
 
+        // Weapon-only showcase, done BY HAND: zero the 10 gear slots after every copy path above
+        // ran (they'd restore the outfit otherwise), weapons untouched. The native
+        // HideOtherEquipment flag was dead on our INACTIVE agent — it's consumed by the active
+        // Fitting Room flow, the full model kept rendering (reported live).
+        if (_weaponOnly)
+            for (var i = 0; i < 10; i++)
+                SetCharaViewEquipmentSlotRaw((byte)i, 0);
+
         // ponytail: re-applied every tick — CopyFromCharacter above mirrors the live character's
         // ModelData wholesale, which stomps this flag back to "drawn" each frame otherwise.
         agent->CharaView.ToggleDrawWeapon(_weaponDrawn);
@@ -566,8 +574,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
         // showed up in the preview (reported live). HideWeapon is the real visibility flag on
         // TryonCharaView (separate from the drawn/sheathed stance) — keep the preview weaponless
         // unless explicitly requested.
-        agent->CharaView.HideWeapon = !_weaponDrawn;
-        agent->CharaView.HideOtherEquipment = _weaponOnly; // re-applied every tick like the rest
+        agent->CharaView.HideWeapon = !(_weaponDrawn || _weaponOnly); // weapon-only shows it sheathed
 
         var ch = agent->CharaView.GetCharacter();
         if (ch == null) return;
@@ -847,12 +854,10 @@ public sealed unsafe class PreviewRenderer : IDisposable
     // character — but bare-skinned with just the weapon it reads as a weapon showcase.
     private bool _weaponOnly;
 
-    /// <summary>Weapon showcase mode: weapon drawn, all other gear hidden. Framework thread.</summary>
-    public void SetWeaponOnly(bool on)
-    {
-        _weaponOnly = on;
-        SetWeaponDrawn(on); // implies the drawn stance (and the mutual-exclusive emote clear + thaw)
-    }
+    /// <summary>Weapon showcase mode: weapon VISIBLE (sheathed rest position — no stance change,
+    /// no thaw; coupling it to the drawn pose was rejected live), all other gear hidden.
+    /// Framework thread.</summary>
+    public void SetWeaponOnly(bool on) => _weaponOnly = on;
 
     /// <summary>Show/hide the mainhand weapon model in the preview. Re-applied every Tick.
     /// Also thaws a frozen pose for a moment: the drawn/sheathed switch plays a stance animation —
