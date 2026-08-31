@@ -113,7 +113,7 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
                 var itemId = slot.GlamourItemId ?? slot.ActualItemId;
                 _renderer.SetCharaViewItemSlot((byte)slotId, itemId, slot.Stain0, slot.Stain1);
             }
-            _renderer.ApplyModelData(); // weapons only spawn through the SetModelData path
+
         }
         catch (Exception ex) { _log.Warning($"[GlamourPreviewWindow] SeedSelfEquipmentOnce failed: {ex.Message}"); }
     }

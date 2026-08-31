@@ -608,6 +608,13 @@ public sealed unsafe class PreviewRenderer : IDisposable
         // the live char is occupied) is the actual prevention; an already-orphaned prop only goes
         // away with a plugin reload / game restart tearing the scene down.
 
+        // pending weapon load (path #5) — once, on a loaded clone
+        if (_weaponLoadPending && agent->CharaView.CharacterLoaded)
+        {
+            _weaponLoadPending = false;
+            LoadWeaponsOntoClone(ch);
+        }
+
         // post-init idle reset (see _pendingIdleReset) — once, as soon as the clone is loaded
         if (_pendingIdleReset && agent->CharaView.CharacterLoaded)
         {
@@ -906,31 +913,22 @@ public sealed unsafe class PreviewRenderer : IDisposable
         SetWeaponDrawn(on);
     }
 
-    /// <summary>Feed a weapon through the AGENT's try-on channel — the way the real Fitting Room
-    /// shows weapons: TryonCharaView.DoUpdate's own struct doc says Update "fetches data from
-    /// agent too", and weapons ignored every ModelData-side path we tried (raw writes,
-    /// SetItemSlotData, SetModelData — all verified dead for weapons live). TryOn() without Show()
-    /// stores the item agent-side without opening the in-game addon (the warmup has done exactly
-    /// this since day one, no window ever appeared). Framework thread.</summary>
-    public void TryOnWeapon(uint itemId)
-    {
-        if (itemId == 0) return;
-        AgentTryon.TryOn(0, itemId, 0, 0, 0, false);
-    }
+    // Weapon path #5, the one that actually works (Ktisis' EquipmentEditor does exactly this):
+    // DrawData.LoadWeapon() called directly ON THE CLONE spawns the weapon draw object on any
+    // Character*. Everything else was verified dead live: ModelData raw writes / SetItemSlotData /
+    // SetModelData (weapons ignored), and agent TryOn() opened the real Fitting Room window.
+    private bool _weaponLoadPending;
 
-    /// <summary>Push the CharaView's OWN ModelData through the engine's SetModelData member —
-    /// the missing link for weapons: raw byte writes into ModelData (CopyFromCharacter, the raw
-    /// slot writers) update gear via Update()'s diffing, but WEAPON draw objects only ever spawn
-    /// through the SetModelData/Initialize path (verified live: a valid sword written via
-    /// SetItemSlotData rendered nothing, reset didn't help). Call after any weapon-relevant
-    /// change. Framework thread.</summary>
-    public void ApplyModelData()
+    private void LoadWeaponsOntoClone(Character* clone)
     {
-        if (!_initialized) return;
-        var agent = AgentTryon.Instance();
-        if (agent == null) return;
-        // already unmanaged memory behind the agent pointer — plain address-of, no fixed needed
-        agent->CharaView.SetModelData(&agent->CharaView.ModelData);
+        var addr = _sourceProvider?.Invoke() ?? 0;
+        if (addr == 0) return;
+        var src = (Character*)addr;
+        for (var i = 0; i < 3; i++)
+        {
+            var model = src->DrawData.Weapon((DrawDataContainer.WeaponSlot)i).ModelId;
+            clone->DrawData.LoadWeapon((DrawDataContainer.WeaponSlot)i, model, 0, 0, 0, 0);
+        }
     }
 
     /// <summary>Show/hide the mainhand weapon model in the preview. Re-applied every Tick.
@@ -945,7 +943,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
         // mid-emote played the draw animation INSIDE the emote pose — clear the emote back to
         // idle first, the stance change then runs from a clean base
         if (_emoteTimelineId != 0) { _emoteClearPending = true; _emoteTimelineId = 0; _emotePlayPending = false; }
-        ApplyModelData(); // spawn the weapon draw objects — see ApplyModelData's comment
+        if (drawn) _weaponLoadPending = true; // LoadWeapon on the clone next Tick — see the path-#5 comment
         ThawForAnimation();
     }
 

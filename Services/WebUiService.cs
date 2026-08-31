@@ -531,19 +531,11 @@ public sealed class WebUiService : IDisposable
             && bool.TryParse(query["on"], out var weaponOn))
         {
             _shell.PreviewWindow?.Renderer.NotifyInteraction();
-            // resolve the current mainhand (glam preferred) and feed it through the agent's
-            // try-on channel — the only path that actually spawns a weapon (see TryOnWeapon)
-            var mainHand = _shell.DebugSnapshot.FirstOrDefault(s => s.Slot == EquipmentSlotType.MainHand);
-            var mainHandId = mainHand != null ? (mainHand.GlamourItemId ?? mainHand.ActualItemId) : 0u;
-            _framework.RunOnFrameworkThread(() =>
-            {
-                var r = _shell.PreviewWindow?.Renderer;
-                if (r == null) return;
-                if (weaponOn) r.TryOnWeapon(mainHandId);
-                r.SetWeaponDrawn(weaponOn);
-            });
-            _log.Information($"[WebUi] preview3d weapon shown: {weaponOn} (mainhand item {mainHandId})");
-            return Json(new { ok = true, weapon = weaponOn, mainHandId });
+            // (an agent-TryOn attempt lived here briefly — it opened the REAL Fitting Room window;
+            // weapons now load via DrawData.LoadWeapon on the clone, see PreviewRenderer path #5)
+            _framework.RunOnFrameworkThread(() => _shell.PreviewWindow?.Renderer.SetWeaponDrawn(weaponOn));
+            _log.Information($"[WebUi] preview3d weapon shown: {weaponOn}");
+            return Json(new { ok = true, weapon = weaponOn });
         }
 
         if (method == "POST" && path == "/api/action/preview3d/ortho" && _configuration.WebUiLive3DPreview
