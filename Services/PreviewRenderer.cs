@@ -7,6 +7,7 @@ using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Kernel;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Render;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
+using FFXIVClientStructs.Havok.Common.Base.Math.QsTransform;
 using System.Collections.Generic;
 using GlamSource.Core;
 using TerraFX.Interop.DirectX;
@@ -70,6 +71,83 @@ public sealed unsafe class PreviewRenderer : IDisposable
         var agent = AgentTryon.Instance();
         if (agent == null) return;
         agent->CharaView.DoUpdate = !suspend;
+    }
+
+    // Pose freeze, third approach — the one posing plugins actually ship. Neither suspending our
+    // copies nor DoUpdate=false stopped the animation (both tried live), because the CharaView's
+    // character keeps getting animated by the game's own animation system regardless. Brio's
+    // SkeletonService (decompiled, not guessed) freezes by OVERWRITING the skeleton's hkaPose bone
+    // transforms every frame after the animation update ran — the animation still runs, its result
+    // just gets stomped before it's rendered. Brio needs a native FinalizeSkeletons sig-scan hook
+    // for that window; we don't: Tick() already sits between CharaView.Update() and .Render(),
+    // which is the same causal slot, reached through code we own.
+    private bool _freezePose;
+    private hkQsTransformf[][]? _frozenLocal; // per partial skeleton, per bone
+    private hkQsTransformf[][]? _frozenModel;
+
+    /// <summary>Freeze the previewed character's pose: snapshot the skeleton on the next Tick, then
+    /// rewrite it every Tick until unfrozen. Framework thread.</summary>
+    public void SetFreezePose(bool freeze)
+    {
+        _freezePose = freeze;
+        if (!freeze) { _frozenLocal = null; _frozenModel = null; }
+    }
+
+    private void ApplyOrCaptureFrozenPose(Character* ch)
+    {
+        var drawObject = ch->GameObject.DrawObject;
+        if (drawObject == null) return;
+        var skeleton = ((FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase*)drawObject)->Skeleton;
+        if (skeleton == null || skeleton->PartialSkeletonCount == 0) return;
+
+        var partialCount = skeleton->PartialSkeletonCount;
+        // (re-)capture: first freeze Tick, or skeleton shape changed under us (e.g. gear swap)
+        var capture = _frozenModel == null || _frozenModel.Length != partialCount;
+        if (!capture)
+        {
+            for (var p = 0; p < partialCount; p++)
+            {
+                var pose = skeleton->PartialSkeletons[p].GetHavokPose(0);
+                if (pose != null && pose->ModelPose.Length != _frozenModel![p].Length) { capture = true; break; }
+            }
+        }
+
+        if (capture)
+        {
+            _frozenLocal = new hkQsTransformf[partialCount][];
+            _frozenModel = new hkQsTransformf[partialCount][];
+            for (var p = 0; p < partialCount; p++)
+            {
+                var pose = skeleton->PartialSkeletons[p].GetHavokPose(0);
+                var n = pose == null ? 0 : System.Math.Min(pose->LocalPose.Length, pose->ModelPose.Length);
+                _frozenLocal[p] = new hkQsTransformf[n];
+                _frozenModel[p] = new hkQsTransformf[n];
+                for (var i = 0; i < n; i++)
+                {
+                    _frozenLocal[p][i] = pose->LocalPose[i];
+                    _frozenModel[p][i] = pose->ModelPose[i];
+                }
+            }
+            return; // this frame renders the just-captured pose anyway
+        }
+
+        // restore both spaces + mark both in sync, so whichever direction the engine derives from
+        // (SyncModelSpace/SyncLocalSpace) it finds our snapshot and no dirty flag triggers a rebuild
+        for (var p = 0; p < partialCount; p++)
+        {
+            var pose = skeleton->PartialSkeletons[p].GetHavokPose(0);
+            if (pose == null) continue;
+            var frozenL = _frozenLocal![p];
+            var frozenM = _frozenModel![p];
+            var n = System.Math.Min(frozenM.Length, System.Math.Min(pose->LocalPose.Length, pose->ModelPose.Length));
+            for (var i = 0; i < n; i++)
+            {
+                pose->LocalPose[i] = frozenL[i];
+                pose->ModelPose[i] = frozenM[i];
+            }
+            pose->ModelInSync = 1;
+            pose->LocalInSync = 1;
+        }
     }
 
     /// <summary>Register a snapshot callback invoked each Tick. Returns EquipmentSlots to overlay on the self body,
@@ -374,6 +452,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
         if (ch == null) return;
 
         agent->CharaView.Update(_counter, ch);
+        if (_freezePose) ApplyOrCaptureFrozenPose(ch);
         agent->CharaView.Render(_counter++);
     }
 

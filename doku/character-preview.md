@@ -1,6 +1,6 @@
 # Character-Tab Web-Preview — Stand & Doku
 
-Stand: 0.0.0.161. Betrifft die Web-UI (`Services/WebUiPage.cs`/`WebUiService.cs`) und die
+Stand: 0.0.0.162. Betrifft die Web-UI (`Services/WebUiPage.cs`/`WebUiService.cs`) und die
 CharaView-Anbindung (`Services/PreviewRenderer.cs`, `Windows/GlamourPreviewWindow.cs`,
 `Windows/GlamSourceShellWindow.cs`). Für den Release-Prozess selbst siehe [`../RELEASING.md`](../RELEASING.md).
 
@@ -42,13 +42,34 @@ ein `<canvas>` gezeichnet (kein `<img src=multipart>` — siehe "Warum kein `<im
 - **🎠 Auto-Drehen**: Turntable-Rotation wie bei Online-Shop-Produktansichten.
 - **🔄 Preview zurücksetzen**: volles `Release()`+`Initialize()` — Notausstieg falls die Vorschau
   hängt oder was Falsches zeigt (siehe Bugs unten). Stoppt auch Auto-Drehen.
-- **🧊 Pose einfrieren** — **funktioniert nicht, siehe "Bekannte Limitierung: Einfrieren" unten.**
-  Button/Endpoint existieren, tun aber nicht was der Name verspricht.
+- **🧊 Pose einfrieren** — dritte Implementierung (Brio-Technik: Bone-Transforms jeden Frame mit
+  Snapshot überschreiben, siehe Abschnitt "Einfrieren: dritter Versuch" unten). Live-Verifikation
+  ausstehend.
 - **🪄 Transparenter Hintergrund** (experimentell, siehe Limitierung unten).
 - **🩺 Preview-Stream-Debug**: `GET /api/preview3d/debug` inline im Tab — Frames encoded/skipped,
   Fehler, aktuelle/letzte Stream-fps, Zoom-Wert, Kamera-Distanz, Draw()-Aufrufrate.
 
-## Bekannte Limitierung: Einfrieren funktioniert nicht
+## Einfrieren: dritter Versuch (0.0.0.162, Brio-Technik) — im Test
+
+Nach den zwei gescheiterten Flag-Versuchen (unten dokumentiert) wurde Brio (etabliertes
+Posing-Plugin) dekompiliert: es friert NICHT über irgendein Flag ein, sondern **überschreibt die
+Havok-Skeleton-Bone-Transforms (`hkaPose.LocalPose`/`ModelPose`) jeden Frame** mit einem Snapshot —
+die Spiel-Animation läuft weiter, ihr Ergebnis wird nur vor dem Rendern plattgestampft. Brio braucht
+dafür einen nativen Signatur-Scan-Hook (`FinalizeSkeletons`); wir nicht — `PreviewRenderer.Tick()`
+sitzt bereits zwischen `CharaView.Update()` und `.Render()`, derselbe kausale Zeitpunkt.
+
+Umsetzung (`PreviewRenderer.SetFreezePose` + `ApplyOrCaptureFrozenPose`): beim Einschalten wird die
+aktuelle Pose einmal gesnapshottet (alle `hkQsTransformf` pro Partial-Skeleton, identisches
+Traversal wie `SkeletonPoseService.Capture` im 3D-Viewer), danach jeden Tick zurückgeschrieben
+(beide Spaces + `ModelInSync`/`LocalInSync` gesetzt). Ändert sich die Skeleton-Form (Gear-Wechsel),
+wird automatisch neu gesnapshottet. Risiko klein: nur Schreiben in ein Transform-Array, das wir seit
+Wochen erfolgreich lesen — schlimmster Fall "Pose sieht falsch aus", kein Crash-Pfad.
+
+**Noch nicht live verifiziert** — falls es wieder nicht greift, wäre der nächste Verdächtige, dass
+das Spiel die Pose NACH unserem Tick()-Schreiben noch einmal neu berechnet (dann bräuchte es doch
+Brios FinalizeSkeletons-Hook-Punkt).
+
+## Bekannte Limitierung: Einfrieren funktioniert nicht (Versuche 1+2, historisch)
 
 Ursprünglicher Wunsch: "1x Glam+Char einfangen, dann nur noch angucken" ohne Live-Animation
 (Atmen/Wippen), weil die Idle-Drosselung (s.o.) aus der sanften Idle-Animation ein sichtbares
@@ -193,9 +214,8 @@ native ImGui-Fenster offen war (die Dispatch-Logik lief nur innerhalb `DrawChara
 
 ## Offene Punkte
 
-- **Pose einfrieren funktioniert nicht** (siehe Limitierung oben) — drei Recherchen (zwei
-  Code-Versuche + eine Struct-Analyse), kein Freeze-Feld in `TryonCharaView` vorhanden, nicht
-  weiter verfolgt.
+- **Pose einfrieren: dritter Versuch (Brio-Technik, Bone-Overwrite) eingebaut, live-Verifikation
+  ausstehend** (siehe Abschnitt oben).
 - Transparenz bei dunklen Outfits (siehe Limitierung oben) — kein sauberer Fix in Sicht ohne echte
   Alpha-/Tiefendaten vom Spiel; auch kein Greenscreen-Backdrop-Feld verfügbar.
 - Native-Slot-Übernahme (siehe Limitierung oben) — deckt jetzt bekannte 9 Agents ab, evtl. nicht
