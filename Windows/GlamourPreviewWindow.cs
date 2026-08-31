@@ -102,20 +102,35 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
     /// pipeline actually reads for worn gear — so a fresh Initialize() alone shows the right body/
     /// face but stale-from-native-default (usually empty) clothes. Reported live exactly like that:
     /// "ist mein char aber die kleidung ist nicht meine" right after a reset. Framework thread.</summary>
+    public string SeedSelfEquipmentOnceProbe() // public wrapper for /api/debug/seed
+    {
+        SeedSelfEquipmentOnce();
+        return _lastSeedReport;
+    }
+
+    private string _lastSeedReport = "never ran";
+
     private void SeedSelfEquipmentOnce()
     {
         try
         {
+            var wrote = 0;
             foreach (var slot in _glamour.GetSelfEquipment())
             {
                 var slotId = MapToCharaViewItemSlot(slot.Slot);
                 if (slotId < 0) continue;
                 var itemId = slot.GlamourItemId ?? slot.ActualItemId;
                 _renderer.SetCharaViewItemSlot((byte)slotId, itemId, slot.Stain0, slot.Stain1);
+                wrote++;
             }
-
+            _lastSeedReport = $"wrote {wrote} slots, rendererInitialized={_renderer.IsInitialized}";
+            _log.Info($"[GlamourPreviewWindow] SeedSelfEquipment: {_lastSeedReport}");
         }
-        catch (Exception ex) { _log.Warning($"[GlamourPreviewWindow] SeedSelfEquipmentOnce failed: {ex.Message}"); }
+        catch (Exception ex)
+        {
+            _lastSeedReport = $"failed: {ex.Message}";
+            _log.Warning($"[GlamourPreviewWindow] SeedSelfEquipmentOnce failed: {ex.Message}");
+        }
     }
 
     /// <summary>Full Release()+re-Initialize() for self — for when CharaView is stuck showing

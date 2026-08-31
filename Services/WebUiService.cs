@@ -606,6 +606,12 @@ public sealed class WebUiService : IDisposable
             return Json(new { ok = true });
         }
 
+        if (method == "POST" && path == "/api/debug/seed")
+        {
+            var report = _framework.RunOnFrameworkThread(() => _shell.PreviewWindow?.SeedSelfEquipmentOnceProbe() ?? "no preview window").GetAwaiter().GetResult();
+            return Json(new { report });
+        }
+
         if (method == "GET" && path == "/api/debug/selfequip")
         {
             // direct probe: what does GetSelfEquipment actually return right now?
