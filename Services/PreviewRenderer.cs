@@ -722,67 +722,62 @@ public sealed unsafe class PreviewRenderer : IDisposable
             }
         }
 
-        // ponytail: re-applied every tick — CopyFromCharacter above mirrors the live character's
-        // ModelData wholesale, which stomps this flag back to "drawn" each frame otherwise.
-        agent->CharaView.ToggleDrawWeapon(_weaponDrawn);
-        // ToggleDrawWeapon alone wasn't enough: in combat the live char's drawn weapon still
-        // showed up in the preview (reported live). HideWeapon is the real visibility flag on
-        // TryonCharaView (separate from the drawn/sheathed stance) — keep the preview weaponless
-        // unless explicitly requested.
+        // Weapon machinery is SINGLE-MECHANISM now (path #13). The whole agent-layer stack that
+        // lived here — ToggleDrawWeapon per tick, HideWeapon/DrawWeapon flags, DoUpdate=weaponMode
+        // and the _items replay after Update() — was built while NOTHING rendered a weapon. Once
+        // #13 started spawning real weapon draw objects, those paths turned into ADDITIONAL
+        // spawners (live: three weapons at once, two stacked on the back, one floating). Deleted;
+        // the agent is untouched, weapon visibility is handled purely at the clone's DrawData.
         var weaponMode = _weaponDrawn || _weaponOnly;
-        agent->CharaView.HideWeapon = !weaponMode;
-        // The final weapon mechanism (state-dump saga): the agent's HideWeapon/DrawWeapon flags
-        // only take effect through vf10 — which needs DoUpdate=true — which ALSO wipes _items with
-        // the inactive agent's empty try-on data every Update. So in weapon mode: DoUpdate on,
-        // agent flags set, and the cached item seed REPLAYED right after Update() below.
-        agent->CharaView.DrawWeapon = weaponMode && _weaponDrawn;
-        agent->CharaView.DoUpdate = weaponMode;
-        // ModelData carries its OWN WeaponHidden byte (0x89) that CopyFromCharacter refreshes from
-        // the live char every tick — clear it in weapon mode or the copied "sheathed/hidden" state
-        // wins. DoUpdate is deliberately NOT touched here anymore: 224 forced it TRUE every tick
-        // outside weapon mode, which made vf10 fetch the INACTIVE agent's empty try-on data every
-        // Update and wipe _items — the "permanently naked clone" (diagnosed via the force-seed
-        // probe: 12 slots written, still naked). The engine's own default is left alone; weapon
-        // mode keeps it off via the false-branch below.
-        if (weaponMode) agent->CharaView.ModelData.WeaponHidden = false;
-        // The weapon DrawObject spawns fine but its own IsVisible flag stays FALSE (log-verified:
-        // drawObject=non-null, objVisible=False) — force it every tick while a weapon mode is on,
-        // same as the weapon-only body-hide loop already did for its case.
-        if (_weaponDrawn || _weaponOnly)
         {
             var wch = agent->CharaView.GetCharacter();
             if (wch != null)
             {
-                // Weapon path #13 (Brio's ActorSpawnService mechanism, never tried here): run the
-                // NATIVE full character-setup copy on the clone. Brio-spawned client objects render
-                // weapons because CharacterSetup.CopyFromCharacter builds the weapon draw objects
-                // through the real setup pipeline — not the UI-level ModelData copy CharaView uses.
-                // One-shot on weapon-mode activation; the per-tick flag clears below keep it shown.
-                if (_weaponSetupPending)
+                // Weapon path #13 (Brio's ActorSpawnService mechanism): the NATIVE full
+                // character-setup copy builds weapon draw objects through the real setup pipeline —
+                // the UI-level ModelData copy CharaView uses never does. Guarded on "mainhand draw
+                // object missing": every unguarded re-run spawned a fresh weapon on top of the old
+                // one (live screenshot: two on the back).
+                if (weaponMode && _weaponSetupPending)
                 {
                     var srcAddr = _sourceProvider?.Invoke() ?? nint.Zero;
                     if (srcAddr != nint.Zero)
                     {
-                        wch->CharacterSetup.CopyFromCharacter((Character*)srcAddr, CharacterSetupContainer.CopyFlags.None);
+                        if (wch->DrawData.Weapon(DrawDataContainer.WeaponSlot.MainHand).DrawObject == null)
+                        {
+                            wch->CharacterSetup.CopyFromCharacter((Character*)srcAddr, CharacterSetupContainer.CopyFlags.None);
+                            _log.Info("[PreviewRenderer] weapon path #13: CharacterSetup.CopyFromCharacter applied to clone");
+                        }
                         // stance, ONE-SHOT only: per-tick forcing (246) made the game re-evaluate
-                        // the weapon attach every frame — duplicate weapon, one floating, no anim.
-                        // Set drawn once right after the setup copy; the thaw window that
-                        // SetWeaponDrawn opened lets the transition play out.
+                        // the weapon attach every frame — duplicate weapon, floating, no anim.
+                        // The thaw window SetWeaponDrawn opened lets the transition play out.
                         if (_weaponDrawn) wch->Timeline.Flags3 |= 0x40; // bit6 = IsWeaponDrawn
                         _weaponSetupPending = false;
-                        _log.Info("[PreviewRenderer] weapon path #13: CharacterSetup.CopyFromCharacter applied to clone");
                     }
                 }
-                // the ROOT flags (state-dump proven: hidden=True, ddWeaponHidden=True while the
-                // model+draw object were long since correct): the clone's DrawData hidden flags
-                // stay set and the engine re-derives invisibility from them every frame, overruling
-                // a bare IsVisible force. Clear container + per-slot + draw object, every tick.
-                wch->DrawData.IsWeaponHidden = false;
-                for (var i = 0; i < 3; i++)
+                if (weaponMode)
                 {
-                    ref var slotData = ref wch->DrawData.Weapon((DrawDataContainer.WeaponSlot)i);
-                    slotData.IsHidden = false;
-                    if (slotData.DrawObject != null) slotData.DrawObject->IsVisible = true;
+                    // the ROOT flags (state-dump proven): the clone's DrawData hidden flags stay
+                    // set and the engine re-derives invisibility from them every frame — clear
+                    // container + per-slot + draw object, every tick.
+                    wch->DrawData.IsWeaponHidden = false;
+                    for (var i = 0; i < 3; i++)
+                    {
+                        ref var slotData = ref wch->DrawData.Weapon((DrawDataContainer.WeaponSlot)i);
+                        slotData.IsHidden = false;
+                        if (slotData.DrawObject != null) slotData.DrawObject->IsVisible = true;
+                    }
+                }
+                else
+                {
+                    // outside weapon mode the #13-spawned draw objects PERSIST on the clone — hide
+                    // them, and drop the drawn stance so re-entry starts holstered like vanilla
+                    wch->Timeline.Flags3 &= unchecked((byte)~0x40);
+                    for (var i = 0; i < 3; i++)
+                    {
+                        ref var slotData = ref wch->DrawData.Weapon((DrawDataContainer.WeaponSlot)i);
+                        if (slotData.DrawObject != null) slotData.DrawObject->IsVisible = false;
+                    }
                 }
             }
         }
@@ -863,14 +858,6 @@ public sealed unsafe class PreviewRenderer : IDisposable
         // readback in GetWebCaptureStats shows what the engine actually keeps.
         ApplyOrtho(agent);
         agent->CharaView.Update(_counter, ch);
-        // weapon mode: vf10 just wiped _items with the agent's empty try-on data — replay the
-        // cached seed immediately so the outfit survives (see the weapon-mechanism comment above)
-        if (weaponMode)
-            for (byte s = 0; s < _seededItems.Length; s++)
-            {
-                var (itemId, s0, s1, glam) = _seededItems[s];
-                if (itemId != 0) agent->CharaView.SetItemSlotData(s, itemId, s0, s1, glam, false);
-            }
         ApplyOrtho(agent);
 
         if (_scaleWindowTicks > 0 && --_scaleWindowTicks == 0) _scaleCharaViewAllocs = false;
