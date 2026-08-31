@@ -783,7 +783,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
     // alpha-separated backdrop/character split to read instead (checked the FFXIVClientStructs field
     // dump, nothing like it exists), and dark clothing/hair close to that sampled color WILL get
     // eaten too. Known, accepted limitation — this is for looking at, not a finished feature.
-    private bool _transparentBackdropEnabled;
+    private bool _transparentBackdropEnabled = true; // default on (user request) — depth mask made it reliable
 
     // Depth-buffer mask for the transparent mode — the REAL fix for "dark clothing gets eaten".
     // The color target's alpha is flat 255 (probed live, 0.0.0.165) and no backdrop-color field

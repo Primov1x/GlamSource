@@ -105,7 +105,7 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
   <div class="row" style="margin-top:6px;margin-bottom:10px;flex-wrap:wrap;gap:8px">
     <button id="p3dspin" onclick="toggleAutoSpin()" title="Wie bei Online-Shops — dreht das Model automatisch. Ziehen mit der Maus oder Zurücksetzen stoppt es wieder.">🎠 Auto-Drehen</button>
     <button onclick="resetPreview3D()" title="Falls das Bild feststeckt oder was Falsches zeigt (z.B. ein fremdes Portrait) — stoppt auch Auto-Drehen">🔄 Preview zurücksetzen</button>
-    <button id="p3dtrans" onclick="toggleTransparent()" title="Experimentell: färbt den grauen Studio-Hintergrund transparent (naiver Chroma-Key — dunkle Klamotten/Haare können mit erwischt werden)">🪄 Transparenter Hintergrund</button>
+    <button id="p3dtrans" class="active" onclick="toggleTransparent()" title="Transparenter Hintergrund (Standard: an) — Depth-Maske, farbunabhängig, dunkle Outfits sicher">🪄 Transparenter Hintergrund</button>
     <button id="p3dfreeze" class="active" onclick="toggleFreeze()" title="Pose einfrieren (Standard: an) — Kamera (Drehen/Zoomen) bleibt bedienbar, nur die Idle-Animation stoppt">🧊 Pose einfrieren</button>
     <button id="p3dortho" class="active" onclick="toggleOrtho()" title="Orthografische Kamera (Standard: an) — Produkt-Viewer-Projektion ohne Verzerrung, Zoom kann den Char nicht mehr anschneiden">📐 Ortho-Kamera</button>
     <a href="#" onclick="loadPreview3DDebug();return false" style="font-size:12px">🩺 Preview-Stream-Debug (fps, Fehler, Frame-Größe)</a>
