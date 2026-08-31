@@ -1415,6 +1415,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
 
     // reused across frames (single encode in flight, guarded by _webEncodeInProgress)
     private byte[]? _pngRawBuffer;
+    private bool[]? _erodedScratch; // second mask ring for the anti-aliased silhouette edge
 
     /// <summary>Fast path of the depth-masked transparent encode: builds the RGBA rows directly
     /// (BGRA swizzle + depth mask + 1px erode) and writes the PNG itself — no GDI+ anywhere.</summary>
@@ -1448,6 +1449,22 @@ public sealed unsafe class PreviewRenderer : IDisposable
             }
         }
 
+        // pass 1: erode mask — kept pixel touching backdrop (4-neighborhood) goes transparent too
+        // (antialiased silhouette pixels blend char+backdrop color, the bright-fringe fix)
+        if (_erodedScratch == null || _erodedScratch.Length != w * h) _erodedScratch = new bool[w * h];
+        var eroded = _erodedScratch;
+        for (var y = 0; y < h; y++)
+        {
+            var rowBase = y * w;
+            for (var x = 0; x < w; x++)
+            {
+                var i = rowBase + x;
+                eroded[i] = isBackdrop[i]
+                    || (x > 0 && isBackdrop[i - 1]) || (x < w - 1 && isBackdrop[i + 1])
+                    || (y > 0 && isBackdrop[i - w]) || (y < h - 1 && isBackdrop[i + w]);
+            }
+        }
+
         var rawLen = h * (1 + w * 4);
         if (_pngRawBuffer == null || _pngRawBuffer.Length != rawLen) _pngRawBuffer = new byte[rawLen];
         var raw = _pngRawBuffer;
@@ -1460,21 +1477,24 @@ public sealed unsafe class PreviewRenderer : IDisposable
             for (var x = 0; x < w; x++, src += 4, dst += 4)
             {
                 var i = rowBase + x;
-                // 1px erode inline: kept pixel touching backdrop (4-neighborhood, un-eroded mask)
-                var transparent = isBackdrop[i]
-                    || (x > 0 && isBackdrop[i - 1]) || (x < w - 1 && isBackdrop[i + 1])
-                    || (y > 0 && isBackdrop[i - w]) || (y < h - 1 && isBackdrop[i + w]);
-                if (transparent)
+                if (eroded[i])
                 {
                     raw[dst] = 0; raw[dst + 1] = 0; raw[dst + 2] = 0; raw[dst + 3] = 0;
+                    continue;
                 }
-                else if (isBgra)
+                // anti-aliased edge ("Lupe an den Rändern verpixelt"): kept pixels bordering the
+                // eroded ring get half alpha — the binary 0/255 stair-step was the visible jaggy,
+                // doubly so magnified in the loupe. One semi ring reads as a smooth silhouette.
+                var edge = (x > 0 && eroded[i - 1]) || (x < w - 1 && eroded[i + 1])
+                    || (y > 0 && eroded[i - w]) || (y < h - 1 && eroded[i + w]);
+                var a = (byte)(edge ? 140 : 255);
+                if (isBgra)
                 {
-                    raw[dst] = color[src + 2]; raw[dst + 1] = color[src + 1]; raw[dst + 2] = color[src]; raw[dst + 3] = 255;
+                    raw[dst] = color[src + 2]; raw[dst + 1] = color[src + 1]; raw[dst + 2] = color[src]; raw[dst + 3] = a;
                 }
                 else
                 {
-                    raw[dst] = color[src]; raw[dst + 1] = color[src + 1]; raw[dst + 2] = color[src + 2]; raw[dst + 3] = 255;
+                    raw[dst] = color[src]; raw[dst + 1] = color[src + 1]; raw[dst + 2] = color[src + 2]; raw[dst + 3] = a;
                 }
             }
         }
