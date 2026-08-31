@@ -2090,7 +2090,22 @@ public sealed unsafe class PreviewRenderer : IDisposable
         {
             var agent = AgentTryon.Instance();
             if (agent != null)
+            {
+                // orphan prevention (same class of bug as the crafting-anvil saga): a weapon draw
+                // object spawned via path #13's CharacterSetup copy is NOT owned/cleaned up by
+                // CharaView.Release() the way the rest of the clone is — despawn it explicitly
+                // first via the native LoadWeapon(zero model) + HideWeapons, or it lingers in the
+                // scene across every future Release/Initialize cycle ("immer noch 3 Waffen" no
+                // matter what the per-tick tracking code did — a third, untracked leftover).
+                var wch = agent->CharaView.GetCharacter();
+                if (wch != null)
+                {
+                    wch->DrawData.HideWeapons(true);
+                    for (var i = 0; i < 3; i++)
+                        wch->DrawData.LoadWeapon((DrawDataContainer.WeaponSlot)i, default, 0, 0, 0, 0, false);
+                }
                 agent->CharaView.Release();
+            }
         }
         catch (Exception ex)
         {
