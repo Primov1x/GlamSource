@@ -597,25 +597,24 @@ public sealed unsafe class PreviewRenderer : IDisposable
         // every "...CharaView" struct, not just the ones we'd already tripped over live): dye
         // preview (Colorant), gearset preview (GearSet), the Character Inspect window, and the
         // Mirage Plate ("Glamour Plate") editor itself. Same shared-slot mechanism, same guard.
+        // Guard list TRIMMED back (0.0.0.243): the five "preventive" agents added in 161 included
+        // AgentStatus — the plain CHARACTER WINDOW, which players keep open constantly, and which
+        // uses CharaView slot 0 while we drive slot 2 (per the CharaView.cs slot table). Live
+        // report: "webview kaputt, kann nicht drehen" = the guard pausing for a window that never
+        // actually collides. Kept: Tryon + GearSet (both slot 2), BannerParty/MIP (slots 0-7,
+        // covers 2) and CharaCard (observed stealing the view live). Dropped: Status (slot 0),
+        // Inspect (1), Colorant (3), MiragePlate (uses its own flow).
         var charaCard = AgentCharaCard.Instance();
         var bannerParty = AgentBannerParty.Instance();
         var bannerMip = AgentBannerMIP.Instance();
-        var colorant = AgentColorant.Instance();
         var gearSet = AgentGearSet.Instance();
-        var inspect = AgentInspect.Instance();
-        var miragePlate = AgentMiragePrismMiragePlate.Instance();
-        var status = AgentStatus.Instance();
         if (agent->AgentInterface.IsAgentActive()
             || (charaCard != null && charaCard->AgentInterface.IsAgentActive())
             || (bannerParty != null && bannerParty->AgentBannerInterface.AgentInterface.IsAgentActive())
             || (bannerMip != null && bannerMip->AgentBannerInterface.AgentInterface.IsAgentActive())
-            || (colorant != null && colorant->AgentInterface.IsAgentActive())
-            || (gearSet != null && gearSet->AgentInterface.IsAgentActive())
-            || (inspect != null && inspect->AgentInterface.IsAgentActive())
-            || (miragePlate != null && miragePlate->AgentInterface.IsAgentActive())
-            || (status != null && status->AgentInterface.IsAgentActive()))
+            || (gearSet != null && gearSet->AgentInterface.IsAgentActive()))
         {
-            if (!_nativeUiOwnsSlot) _log.Info($"[PreviewRenderer] native UI took over the CharaView slot (tryon={agent->AgentInterface.IsAgentActive()} charaCard={charaCard != null && charaCard->AgentInterface.IsAgentActive()} bannerParty={bannerParty != null && bannerParty->AgentBannerInterface.AgentInterface.IsAgentActive()} bannerMip={bannerMip != null && bannerMip->AgentBannerInterface.AgentInterface.IsAgentActive()} colorant={colorant != null && colorant->AgentInterface.IsAgentActive()} gearSet={gearSet != null && gearSet->AgentInterface.IsAgentActive()} inspect={inspect != null && inspect->AgentInterface.IsAgentActive()} miragePlate={miragePlate != null && miragePlate->AgentInterface.IsAgentActive()} status={status != null && status->AgentInterface.IsAgentActive()}) — pausing our render/capture until it releases it");
+            if (!_nativeUiOwnsSlot) _log.Info($"[PreviewRenderer] native UI took over the CharaView slot (tryon={agent->AgentInterface.IsAgentActive()} charaCard={charaCard != null && charaCard->AgentInterface.IsAgentActive()} bannerParty={bannerParty != null && bannerParty->AgentBannerInterface.AgentInterface.IsAgentActive()} bannerMip={bannerMip != null && bannerMip->AgentBannerInterface.AgentInterface.IsAgentActive()} gearSet={gearSet != null && gearSet->AgentInterface.IsAgentActive()}) — pausing our render/capture until it releases it");
             _nativeUiOwnsSlot = true;
             return;
         }
