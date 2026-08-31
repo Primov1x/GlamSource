@@ -178,6 +178,7 @@ public class Plugin : IAsyncDalamudPlugin
         // fires every frame in-line with Present, same as WindowSystem.Draw above — the one place
         // D3D11 readback is allowed to happen. See PreviewRenderer.CaptureFrameForWeb.
         PluginInterface.UiBuilder.Draw += () => previewRenderer.CaptureFrameForWeb(Configuration.WebUiLive3DPreview);
+        PluginInterface.UiBuilder.Draw += PinBrowsingwayOverlaySize;
         PluginInterface.UiBuilder.OpenConfigUi += OpenConfigUi;
         PluginInterface.UiBuilder.OpenMainUi += ToggleMainUi;
 
@@ -256,6 +257,41 @@ public class Plugin : IAsyncDalamudPlugin
     // isn't guaranteed).
     private bool _bwHideDone;
     private int _bwHideRetryFrames = 300; // ~5s at 60fps
+
+    // Hard-pin the Browsingway overlay's ImGui window to the page's fixed content size — the
+    // overlay is an ImGui window in the SAME ImGui context as every plugin, so SetWindowSize by
+    // its exact window id ("{Name}###{Guid}", read from Browsingway's own config) simply works.
+    // Reported live: unlocking made the window "spring" to its old larger stored size; with this
+    // pin it can be MOVED while unlocked but never resized away from the content.
+    private string? _bwWindowId;
+    private int _bwWindowIdRetryFrames = 600;
+    private const float BwOverlayWidth = 1190f;
+    private const float BwOverlayHeight = 845f; // titlebar + nav + 660px panels + toolbar + paddings
+
+    private void PinBrowsingwayOverlaySize()
+    {
+        if (!Configuration.WebUiEnabled) return;
+        if (_bwWindowId == null)
+        {
+            if (_bwWindowIdRetryFrames-- % 120 != 0) return; // look up at most every ~2s
+            try
+            {
+                var path = Path.Combine(PluginInterface.ConfigDirectory.Parent!.FullName, "Browsingway.json");
+                if (!File.Exists(path)) return;
+                using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path));
+                foreach (var inlay in doc.RootElement.GetProperty("Inlays").EnumerateArray())
+                {
+                    if (!inlay.TryGetProperty("Url", out var url) || url.GetString()?.Contains("127.0.0.1:23424") != true) continue;
+                    _bwWindowId = $"{inlay.GetProperty("Name").GetString()}###{inlay.GetProperty("Guid").GetString()}";
+                    _log.Info($"[Plugin] Browsingway overlay window id resolved: {_bwWindowId}");
+                    break;
+                }
+            }
+            catch (Exception ex) { _log.Warning($"[Plugin] Browsingway window id lookup failed: {ex.Message}"); }
+            if (_bwWindowId == null) return;
+        }
+        Dalamud.Bindings.ImGui.ImGui.SetWindowSize(_bwWindowId, new System.Numerics.Vector2(BwOverlayWidth, BwOverlayHeight), Dalamud.Bindings.ImGui.ImGuiCond.Always);
+    }
     private string _lastRecentKey = "";
 
     private void OnFrameworkUpdate(IFramework fw)
