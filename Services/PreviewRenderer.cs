@@ -778,11 +778,12 @@ public sealed unsafe class PreviewRenderer : IDisposable
                             var model = src->DrawData.Weapon(slot).ModelId;
                             wch->DrawData.LoadWeapon(slot, model, 1, 0, 1, 0, false);
                         }
-                        // crafter's second tool lives in System, per clib comment — same call
+                        // crafter's second tool lives in System (=2; pinned clib doesn't name it)
                         {
-                            var model = src->DrawData.Weapon(DrawDataContainer.WeaponSlot.System).ModelId;
+                            var systemSlot = (DrawDataContainer.WeaponSlot)2;
+                            var model = src->DrawData.Weapon(systemSlot).ModelId;
                             if (model.Id != 0)
-                                wch->DrawData.LoadWeapon(DrawDataContainer.WeaponSlot.System, model, 1, 0, 1, 0, false);
+                                wch->DrawData.LoadWeapon(systemSlot, model, 1, 0, 1, 0, false);
                         }
                         _log.Info($"[PreviewRenderer] weapon path #14: LoadWeapon (Glamourer-matched) applied to clone, main={src->DrawData.Weapon(DrawDataContainer.WeaponSlot.MainHand).ModelId.Id} off={src->DrawData.Weapon(DrawDataContainer.WeaponSlot.OffHand).ModelId.Id}");
                         // stance, ONE-SHOT only: per-tick forcing (246) made the game re-evaluate

@@ -1,6 +1,6 @@
 # Character-Tab Web-Preview — Stand & Doku
 
-Stand: 0.0.0.266. Betrifft die Web-UI (`Services/WebUiPage.cs`/`WebUiService.cs`) und die
+Stand: 0.0.0.267. Betrifft die Web-UI (`Services/WebUiPage.cs`/`WebUiService.cs`) und die
 CharaView-Anbindung (`Services/PreviewRenderer.cs`, `Windows/GlamourPreviewWindow.cs`,
 `Windows/GlamSourceShellWindow.cs`). Für den Release-Prozess selbst siehe [`../RELEASING.md`](../RELEASING.md).
 
@@ -268,7 +268,7 @@ einmal deaktivieren + aktivieren** (frische CEF-Prozesse) — danach sofort wied
 Kein GlamSource-Bug; die Kill-Switches (`POST /api/debug/kill?sys=...&on=...`) bleiben für künftige
 Bisects drin.
 
-## Waffen-Anzeige in der Preview — Versuchsprotokoll (Stand 0.0.0.266)
+## Waffen-Anzeige in der Preview — Versuchsprotokoll (Stand 0.0.0.267)
 
 Ziel: eine gezogene/geglamte Waffe im Web-Preview-Klon sichtbar machen. Bisher **nicht
 zuverlässig gelöst**. CharaView (`AgentTryon`, slot 2 = TryOn/GearSetPreview) ist der native
