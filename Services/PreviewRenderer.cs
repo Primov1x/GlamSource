@@ -382,6 +382,21 @@ public sealed unsafe class PreviewRenderer : IDisposable
         return $"{sys}={(kill ? "KILLED" : "running")}";
     }
 
+    /// <summary>Hex dump of AgentTryon's undocumented tail (0x328..0x6E0) — for diffing before/
+    /// after a real TryOn() call to locate the internal item storage. Framework thread.</summary>
+    public string GetAgentTailHex()
+    {
+        var agent = AgentTryon.Instance();
+        if (agent == null) return "no agent";
+        var bytes = new byte[0x6E0 - 0x328];
+        fixed (byte* dst = bytes)
+            Buffer.MemoryCopy((byte*)agent + 0x328, dst, bytes.Length, bytes.Length);
+        return Convert.ToHexString(bytes);
+    }
+
+    /// <summary>Debug: fire a real AgentTryon.TryOn (WILL open the Fitting Room briefly). Framework thread.</summary>
+    public void DebugTryOn(uint itemId) => AgentTryon.TryOn(0, itemId, 0, 0, 0, false);
+
     /// <summary>Full weapon-pipeline state dump for live diagnosis. Framework thread.</summary>
     public string GetWeaponStateDump()
     {

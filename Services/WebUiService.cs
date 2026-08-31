@@ -617,6 +617,18 @@ public sealed class WebUiService : IDisposable
             return Json(new { ok = true });
         }
 
+        if (method == "GET" && path == "/api/debug/agenttail")
+        {
+            var hex = _framework.RunOnFrameworkThread(() => _shell.PreviewWindow?.Renderer.GetAgentTailHex() ?? "no renderer").GetAwaiter().GetResult();
+            return Json(new { baseOffset = "0x328", hex });
+        }
+
+        if (method == "POST" && path == "/api/debug/tryon" && uint.TryParse(query["itemId"], out var tryOnItemId))
+        {
+            _framework.RunOnFrameworkThread(() => _shell.PreviewWindow?.Renderer.DebugTryOn(tryOnItemId));
+            return Json(new { ok = true, itemId = tryOnItemId });
+        }
+
         if (method == "GET" && path == "/api/debug/weaponstate")
         {
             var dump = _framework.RunOnFrameworkThread(() => _shell.PreviewWindow?.Renderer.GetWeaponStateDump() ?? "no renderer").GetAwaiter().GetResult();
