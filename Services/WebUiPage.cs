@@ -321,10 +321,9 @@ function p3dResetView(){p3dRedraw()}
     if(!p3dDragging&&!p3dPanning)return;
     const dx=e.clientX-p3dLastX, dy=e.clientY-p3dLastY;
     p3dLastX=e.clientX;p3dLastY=e.clientY;
-    // char stays PINNED ("wie ein 3D-Produkt"): right-drag only rides the camera up/down the
-    // character (dy), never sideways — horizontal pan would push him out of center.
-    if(p3dPanning) post(`/api/action/preview3d/pan?dx=0&dy=${(dy*0.75).toFixed(2)}`);
-    else post(`/api/action/preview3d/rotate?dx=${(dx*0.75).toFixed(2)}&dy=${(dy*0.75).toFixed(2)}`);
+    // STRICT turntable ("er soll fest auf einem Punkt sitzen"): no pan of any kind — even the
+    // height-only ride let the char move in the frame. Both buttons orbit; wheel zooms. That's it.
+    post(`/api/action/preview3d/rotate?dx=${(dx*0.75).toFixed(2)}&dy=${(dy*0.75).toFixed(2)}`);
   });
   canvas.addEventListener('wheel',e=>{
     e.preventDefault();
