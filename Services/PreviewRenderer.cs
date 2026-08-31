@@ -460,6 +460,12 @@ public sealed unsafe class PreviewRenderer : IDisposable
                 var dd = ch->DrawData.Weapon((DrawDataContainer.WeaponSlot)i);
                 sb.Append($"clone.dd.weapon{i}({(DrawDataContainer.WeaponSlot)i}): id={dd.ModelId.Id} type={dd.ModelId.Type} drawObj={(nint)dd.DrawObject:X} vis={(dd.DrawObject != null ? dd.DrawObject->IsVisible : false)} hidden={dd.IsHidden} | ");
             }
+            // 4th, never-touched slot: DrawDataContainer._unkWeaponData @ 0x160 — checking whether
+            // a residual/duplicate draw object lives here, outside the 3 slots we manage.
+            {
+                var unk = *(DrawObjectData*)((byte*)Unsafe.AsPointer(ref ch->DrawData) + 0x160);
+                sb.Append($"clone.dd.unkWeapon: id={unk.ModelId.Id} type={unk.ModelId.Type} drawObj={(nint)unk.DrawObject:X} vis={(unk.DrawObject != null ? unk.DrawObject->IsVisible : false)} hidden={unk.IsHidden} | ");
+            }
             sb.Append($"clone: ddWeaponHidden={ch->DrawData.IsWeaponHidden} mode={ch->Mode}");
         }
         else sb.Append("clone: null");
