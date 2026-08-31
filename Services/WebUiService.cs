@@ -526,6 +526,9 @@ public sealed class WebUiService : IDisposable
             // does, same established pattern) to tell "hit MY 20.0 zoom clamp" from "native camera
             // distance floor, same as vanilla Examine/Fitting Room" apart.
             float? cameraDistance = null;
+            (bool isOrtho, float orthoHeight, float fov)? camState = null;
+            try { camState = _framework.RunOnFrameworkThread(() => renderer?.GetRenderCameraState()).GetAwaiter().GetResult(); }
+            catch { /* best effort */ }
             try { cameraDistance = _framework.RunOnFrameworkThread(() => renderer?.GetCameraDistance()).GetAwaiter().GetResult(); }
             catch { /* best-effort diagnostic field */ }
             return Json(new
@@ -534,6 +537,10 @@ public sealed class WebUiService : IDisposable
                 rendererInitialized = renderer?.IsInitialized ?? false,
                 zoom = renderer?.Zoom,
                 ortho = renderer?.OrthoEnabled,
+                // engine readback — is our ortho write actually sticking?
+                engineIsOrtho = camState?.isOrtho,
+                engineOrthoHeight = camState?.orthoHeight,
+                engineFov = camState?.fov,
                 cameraDistance,
                 stagingReady = stats?.StagingReady ?? false,
                 stagingWidth = stats?.StagingWidth ?? 0,

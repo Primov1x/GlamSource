@@ -560,21 +560,13 @@ public sealed unsafe class PreviewRenderer : IDisposable
             SetZoom(_zoom * 0.98f);
         }
 
+        // ortho projection — written BEFORE Update (which may rebuild the projection from these
+        // fields) AND again after (in case Update overwrites them from its own config). First
+        // after-Update-only version rendered "sehr weit weg und Zoom tut nichts" live — the
+        // readback in GetWebCaptureStats shows what the engine actually keeps.
+        ApplyOrtho(agent);
         agent->CharaView.Update(_counter, ch);
-
-        // ortho projection — reapplied every frame (the game re-derives the projection from these
-        // fields each CharaView update, a one-time write would be stomped). Zoom drives the
-        // projection HEIGHT here, not the camera position — see _orthoEnabled's comment.
-        if (_orthoEnabled)
-        {
-            var sceneCam = agent->CharaView.Camera;
-            if (sceneCam != null && sceneCam->RenderCamera != null)
-            {
-                var rc = sceneCam->RenderCamera;
-                rc->IsOrtho = true;
-                rc->OrthoHeight = OrthoBaseHeight / _zoom;
-            }
-        }
+        ApplyOrtho(agent);
 
         if (_autoFreezeCountdown > 0 && --_autoFreezeCountdown == 0 && !_freezePose) SetFreezePose(true);
 
@@ -695,6 +687,28 @@ public sealed unsafe class PreviewRenderer : IDisposable
     }
 
     public bool OrthoEnabled => _orthoEnabled;
+
+    private void ApplyOrtho(AgentTryon* agent)
+    {
+        if (!_orthoEnabled) return;
+        var sceneCam = agent->CharaView.Camera;
+        if (sceneCam == null || sceneCam->RenderCamera == null) return;
+        var rc = sceneCam->RenderCamera;
+        rc->IsOrtho = true;
+        rc->OrthoHeight = OrthoBaseHeight / _zoom;
+    }
+
+    /// <summary>Readback of what the engine actually kept in the render camera — for diagnosing
+    /// whether our ortho writes stick or get stomped by CharaView.Update. Framework thread.</summary>
+    public (bool isOrtho, float orthoHeight, float fov)? GetRenderCameraState()
+    {
+        if (!_initialized) return null;
+        var agent = AgentTryon.Instance();
+        var cam = agent != null ? agent->CharaView.Camera : null;
+        if (cam == null || cam->RenderCamera == null) return null;
+        var rc = cam->RenderCamera;
+        return (rc->IsOrtho, rc->OrthoHeight, rc->FoV);
+    }
 
     // ponytail: neutral preview default — no weapon/tool in hand until the user opts in.
     private bool _weaponDrawn;
