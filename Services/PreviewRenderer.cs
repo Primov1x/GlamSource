@@ -549,6 +549,17 @@ public sealed unsafe class PreviewRenderer : IDisposable
         var ch = agent->CharaView.GetCharacter();
         if (ch == null) return;
 
+        // smart framing, ease-out half ("nie in einer Box wirken"): if the char clips the RT
+        // border (arm swung past the edge mid-rotation, or a zoom fine front-on but not side-on),
+        // gently pull the camera back each tick until he's fully in frame. 2%/tick reads as a
+        // smooth glide; floor at 1.0 — the default full-body framing may legitimately touch the
+        // bottom edge, easing forever below that would fight the native framing.
+        if (_charTouchesBorder && _zoom > 1.0f)
+        {
+            NotifyInteraction(); // full capture rate while auto-framing so the glide streams smoothly
+            SetZoom(_zoom * 0.98f);
+        }
+
         agent->CharaView.Update(_counter, ch);
         if (_autoFreezeCountdown > 0 && --_autoFreezeCountdown == 0 && !_freezePose) SetFreezePose(true);
 
@@ -602,6 +613,10 @@ public sealed unsafe class PreviewRenderer : IDisposable
         // plane — tune based on feel, same as before.
         var target = Math.Clamp(zoom, 0.5f, 80.0f);
         var current = _zoom;
+        // smart framing: refuse to zoom IN while the char already touches the RT border — going
+        // closer would clip him at the invisible edge ("nie in einer Box wirken"). Zooming OUT
+        // always allowed.
+        if (target > current && _charTouchesBorder) return;
         _zoom = target;
         if (!_initialized || target == current) return;
 
@@ -735,6 +750,42 @@ public sealed unsafe class PreviewRenderer : IDisposable
     // stays off for the session, transparent mode falls back to the flood-fill
     private bool _depthPathBroken;
 
+    // Smart framing ("der Char soll NIE in einer Box wirken"): true while character pixels touch
+    // the render-target border, i.e. the char is being clipped by the invisible RT edge. Fed by
+    // the depth mask each encoded frame (background thread write, framework thread read — plain
+    // bool, worst case one frame stale). SetZoom refuses to zoom IN while set; Tick eases the
+    // camera back OUT until clear (e.g. an arm swinging past the edge mid-rotation).
+    private volatile bool _charTouchesBorder;
+
+    /// <summary>Scan the depth buffer's border ring (2px inset) for character pixels.</summary>
+    private void UpdateBorderTouch(byte[] depth, int depthPitch, DXGI_FORMAT depthFmt, int depthW, int depthH)
+    {
+        var isFloat = depthFmt is DXGI_FORMAT.DXGI_FORMAT_R32_TYPELESS or DXGI_FORMAT.DXGI_FORMAT_D32_FLOAT
+            or DXGI_FORMAT.DXGI_FORMAT_R32_FLOAT or DXGI_FORMAT.DXGI_FORMAT_R32G8X24_TYPELESS
+            or DXGI_FORMAT.DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
+        var texelSize = depthFmt is DXGI_FORMAT.DXGI_FORMAT_R32G8X24_TYPELESS or DXGI_FORMAT.DXGI_FORMAT_D32_FLOAT_S8X24_UINT ? 8 : 4;
+        const int inset = 2;
+        bool touch = false;
+        unsafe
+        {
+            fixed (byte* dpFixed = depth)
+            {
+                var dp = dpFixed;
+                bool CharAt(int x, int y)
+                {
+                    var p = dp + y * depthPitch + x * texelSize;
+                    var d = isFloat ? *(float*)p : (p[0] | (p[1] << 8) | (p[2] << 16)) / 16777215f;
+                    return d != 0f && d != 1f; // not the clear value = geometry = character
+                }
+                for (var x = inset; x < depthW - inset && !touch; x += 2)
+                    touch = CharAt(x, inset) || CharAt(x, depthH - 1 - inset);
+                for (var y = inset; y < depthH - inset && !touch; y += 2)
+                    touch = CharAt(inset, y) || CharAt(depthW - 1 - inset, y);
+            }
+        }
+        _charTouchesBorder = touch;
+    }
+
     // ponytail: "es reicht auch eine Standaufnahme, der Char muss sich nicht aktiv bewegen" —
     // don't spend GPU/CPU capturing a smooth video nobody's watching. Full-rate (EncodeThrottleMs)
     // only for a short window after an actual camera action (rotate/pan/zoom/auto-spin); otherwise
@@ -795,7 +846,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
         bool StagingReady, long FramesEncoded, long FramesSkipped, long CaptureErrors,
         long LastFrameBytes, long LastEncodeDurationMs, string? LastError, int StagingWidth, int StagingHeight,
         bool NativeUiOwnsSlot, double DrawCallsPerSecond, byte AlphaMin, byte AlphaMax,
-        bool DepthMaskReady, string? DepthFormat);
+        bool DepthMaskReady, string? DepthFormat, bool CharTouchesBorder);
 
     /// <summary>Snapshot of the web MJPEG capture pipeline's health — thread-safe plain field reads,
     /// same as LatestWebJpeg.</summary>
@@ -807,7 +858,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
             _webStaging[0].Get() != null, _webFramesEncoded, _webFramesSkipped, _webCaptureErrors,
             _lastFrameBytes, _lastEncodeDurationMs, _lastCaptureError, (int)_webStagingWidth, (int)_webStagingHeight,
             _nativeUiOwnsSlot, drawCallsPerSecond, _alphaMin, _alphaMax,
-            _rawDepthValid, _depthStaging[0].Get() != null ? _depthFormat.ToString() : null);
+            _rawDepthValid, _depthStaging[0].Get() != null ? _depthFormat.ToString() : null, _charTouchesBorder);
     }
 
     /// <summary>Latest JPEG-encoded frame for the web-UI MJPEG stream (see WebUiService's
@@ -972,8 +1023,8 @@ public sealed unsafe class PreviewRenderer : IDisposable
                     // "no encode running" window — the Task below reads it, and the next refresh
                     // can only happen after that Task finished (same lifecycle guarantee
                     // _rawFrameBuffer relies on).
-                    if (transparent) DrainDepthCopy(context, i);
-                    var depthValid = transparent && _rawDepthValid && _rawDepthBuffer != null;
+                    DrainDepthCopy(context, i);
+                    var depthValid = _rawDepthValid && _rawDepthBuffer != null;
                     var depthBuf = _rawDepthBuffer;
                     var depthPitch = _rawDepthRowPitch;
                     var depthFmt = _depthFormat;
@@ -1002,6 +1053,8 @@ public sealed unsafe class PreviewRenderer : IDisposable
                                 _alphaMin = amin;
                                 _alphaMax = amax;
                             }
+                            // smart-framing border check — every frame, every mode (see _charTouchesBorder)
+                            if (depthValid) UpdateBorderTouch(depthBuf!, depthPitch, depthFmt, depthW, depthH);
                             var png = transparent;
                             // depth mask when we have one; flood-fill only as fallback (depth copy
                             // not finished yet / depth target unavailable)
@@ -1046,7 +1099,10 @@ public sealed unsafe class PreviewRenderer : IDisposable
             if (_webCopyPending[slot]) continue; // still in flight — try the other buffer
             // depth FIRST, color second, same context — color-copy-finished then implies
             // depth-copy-finished, and both are from the same frame (see _depthStaging's comment)
-            if (_transparentBackdropEnabled) IssueDepthCopy(device, context, slot);
+            // depth is copied in EVERY mode now (was transparent-only): the smart-zoom border
+            // check needs the char mask even while streaming JPEG. One extra CopyResource+Map
+            // per frame, negligible.
+            IssueDepthCopy(device, context, slot);
             context.Get()->CopyResource((ID3D11Resource*)_webStaging[slot].Get(), (ID3D11Resource*)tex.Get());
             _webCopyPending[slot] = true;
             _webBufferSeq[slot] = _webNextSeq++;

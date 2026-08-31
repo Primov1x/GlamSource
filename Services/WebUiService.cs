@@ -544,6 +544,7 @@ public sealed class WebUiService : IDisposable
                 // depth-mask status for the transparent mode (see PreviewRenderer._depthStaging)
                 depthMaskReady = stats?.DepthMaskReady ?? false,
                 depthFormat = stats?.DepthFormat,
+                charTouchesBorder = stats?.CharTouchesBorder ?? false,
                 latestFrameAvailable = renderer?.LatestWebJpeg != null,
                 previewGearOverrideSlots = _webPreviewGear.Keys.Select(s => s.ToString()).ToArray(),
                 // the actual "is it smooth" answer, no /xllog needed — live while a stream is
