@@ -447,6 +447,15 @@ public sealed class WebUiService : IDisposable
             return Json(new { ok = true, frozen = freezeOn });
         }
 
+        if (method == "POST" && path == "/api/action/preview3d/weapon" && _configuration.WebUiLive3DPreview
+            && bool.TryParse(query["on"], out var weaponOn))
+        {
+            _shell.PreviewWindow?.Renderer.NotifyInteraction();
+            _framework.RunOnFrameworkThread(() => _shell.PreviewWindow?.Renderer.SetWeaponDrawn(weaponOn));
+            _log.Information($"[WebUi] preview3d weapon shown: {weaponOn}");
+            return Json(new { ok = true, weapon = weaponOn });
+        }
+
         if (method == "POST" && path == "/api/action/preview3d/ortho" && _configuration.WebUiLive3DPreview
             && bool.TryParse(query["on"], out var orthoOn))
         {

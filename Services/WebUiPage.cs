@@ -108,6 +108,7 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
     <button id="p3dtrans" class="active" onclick="toggleTransparent()" title="Transparenter Hintergrund (Standard: an) — Depth-Maske, farbunabhängig, dunkle Outfits sicher">🪄 Transparenter Hintergrund</button>
     <button id="p3dfreeze" class="active" onclick="toggleFreeze()" title="Pose einfrieren (Standard: an) — Kamera (Drehen/Zoomen) bleibt bedienbar, nur die Idle-Animation stoppt">🧊 Pose einfrieren</button>
     <button id="p3dortho" class="active" onclick="toggleOrtho()" title="Orthografische Kamera (Standard: an) — Produkt-Viewer-Projektion ohne Verzerrung, Zoom kann den Char nicht mehr anschneiden">📐 Ortho-Kamera</button>
+    <button id="p3dweapon" onclick="toggleWeapon()" title="Waffe im Preview anzeigen (Standard: aus) — für geglamte Waffen">⚔️ Waffe zeigen</button>
     <a href="#" onclick="loadPreview3DDebug();return false" style="font-size:12px">🩺 Preview-Stream-Debug (fps, Fehler, Frame-Größe)</a>
     <pre id="p3ddebug" style="display:none;font-size:11px;background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:8px;margin-top:6px;white-space:pre-wrap"></pre>
   </div>
@@ -184,6 +185,13 @@ async function toggleTransparent(){
   const btn=$('#p3dtrans');
   const on=!btn.classList.contains('active');
   await post(`/api/action/preview3d/transparent?on=${on}`);
+  btn.classList.toggle('active',on);
+}
+
+async function toggleWeapon(){
+  const btn=$('#p3dweapon');
+  const on=!btn.classList.contains('active');
+  await post(`/api/action/preview3d/weapon?on=${on}`);
   btn.classList.toggle('active',on);
 }
 

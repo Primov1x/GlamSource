@@ -577,7 +577,12 @@ public sealed unsafe class PreviewRenderer : IDisposable
         ApplyOrtho(agent);
 
         if (_scaleWindowTicks > 0 && --_scaleWindowTicks == 0) _scaleCharaViewAllocs = false;
-        if (_autoFreezeCountdown > 0 && --_autoFreezeCountdown == 0 && !_freezePose) SetFreezePose(true);
+        // auto-freeze gate, from a live incident ("char hat grad random T-Pose gemacht"): a banner
+        // hijack triggers auto-reinit, and the freeze countdown then fired while the rebuilt clone
+        // was STILL LOADING its model — snapshot froze the load/T-pose permanently. The countdown
+        // only ticks while the CharaView itself says the character finished loading.
+        if (_autoFreezeCountdown > 0 && agent->CharaView.CharacterLoaded
+            && --_autoFreezeCountdown == 0 && !_freezePose) SetFreezePose(true);
 
         // freeze: refresh the clone's skeleton pointer for the UpdateBonePhysics detour (which runs
         // in the game's render task, where the pose is actually computed — writing bones HERE was
