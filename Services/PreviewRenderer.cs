@@ -346,6 +346,39 @@ public sealed unsafe class PreviewRenderer : IDisposable
 
     public bool IsInitialized => _initialized;
 
+    // --- stutter-bisect kill switches (POST /api/debug/kill) — each disables one subsystem live
+    // so the stutter culprit can be isolated without rebuilds. All default OFF (= running).
+    private volatile bool _killTick;
+    private volatile bool _killCapture;
+    private volatile bool _killDepth;
+    private volatile bool _killFreezeHook;
+
+    /// <summary>Kill/revive one subsystem for stutter bisection. Framework thread.
+    /// Known: tick, capture, depth, freezehook, texhook. Returns applied state string.</summary>
+    public string SetDebugKill(string sys, bool kill)
+    {
+        switch (sys)
+        {
+            case "tick": _killTick = kill; break;
+            case "capture": _killCapture = kill; break;
+            case "depth": _killDepth = kill; break;
+            case "freezehook":
+                _killFreezeHook = kill;
+                if (kill) _updateBonePhysicsHook?.Disable();
+                else if (_freezePose) _updateBonePhysicsHook?.Enable();
+                break;
+            case "texhook":
+                if (kill) _createTexture2DHook?.Disable();
+                else _createTexture2DHook?.Enable();
+                break;
+            default: return $"unknown '{sys}'";
+        }
+        return $"{sys}={(kill ? "KILLED" : "running")}";
+    }
+
+    public string DebugKillState =>
+        $"tick={_killTick} capture={_killCapture} depth={_killDepth} freezehook={_killFreezeHook} texhook={!(_createTexture2DHook?.IsEnabled ?? false)}";
+
     /// <summary>True when our CharaView lost its camera — seen live after AgentBannerParty slot
     /// takeovers: every camera call silently no-ops from then on. NOT true while a native UI still
     /// owns the slot (temporary, resolves itself). Framework thread. Caller should fully
@@ -424,6 +457,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
     /// <summary>Per-frame update/render. Must be called on Framework thread.</summary>
     public void Tick()
     {
+        if (_killTick) { _freezeSkeleton = 0; return; } // bisect switch
         _freezeAppliedThisFrame = false; // re-arm the once-per-frame freeze gate (see the detour)
         // Freeze-pointer hygiene, learned from a REAL crash (AccessViolation in
         // ApplyOrCaptureFrozenPose inside the detour, live crash dump): the pointer was only
@@ -1253,6 +1287,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
         if (_drawCallWindowStartMs == 0) _drawCallWindowStartMs = Environment.TickCount64;
         _drawCallCount++;
         if (!enabled) { _latestWebJpeg = null; ReleaseWebStaging(); return; }
+        if (_killCapture) return; // bisect switch
         // Native UI (Fitting Room/Glamour Plate) currently owns the shared CharaView slot (see
         // Tick()'s IsAgentActive() check) — capturing it would just serve their content over our
         // stream. Stop pushing new frames (the MJPEG stream just freezes on our last real frame
@@ -1524,7 +1559,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
     /// before that slot's COLOR copy so both land in the same frame (see _depthStaging's comment).</summary>
     private void IssueDepthCopy(ComPtr<ID3D11Device> device, ComPtr<ID3D11DeviceContext> context, int slot)
     {
-        if (_depthPathBroken) return;
+        if (_depthPathBroken || _killDepth) return;
         var gameTex = GetCharaViewDepthTexture();
         if (gameTex == null || gameTex->D3D11Texture2D == null)
         {

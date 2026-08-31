@@ -271,10 +271,11 @@ public class Plugin : IAsyncDalamudPlugin
     // set by the web UI's minimize button (WebUiService /api/action/overlay/minimize) — the page
     // collapses its content AND the actual ImGui window shrinks to the title bar
     public static volatile bool BwOverlayMinimized;
+    public static volatile bool BwPinKilled; // stutter-bisect switch for the per-frame SetWindowSize
 
     private void PinBrowsingwayOverlaySize()
     {
-        if (!Configuration.WebUiEnabled) return;
+        if (!Configuration.WebUiEnabled || BwPinKilled) return;
         if (_bwWindowId == null)
         {
             if (_bwWindowIdRetryFrames-- % 120 != 0) return; // look up at most every ~2s

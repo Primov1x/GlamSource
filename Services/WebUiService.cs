@@ -605,6 +605,18 @@ public sealed class WebUiService : IDisposable
             return Json(new { ok = true });
         }
 
+        if (method == "POST" && path == "/api/debug/kill")
+        {
+            // stutter-bisect switches — toggled via curl while the user reports live.
+            // sys=tick|capture|depth|freezehook|texhook|bwpin, on=true kills, on=false revives.
+            var sys = query["sys"] ?? "";
+            _ = bool.TryParse(query["on"], out var killOn);
+            if (sys == "bwpin") { Plugin.BwPinKilled = killOn; return Json(new { ok = true, state = $"bwpin={(killOn ? "KILLED" : "running")}" }); }
+            var state = _framework.RunOnFrameworkThread(() => _shell.PreviewWindow?.Renderer.SetDebugKill(sys, killOn) ?? "no renderer").GetAwaiter().GetResult();
+            _log.Information($"[WebUi] debug kill: {state}");
+            return Json(new { ok = true, state });
+        }
+
         if (method == "GET" && path == "/api/preview3d/debug")
         {
             // ponytail: mirrors /api/model3d/debug's "don't guess, look at the actual counters"
@@ -653,6 +665,7 @@ public sealed class WebUiService : IDisposable
                 depthMaskReady = stats?.DepthMaskReady ?? false,
                 depthFormat = stats?.DepthFormat,
                 charTouchesBorder = stats?.CharTouchesBorder ?? false,
+                debugKills = renderer?.DebugKillState,
                 latestFrameAvailable = renderer?.LatestWebJpeg != null,
                 previewGearOverrideSlots = _webPreviewGear.Keys.Select(s => s.ToString()).ToArray(),
                 // the actual "is it smooth" answer, no /xllog needed — live while a stream is
