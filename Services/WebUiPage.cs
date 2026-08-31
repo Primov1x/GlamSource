@@ -290,6 +290,11 @@ async function loadPreview3DDebug(){
 // aspect matches the render target, so any clipping happens at the viewport border like in every
 // real 3D product viewer (see #preview3d's comment).
 let p3dBitmap=null;
+// Lupe (hold middle mouse): magnified circle at the cursor. The stream now carries a 2x-res
+// render target (server-side CreateTexture2D hook) shown downscaled — the loupe draws those
+// pixels 1:1-plus, so it's native-sharp, not digital mush.
+let p3dLoupe=false,p3dLoupeX=0,p3dLoupeY=0;
+const P3D_LOUPE_R=150,P3D_LOUPE_MAG=2;
 function p3dRedraw(){
   const canvas=$('#preview3d');
   const ctx=canvas.getContext('2d');
@@ -299,21 +304,41 @@ function p3dRedraw(){
   // no spotlight, no backdrop of any kind — "kein Schein, soll ins Webview integriert sein":
   // the transparent char composites straight onto the page like any other element
   ctx.drawImage(p3dBitmap,0,0);
+  if(p3dLoupe){
+    const r=P3D_LOUPE_R,m=P3D_LOUPE_MAG,x=p3dLoupeX,y=p3dLoupeY;
+    ctx.save();
+    ctx.beginPath();ctx.arc(x,y,r,0,7);ctx.clip();
+    ctx.imageSmoothingEnabled=false; // crisp native pixels inside the loupe
+    ctx.drawImage(p3dBitmap,x-r/m,y-r/m,2*r/m,2*r/m,x-r,y-r,2*r,2*r);
+    ctx.restore();
+    ctx.beginPath();ctx.arc(x,y,r,0,7);
+    ctx.lineWidth=3;ctx.strokeStyle='rgba(255,255,255,.55)';ctx.stroke();
+  }
 }
 function p3dResetView(){p3dRedraw()}
 
 (function initPreview3DDrag(){
   const canvas=$('#preview3d');
   let p3dPanning=false;
+  function loupePos(e){
+    const rect=canvas.getBoundingClientRect();
+    p3dLoupeX=(e.clientX-rect.left)*canvas.width/rect.width;
+    p3dLoupeY=(e.clientY-rect.top)*canvas.height/rect.height;
+  }
   canvas.addEventListener('contextmenu',e=>e.preventDefault());
   canvas.addEventListener('mousedown',e=>{
     stopAutoSpin();
     p3dLastX=e.clientX;p3dLastY=e.clientY;
+    if(e.button===1){e.preventDefault();p3dLoupe=true;loupePos(e);p3dRedraw();return} // middle = Lupe
     if(e.button===2){p3dPanning=true;canvas.classList.add('panning')}
     else{p3dDragging=true;canvas.classList.add('active')}
   });
-  window.addEventListener('mouseup',()=>{p3dDragging=false;p3dPanning=false;canvas.classList.remove('active','panning')});
+  window.addEventListener('mouseup',()=>{
+    p3dDragging=false;p3dPanning=false;canvas.classList.remove('active','panning');
+    if(p3dLoupe){p3dLoupe=false;p3dRedraw()}
+  });
   window.addEventListener('mousemove',e=>{
+    if(p3dLoupe){loupePos(e);p3dRedraw();return}
     if(!p3dDragging&&!p3dPanning)return;
     const dx=e.clientX-p3dLastX, dy=e.clientY-p3dLastY;
     p3dLastX=e.clientX;p3dLastY=e.clientY;

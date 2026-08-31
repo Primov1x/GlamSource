@@ -382,6 +382,14 @@ public sealed unsafe class PreviewRenderer : IDisposable
 
     private void DoInitialize(Character* source, AgentTryon* agent)
     {
+        // hi-res window: the RT family allocates lazily during the upcoming Render() calls —
+        // scale exactly those (see CreateTexture2DDetour). ~2s window covers the state machine.
+        EnsureCreateTexture2DHook();
+        if (_createTexture2DHook != null)
+        {
+            _scaleCharaViewAllocs = true;
+            _scaleWindowTicks = 120;
+        }
         // ponytail: agent is intentionally left INACTIVE — Show() opens the game's Fitting Room
         // addon. CharaView renders fine with an inactive agent (Ktisis precedent): Initialize
         // once, then per-tick Update/Render; items are written directly into ModelData.
@@ -568,6 +576,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
         agent->CharaView.Update(_counter, ch);
         ApplyOrtho(agent);
 
+        if (_scaleWindowTicks > 0 && --_scaleWindowTicks == 0) _scaleCharaViewAllocs = false;
         if (_autoFreezeCountdown > 0 && --_autoFreezeCountdown == 0 && !_freezePose) SetFreezePose(true);
 
         // freeze: refresh the clone's skeleton pointer for the UpdateBonePhysics detour (which runs
@@ -663,6 +672,55 @@ public sealed unsafe class PreviewRenderer : IDisposable
         var agent = AgentTryon.Instance();
         if (agent == null) return;
         agent->CharaView.SetCameraXAndY(deltaX, deltaY);
+    }
+
+    // Hi-res render target ("Ingame-Rendering, aber erweitert" research, avenue 2): the CharaView
+    // RT family is allocated lazily on first Render() through Device::CreateTexture2D. Hooking
+    // that and doubling the 576x960 allocations while OUR reinit is in flight gives a 1152x1920
+    // target — the stream carries 2x pixels, the page shows them at the same size, and a client-
+    // side loupe ("Lupe") can magnify 2x at native sharpness. The detour passes a stackalloc'd
+    // size so the caller's own array is never mutated; the scale window is armed by DoInitialize
+    // and disarmed after a countdown, so foreign CharaView allocations outside that window stay
+    // untouched. Sig-scan failure = feature silently off, native res, no crash.
+    private const string CreateTexture2DSig = "E8 ?? ?? ?? ?? 48 89 07 48 8D 7F 20";
+    private const int RtScale = 2;
+    private delegate nint CreateTexture2DDelegate(nint device, nint sizePtr, byte mipLevel, uint textureFormat, uint flags, uint unk);
+    private Dalamud.Hooking.Hook<CreateTexture2DDelegate>? _createTexture2DHook;
+    private volatile bool _scaleCharaViewAllocs;
+    private int _scaleWindowTicks;
+
+    private void EnsureCreateTexture2DHook()
+    {
+        if (_createTexture2DHook != null) return;
+        try
+        {
+            var addr = _sigScanner.ScanText(CreateTexture2DSig);
+            _createTexture2DHook = _gameInterop.HookFromAddress<CreateTexture2DDelegate>(addr, CreateTexture2DDetour);
+            _createTexture2DHook.Enable();
+        }
+        catch (Exception ex)
+        {
+            _lastCaptureError = $"CreateTexture2D sig scan failed — hi-res preview unavailable: {ex.Message}";
+            _log.Warning($"[PreviewRenderer] {_lastCaptureError}");
+        }
+    }
+
+    private nint CreateTexture2DDetour(nint device, nint sizePtr, byte mipLevel, uint textureFormat, uint flags, uint unk)
+    {
+        try
+        {
+            if (_scaleCharaViewAllocs && sizePtr != 0)
+            {
+                var size = (int*)sizePtr;
+                if (size[0] == 576 && size[1] == 960)
+                {
+                    var scaled = stackalloc int[2] { size[0] * RtScale, size[1] * RtScale };
+                    return _createTexture2DHook!.Original(device, (nint)scaled, mipLevel, textureFormat, flags, unk);
+                }
+            }
+        }
+        catch { /* never disturb the engine's allocator path */ }
+        return _createTexture2DHook!.Original(device, sizePtr, mipLevel, textureFormat, flags, unk);
     }
 
     // Orthographic camera ("Ingame-Rendering, aber erweitert" research, avenue 1): the CharaView's
@@ -1572,6 +1630,9 @@ public sealed unsafe class PreviewRenderer : IDisposable
         _freezeSkeleton = 0;
         _updateBonePhysicsHook?.Dispose();
         _updateBonePhysicsHook = null;
+        _scaleCharaViewAllocs = false;
+        _createTexture2DHook?.Dispose();
+        _createTexture2DHook = null;
         if (!_initialized) return;
         // Dispose can be called off-frame; hop to Framework thread for the Release.
         try { _framework.RunOnFrameworkThread(Release).Wait(); }
