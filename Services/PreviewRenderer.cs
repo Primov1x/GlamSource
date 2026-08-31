@@ -906,6 +906,21 @@ public sealed unsafe class PreviewRenderer : IDisposable
         SetWeaponDrawn(on);
     }
 
+    /// <summary>Push the CharaView's OWN ModelData through the engine's SetModelData member —
+    /// the missing link for weapons: raw byte writes into ModelData (CopyFromCharacter, the raw
+    /// slot writers) update gear via Update()'s diffing, but WEAPON draw objects only ever spawn
+    /// through the SetModelData/Initialize path (verified live: a valid sword written via
+    /// SetItemSlotData rendered nothing, reset didn't help). Call after any weapon-relevant
+    /// change. Framework thread.</summary>
+    public void ApplyModelData()
+    {
+        if (!_initialized) return;
+        var agent = AgentTryon.Instance();
+        if (agent == null) return;
+        // already unmanaged memory behind the agent pointer — plain address-of, no fixed needed
+        agent->CharaView.SetModelData(&agent->CharaView.ModelData);
+    }
+
     /// <summary>Show/hide the mainhand weapon model in the preview. Re-applied every Tick.
     /// Also thaws a frozen pose for a moment: the drawn/sheathed switch plays a stance animation —
     /// with the skeleton frozen the visible pose never changes (reported live: "Waffe zeigen macht
@@ -918,6 +933,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
         // mid-emote played the draw animation INSIDE the emote pose — clear the emote back to
         // idle first, the stance change then runs from a clean base
         if (_emoteTimelineId != 0) { _emoteClearPending = true; _emoteTimelineId = 0; _emotePlayPending = false; }
+        ApplyModelData(); // spawn the weapon draw objects — see ApplyModelData's comment
         ThawForAnimation();
     }
 
