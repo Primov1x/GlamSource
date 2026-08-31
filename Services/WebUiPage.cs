@@ -190,6 +190,7 @@ function toggleMinimize(){
 // Chromium feels like it".
 let p3dDragging=false, p3dLastX=0, p3dLastY=0, p3dAbort=null;
 
+let snapshotTimer=null;
 function startPreview3D(){
   stopPreview3D();
   const canvas=$('#preview3d');
@@ -198,6 +199,10 @@ function startPreview3D(){
   p3dAbort=new AbortController();
   runPreview3DStream(p3dAbort.signal);
   loadEmoteList();
+  // ponytail: loadSnapshot() otherwise only ran once on tab-open — a char/gear switch while the
+  // tab stayed open never showed up ("Items in der Übersicht laden garnicht"). Poll it alongside
+  // the preview stream; 3s matches the backend's own reseed cadence, no point going faster.
+  snapshotTimer=setInterval(loadSnapshot,3000);
 }
 
 let emoteListLoaded=false;
@@ -223,6 +228,7 @@ function stopPreview3D(){
   if(p3dAbort){p3dAbort.abort();p3dAbort=null}
   $('#preview3d').style.display='none';
   stopAutoSpin();
+  if(snapshotTimer){clearInterval(snapshotTimer);snapshotTimer=null}
 }
 
 // --- turntable auto-rotate, like a product viewer on a shop site ---
