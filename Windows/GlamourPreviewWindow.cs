@@ -349,6 +349,16 @@ public sealed unsafe class GlamourPreviewWindow : Window, IDisposable
     {
         if (!_clientState.IsLoggedIn) return;
         _renderer.Tick();
+        // Self-heal, from a live incident: AgentBannerParty repeatedly hijacked the shared slot
+        // and its release left CharaView WITHOUT a camera (debug showed cameraDistance:null) —
+        // every camera call silently no-opped ("Kamera hat garnicht funktioniert") and the last
+        // captured frame was a stranger's portrait. Full reinit (same path as the manual reset
+        // button, including the equipment re-seed) instead of waiting for the user to notice.
+        if (_renderer.CameraLost)
+        {
+            _log.Warning("[GlamourPreviewWindow] CharaView camera lost after a native-UI slot takeover — auto-reinitializing");
+            ForceReinitializeForSelf();
+        }
     }
 
     public override void PreDraw()  => UiStyle.PushWindow();

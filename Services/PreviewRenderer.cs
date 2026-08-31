@@ -150,14 +150,19 @@ public sealed unsafe class PreviewRenderer : IDisposable
         if (skeleton == null || skeleton->PartialSkeletonCount == 0) return;
         var partialCount = skeleton->PartialSkeletonCount;
 
+        // local copy — SetFreezePose(false) nulls _frozenModel from the framework thread while
+        // this runs on the render thread; using the field directly NRE'd live ("freeze detour:
+        // Object reference not set"). The local either sees the whole array or triggers capture.
+        var frozenModel = _frozenModel;
+
         // (re-)capture: first frozen frame, or skeleton shape changed under us (e.g. gear swap)
-        var capture = _frozenModel == null || _frozenModel.Length != partialCount;
+        var capture = frozenModel == null || frozenModel.Length != partialCount;
         if (!capture)
         {
             for (var p = 0; p < partialCount; p++)
             {
                 var pose = skeleton->PartialSkeletons[p].GetHavokPose(0);
-                if (pose != null && pose->ModelPose.Length != _frozenModel![p].Length) { capture = true; break; }
+                if (pose != null && pose->ModelPose.Length != frozenModel![p].Length) { capture = true; break; }
             }
         }
 
@@ -179,7 +184,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
         {
             var pose = skeleton->PartialSkeletons[p].GetHavokPose(0);
             if (pose == null) continue;
-            var frozenM = _frozenModel![p];
+            var frozenM = frozenModel![p];
             var n = System.Math.Min(frozenM.Length, pose->ModelPose.Length);
             for (var i = 0; i < n; i++)
             {
@@ -310,6 +315,20 @@ public sealed unsafe class PreviewRenderer : IDisposable
     private readonly IGameInteropProvider _gameInterop;
 
     public bool IsInitialized => _initialized;
+
+    /// <summary>True when our CharaView lost its camera — seen live after AgentBannerParty slot
+    /// takeovers: every camera call silently no-ops from then on. NOT true while a native UI still
+    /// owns the slot (temporary, resolves itself). Framework thread. Caller should fully
+    /// reinitialize (GlamourPreviewWindow.ForceReinitializeForSelf), not just poke the camera.</summary>
+    public bool CameraLost
+    {
+        get
+        {
+            if (!_initialized || _nativeUiOwnsSlot) return false;
+            var agent = AgentTryon.Instance();
+            return agent != null && agent->CharaView.Camera == null;
+        }
+    }
 
     /// <summary>Current camera zoom (1.0 = CharaView default distance).</summary>
     public float Zoom => _zoom;
