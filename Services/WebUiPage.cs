@@ -126,7 +126,7 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
     <div id="charslots"><div class="empty"><span class="spinner"></span></div></div>
     <div>
       <canvas id="preview3d"></canvas>
-      <div class="empty" id="p3dhint" style="display:none;font-size:12px">Click 🔓 above to lock the overlay, then drag the model to rotate.</div>
+      <div class="empty" id="p3dhint" style="display:none;font-size:12px">Overlay ist entsperrt — Schloss oben rechts sperren, dann per Ziehen drehen.</div>
     </div>
     <div id="chardetail"><div class="empty">Slot anklicken für Herkunft &amp; Quellen</div></div>
   </div>
@@ -480,13 +480,17 @@ async function showItemPanel(id){
 
 async function post(url){await fetch(url,{method:'POST'})}
 
-let overlayLocked=false;
+// locked is the DEFAULT now (the plugin sets it at startup: position+size frozen, and drag-rotate
+// needs it anyway) — the button just toggles for repositioning. SVG lock, no emoji (no emoji font).
+let overlayLocked=true;
+const LOCK_CLOSED='<svg viewBox="0 0 24 24"><path d="M12 2a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5zm-3 5a3 3 0 0 1 6 0v3H9V7z"/></svg>';
+const LOCK_OPEN='<svg viewBox="0 0 24 24"><path d="M12 2a5 5 0 0 0-5 5h2a3 3 0 0 1 6 0v3H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5z"/></svg>';
 function toggleLock(){
   overlayLocked=!overlayLocked;
-  $('#btn-lock').textContent=overlayLocked?'🔒':'🔓';
+  $('#btn-lock').innerHTML=overlayLocked?LOCK_CLOSED:LOCK_OPEN;
   $('#btn-lock').title=overlayLocked
-    ?'Unlock — drag the overlay by its title bar to move it'
-    :'Lock overlay position — needed to drag-rotate the 3D preview (Browsingway has no title bar; unlocked, any drag moves the whole window instead)';
+    ?'Entsperren — Overlay verschieben/skalieren'
+    :'Sperren — Position & Größe fixieren (nötig, um das Modell per Ziehen zu drehen)';
   const hint=$('#p3dhint');
   if(hint)hint.style.display=(!overlayLocked&&$('#preview3d').style.display!=='none')?'flex':'none';
   post('/api/action/overlay/lock?locked='+overlayLocked);

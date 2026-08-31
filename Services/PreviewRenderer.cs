@@ -558,6 +558,13 @@ public sealed unsafe class PreviewRenderer : IDisposable
         var ch = agent->CharaView.GetCharacter();
         if (ch == null) return;
 
+        // Mode stomp — the root cause behind the crafting anvil surviving the BaseOverride pin:
+        // CopyFromCharacter mirrors the live char's MODE too (crafting = Mode 5), and BaseOverride
+        // only forces the base animation "when character is in a Normal or AnimLock state"
+        // (FFXIVClientStructs' own doc on the field). Stomp the clone back to Normal every tick.
+        if (ch->Mode != CharacterModes.Normal && ch->Mode != CharacterModes.AnimLock)
+            ch->SetMode(CharacterModes.Normal, 0);
+
         // post-init idle reset (see _pendingIdleReset) — once, as soon as the clone is loaded
         if (_pendingIdleReset && agent->CharaView.CharacterLoaded)
         {
