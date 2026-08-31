@@ -1,6 +1,6 @@
 # Character-Tab Web-Preview — Stand & Doku
 
-Stand: 0.0.0.167. Betrifft die Web-UI (`Services/WebUiPage.cs`/`WebUiService.cs`) und die
+Stand: 0.0.0.168. Betrifft die Web-UI (`Services/WebUiPage.cs`/`WebUiService.cs`) und die
 CharaView-Anbindung (`Services/PreviewRenderer.cs`, `Windows/GlamourPreviewWindow.cs`,
 `Windows/GlamSourceShellWindow.cs`). Für den Release-Prozess selbst siehe [`../RELEASING.md`](../RELEASING.md).
 
@@ -160,6 +160,14 @@ ReShade-"transparente Screenshots" der GPose-Community). Umsetzung: zweite Stagi
 Clear-Referenz = Median der vier Bildecken, Alpha=0 wo Depth==Referenz. Format-Dekodierung für
 R24G8/D24S8- und R32-Float-Familien; unbekanntes Format fällt auf den alten Flood-Fill zurück
 (Fehler in `lastError` sichtbar). Debug-Felder: `depthMaskReady`, `depthFormat`.
+
+**Live bestätigt (0.0.0.167): dunkles Outfit bleibt komplett.** Nachbesserung 0.0.0.168: leichtes
+weißes Flackern beim Drehen — Ursache: Depth war anfangs ein einzelner ungepaarter Staging-Buffer
+("Freeze macht Pairing egal" — stimmt beim Kamera-Drehen eben nicht: Farbe und Maske aus
+verschiedenen Frames lassen am alten Silhouettenrand Backdrop-Pixel durch). Fix: ein Depth-Staging
+PRO Farb-Buffer, Depth-Copy direkt VOR dem Farb-Copy desselben Slots auf demselben Context —
+D3D11 arbeitet die der Reihe nach ab, Farbe-fertig garantiert Depth-fertig, beide aus demselben
+Frame.
 
 ## Bekannte Limitierung: fremde Agents können den Render-Slot übernehmen
 

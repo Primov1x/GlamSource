@@ -668,12 +668,16 @@ public sealed unsafe class PreviewRenderer : IDisposable
     // +0x360, "Depth/Stencil for CharaView?" — internal field, read via raw offset): the backdrop
     // has NO geometry, so its depth stays at the clear value while every character pixel differs —
     // a perfect cutout mask independent of color (same principle as the GPose community's ReShade
-    // depth-alpha screenshots). Single staging buffer, no double-buffering: freeze-by-default makes
-    // the scene static, so color/depth frame pairing doesn't matter.
-    private ComPtr<ID3D11Texture2D> _depthStaging;
+    // depth-alpha screenshots).
+    // One depth staging PER color buffer, paired: the first version used a single unpaired staging
+    // ("freeze makes pairing moot") — wrong the moment the CAMERA moves: color and mask from
+    // different frames put stale backdrop pixels along the previous silhouette edge, reported live
+    // as "flickert leicht weiß beim Drehen". The depth copy for a slot is issued immediately BEFORE
+    // that slot's color copy on the same immediate context — D3D11 executes those in order, so a
+    // finished color copy guarantees its paired depth copy finished too.
+    private readonly ComPtr<ID3D11Texture2D>[] _depthStaging = new ComPtr<ID3D11Texture2D>[WebStagingBufferCount];
     private uint _depthWidth, _depthHeight;
     private DXGI_FORMAT _depthFormat;
-    private bool _depthCopyPending;
     private byte[]? _rawDepthBuffer;
     private int _rawDepthRowPitch;
     private bool _rawDepthValid;
@@ -750,7 +754,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
             _webStaging[0].Get() != null, _webFramesEncoded, _webFramesSkipped, _webCaptureErrors,
             _lastFrameBytes, _lastEncodeDurationMs, _lastCaptureError, (int)_webStagingWidth, (int)_webStagingHeight,
             _nativeUiOwnsSlot, drawCallsPerSecond, _alphaMin, _alphaMax,
-            _rawDepthValid, _depthStaging.Get() != null ? _depthFormat.ToString() : null);
+            _rawDepthValid, _depthStaging[0].Get() != null ? _depthFormat.ToString() : null);
     }
 
     /// <summary>Latest JPEG-encoded frame for the web-UI MJPEG stream (see WebUiService's
@@ -796,9 +800,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
             _webStaging[i] = default;
             _webCopyPending[i] = false;
         }
-        _depthStaging.Dispose();
-        _depthStaging = default;
-        _depthCopyPending = false;
+        for (var i = 0; i < WebStagingBufferCount; i++) { _depthStaging[i].Dispose(); _depthStaging[i] = default; }
         _rawDepthValid = false;
         _webNextIssueSlot = 0;
         _webNextSeq = 1;
@@ -913,11 +915,11 @@ public sealed unsafe class PreviewRenderer : IDisposable
                     _webLastSentSeq = _webBufferSeq[i];
                     _webEncodeInProgress = true;
                     var transparent = _transparentBackdropEnabled;
-                    // drain the depth copy (if one is in flight) into _rawDepthBuffer while we're
-                    // in the "no encode running" window — the Task below reads it, and the next
-                    // refresh can only happen after that Task finished (same lifecycle guarantee
+                    // read this slot's paired depth into _rawDepthBuffer while we're in the
+                    // "no encode running" window — the Task below reads it, and the next refresh
+                    // can only happen after that Task finished (same lifecycle guarantee
                     // _rawFrameBuffer relies on).
-                    if (transparent) DrainDepthCopy(context);
+                    if (transparent) DrainDepthCopy(context, i);
                     var depthValid = transparent && _rawDepthValid && _rawDepthBuffer != null;
                     var depthBuf = _rawDepthBuffer;
                     var depthPitch = _rawDepthRowPitch;
@@ -989,15 +991,14 @@ public sealed unsafe class PreviewRenderer : IDisposable
             var slot = _webNextIssueSlot;
             _webNextIssueSlot = (_webNextIssueSlot + 1) % WebStagingBufferCount;
             if (_webCopyPending[slot]) continue; // still in flight — try the other buffer
+            // depth FIRST, color second, same context — color-copy-finished then implies
+            // depth-copy-finished, and both are from the same frame (see _depthStaging's comment)
+            if (_transparentBackdropEnabled) IssueDepthCopy(device, context, slot);
             context.Get()->CopyResource((ID3D11Resource*)_webStaging[slot].Get(), (ID3D11Resource*)tex.Get());
             _webCopyPending[slot] = true;
             _webBufferSeq[slot] = _webNextSeq++;
             break;
         }
-
-        // 3) transparent mode: also copy the CharaView depth target (the real cutout mask — see
-        // _depthStaging's field comment). Issued alongside the color copy, drained in step 1.
-        if (_transparentBackdropEnabled) IssueDepthCopy(device, context);
     }
 
     /// <summary>The CharaView pipeline's shared depth/stencil target (RenderTargetManager+0x360,
@@ -1010,9 +1011,10 @@ public sealed unsafe class PreviewRenderer : IDisposable
         return rtm == null ? null : *(FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture**)((byte*)rtm + 0x360);
     }
 
-    private void IssueDepthCopy(ComPtr<ID3D11Device> device, ComPtr<ID3D11DeviceContext> context)
+    /// <summary>Copy the CharaView depth target into the given slot's depth staging — called right
+    /// before that slot's COLOR copy so both land in the same frame (see _depthStaging's comment).</summary>
+    private void IssueDepthCopy(ComPtr<ID3D11Device> device, ComPtr<ID3D11DeviceContext> context, int slot)
     {
-        if (_depthCopyPending) return;
         var gameTex = GetCharaViewDepthTexture();
         if (gameTex == null || gameTex->D3D11Texture2D == null)
         {
@@ -1022,10 +1024,9 @@ public sealed unsafe class PreviewRenderer : IDisposable
         var depthTex = (ID3D11Texture2D*)gameTex->D3D11Texture2D;
         D3D11_TEXTURE2D_DESC desc;
         depthTex->GetDesc(&desc);
-        if (_depthStaging.Get() == null || desc.Width != _depthWidth || desc.Height != _depthHeight || desc.Format != _depthFormat)
+        if (_depthStaging[0].Get() == null || desc.Width != _depthWidth || desc.Height != _depthHeight || desc.Format != _depthFormat)
         {
-            _depthStaging.Dispose();
-            _depthStaging = default;
+            for (var i = 0; i < WebStagingBufferCount; i++) { _depthStaging[i].Dispose(); _depthStaging[i] = default; }
             _rawDepthValid = false;
             var stagingDesc = desc with
             {
@@ -1036,29 +1037,33 @@ public sealed unsafe class PreviewRenderer : IDisposable
                 MipLevels = 1,
                 ArraySize = 1,
             };
-            ComPtr<ID3D11Texture2D> staging = default;
-            if (device.Get()->CreateTexture2D(&stagingDesc, null, staging.GetAddressOf()).FAILED)
+            for (var i = 0; i < WebStagingBufferCount; i++)
             {
-                _lastCaptureError = $"CreateTexture2D (depth staging, fmt={desc.Format}) failed";
-                return;
+                ComPtr<ID3D11Texture2D> staging = default;
+                if (device.Get()->CreateTexture2D(&stagingDesc, null, staging.GetAddressOf()).FAILED)
+                {
+                    _lastCaptureError = $"CreateTexture2D (depth staging, fmt={desc.Format}) failed";
+                    return;
+                }
+                _depthStaging[i] = staging;
             }
-            _depthStaging = staging;
             _depthWidth = desc.Width;
             _depthHeight = desc.Height;
             _depthFormat = desc.Format;
-            _log.Info($"[PreviewRenderer] depth staging created: {desc.Width}x{desc.Height} fmt={desc.Format}");
+            _log.Info($"[PreviewRenderer] depth stagings created: {WebStagingBufferCount}x {desc.Width}x{desc.Height} fmt={desc.Format}");
         }
-        context.Get()->CopyResource((ID3D11Resource*)_depthStaging.Get(), (ID3D11Resource*)depthTex);
-        _depthCopyPending = true;
+        context.Get()->CopyResource((ID3D11Resource*)_depthStaging[slot].Get(), (ID3D11Resource*)depthTex);
     }
 
-    private void DrainDepthCopy(ComPtr<ID3D11DeviceContext> context)
+    /// <summary>Read the given slot's depth staging into _rawDepthBuffer. Called only after that
+    /// slot's color Map already succeeded — the depth copy was issued before the color copy on the
+    /// same context, so it's guaranteed finished; a plain blocking Map is fine here.</summary>
+    private void DrainDepthCopy(ComPtr<ID3D11DeviceContext> context, int slot)
     {
-        if (!_depthCopyPending || _depthStaging.Get() == null) return;
+        if (_depthStaging[slot].Get() == null) return;
         D3D11_MAPPED_SUBRESOURCE mapped;
-        var hr = context.Get()->Map((ID3D11Resource*)_depthStaging.Get(), 0, D3D11_MAP.D3D11_MAP_READ, (uint)D3D11_MAP_FLAG.D3D11_MAP_FLAG_DO_NOT_WAIT, &mapped);
-        if (hr.Value == DXGI.DXGI_ERROR_WAS_STILL_DRAWING) return; // not done — encode falls back / reuses last depth this round
-        if (hr.FAILED) { _depthCopyPending = false; _lastCaptureError = $"depth Map failed: 0x{hr.Value:X8}"; return; }
+        var hr = context.Get()->Map((ID3D11Resource*)_depthStaging[slot].Get(), 0, D3D11_MAP.D3D11_MAP_READ, 0, &mapped);
+        if (hr.FAILED) { _lastCaptureError = $"depth Map failed: 0x{hr.Value:X8}"; return; }
         try
         {
             var byteCount = (int)mapped.RowPitch * (int)_depthHeight;
@@ -1070,8 +1075,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
         }
         finally
         {
-            context.Get()->Unmap((ID3D11Resource*)_depthStaging.Get(), 0);
-            _depthCopyPending = false;
+            context.Get()->Unmap((ID3D11Resource*)_depthStaging[slot].Get(), 0);
         }
     }
 
