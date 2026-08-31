@@ -292,7 +292,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
         _ => -1,
     };
 
-    public PreviewRenderer(IFramework framework, IPluginLog log, Dalamud.Game.ISigScanner sigScanner, IGameInteropProvider gameInterop)
+    public PreviewRenderer(IFramework framework, IPluginLog log, ISigScanner sigScanner, IGameInteropProvider gameInterop)
     {
         _framework = framework;
         _log = log;
@@ -300,7 +300,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
         _gameInterop = gameInterop;
     }
 
-    private readonly Dalamud.Game.ISigScanner _sigScanner;
+    private readonly ISigScanner _sigScanner;
     private readonly IGameInteropProvider _gameInterop;
 
     public bool IsInitialized => _initialized;

@@ -1,6 +1,6 @@
 # Character-Tab Web-Preview — Stand & Doku
 
-Stand: 0.0.0.164. Betrifft die Web-UI (`Services/WebUiPage.cs`/`WebUiService.cs`) und die
+Stand: 0.0.0.165. Betrifft die Web-UI (`Services/WebUiPage.cs`/`WebUiService.cs`) und die
 CharaView-Anbindung (`Services/PreviewRenderer.cs`, `Windows/GlamourPreviewWindow.cs`,
 `Windows/GlamSourceShellWindow.cs`). Für den Release-Prozess selbst siehe [`../RELEASING.md`](../RELEASING.md).
 
@@ -49,7 +49,7 @@ ein `<canvas>` gezeichnet (kein `<img src=multipart>` — siehe "Warum kein `<im
 - **🩺 Preview-Stream-Debug**: `GET /api/preview3d/debug` inline im Tab — Frames encoded/skipped,
   Fehler, aktuelle/letzte Stream-fps, Zoom-Wert, Kamera-Distanz, Draw()-Aufrufrate.
 
-## Einfrieren: vierter Versuch (0.0.0.164, nativer Hook) — im Test
+## Einfrieren: vierter Versuch (0.0.0.165, nativer Hook) — im Test
 
 Versuch 3 (0.0.0.162, Bone-Arrays aus `Tick()` überschreiben) ist live gescheitert — Ursache jetzt
 verstanden: das Skeleton-Update (Animation-Sampling, `SyncModelSpace`, Physik) läuft im Render-Task

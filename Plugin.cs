@@ -30,7 +30,7 @@ public class Plugin : IAsyncDalamudPlugin
     [PluginService] internal static IObjectTable ObjectTable { get; private set; } = null!;
     [PluginService] internal static IFramework Framework { get; private set; } = null!;
     [PluginService] internal static ICondition Condition { get; private set; } = null!;
-    [PluginService] internal static Dalamud.Game.ISigScanner SigScanner { get; private set; } = null!;
+    [PluginService] internal static ISigScanner SigScanner { get; private set; } = null!;
     [PluginService] internal static IGameInteropProvider GameInterop { get; private set; } = null!;
 
 
@@ -82,7 +82,9 @@ public class Plugin : IAsyncDalamudPlugin
         IGameGui gameGui,
         IObjectTable objectTable,
         IFramework framework,
-        ICondition condition)
+        ICondition condition,
+        ISigScanner sigScanner,
+        IGameInteropProvider gameInterop)
     {
         _pluginInterface = pluginInterface;
         _textureProvider = textureProvider;
@@ -109,6 +111,8 @@ public class Plugin : IAsyncDalamudPlugin
         ObjectTable = _objectTable;
         Framework = _framework;
         Condition = _condition;
+        SigScanner = sigScanner;
+        GameInterop = gameInterop;
 
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         var sourceService = new LuminaItemSourceService(DataManager.GameData);
