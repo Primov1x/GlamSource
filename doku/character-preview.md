@@ -1,6 +1,6 @@
 # Character-Tab Web-Preview — Stand & Doku
 
-Stand: 0.0.0.165. Betrifft die Web-UI (`Services/WebUiPage.cs`/`WebUiService.cs`) und die
+Stand: 0.0.0.166. Betrifft die Web-UI (`Services/WebUiPage.cs`/`WebUiService.cs`) und die
 CharaView-Anbindung (`Services/PreviewRenderer.cs`, `Windows/GlamourPreviewWindow.cs`,
 `Windows/GlamSourceShellWindow.cs`). Für den Release-Prozess selbst siehe [`../RELEASING.md`](../RELEASING.md).
 
@@ -42,14 +42,17 @@ ein `<canvas>` gezeichnet (kein `<img src=multipart>` — siehe "Warum kein `<im
 - **🎠 Auto-Drehen**: Turntable-Rotation wie bei Online-Shop-Produktansichten.
 - **🔄 Preview zurücksetzen**: volles `Release()`+`Initialize()` — Notausstieg falls die Vorschau
   hängt oder was Falsches zeigt (siehe Bugs unten). Stoppt auch Auto-Drehen.
-- **🧊 Pose einfrieren** — dritte Implementierung (Brio-Technik: Bone-Transforms jeden Frame mit
-  Snapshot überschreiben, siehe Abschnitt "Einfrieren: dritter Versuch" unten). Live-Verifikation
-  ausstehend.
+- **🧊 Pose einfrieren** — **funktioniert (live bestätigt, 0.0.0.165)** und ist seit 0.0.0.166
+  **Standard**: ~1s nach Init friert die Pose automatisch ein (verzögert, damit der Snapshot eine
+  gesetzte Idle-Pose erwischt statt einen Lade-Frame). Button schaltet ab/wieder an; Reset re-armt
+  den Standard. Technik: nativer `UpdateBonePhysics`-Hook, siehe Abschnitt "Einfrieren" unten.
+  Kosten: praktisch null (ein Hook-Aufruf + ~200 Bone-Writes pro Frame); zusammen mit der
+  Idle-Drossel ist ein eingefrorener Char fast gratis.
 - **🪄 Transparenter Hintergrund** (experimentell, siehe Limitierung unten).
 - **🩺 Preview-Stream-Debug**: `GET /api/preview3d/debug` inline im Tab — Frames encoded/skipped,
   Fehler, aktuelle/letzte Stream-fps, Zoom-Wert, Kamera-Distanz, Draw()-Aufrufrate.
 
-## Einfrieren: vierter Versuch (0.0.0.165, nativer Hook) — im Test
+## Einfrieren: vierter Versuch (0.0.0.165, nativer Hook) — **FUNKTIONIERT, live bestätigt**
 
 Versuch 3 (0.0.0.162, Bone-Arrays aus `Tick()` überschreiben) ist live gescheitert — Ursache jetzt
 verstanden: das Skeleton-Update (Animation-Sampling, `SyncModelSpace`, Physik) läuft im Render-Task
@@ -72,10 +75,9 @@ Versuch 4 macht es exakt wie Brio (Quellcode gelesen, `Brio/Game/Posing/Skeleton
   bei einem Spiel-Patch, schlägt der Sig-Scan fehl → Freeze still deaktiviert, Fehler im
   Debug-Endpoint (`lastError`) sichtbar, kein Crash.
 
-**Noch nicht live verifiziert.** Ktisis-Alternative (mehrere Engine-Funktionen komplett neutralisieren:
-`SyncModelSpace`, `CalcBoneModelSpace`, LookAtIK, KineDriver …) wäre der Plan B, ist aber global
-(friert ALLES ein, deshalb ist Ktisis GPose-only) — für unseren Ein-Charakter-Fall ist Brios
-Overwrite-nach-Physik der sauberere Single-Point-Ansatz.
+**Live bestätigt (Nutzer: "freeze klappt")** — und seit 0.0.0.166 Standardverhalten (Auto-Freeze
+~1s nach Init, `_autoFreezeCountdown`). Ktisis' Alternativansatz (mehrere Engine-Funktionen global
+neutralisieren) wurde damit nie gebraucht.
 
 ## Bekannte Limitierung: Einfrieren funktioniert nicht (Versuche 1+2, historisch)
 
@@ -146,12 +148,13 @@ des Rendertargets die Charakter-Maske BEREITS enthält und wir sie bisher schlic
 - Der Portrait-Editor (`CharaViewPortrait.BackgroundState` 0="nichts") behandelt Hintergrund
   ebenfalls als eigene, abschaltbare Ebene.
 
-Empirischer Test eingebaut: `alphaMin`/`alphaMax` im Debug-Endpoint (Sonde über das rohe
-BGRA-Rendertarget). `min==max==255` → Alpha nutzlos, Spur tot. Spread → Maske gratis vorhanden,
-Fix wird trivial (Flood-Fill löschen, vorhandenes Alpha in PNG durchreichen). Fallback falls Alpha
-flach: Depth-/G-Buffer des CharaView (`RenderTargetManager`, Offset 0x360) als Geometrie-Maske
+Empirischer Test eingebaut und gelaufen: **`alphaMin==alphaMax==255` (live gemessen, 0.0.0.165)**
+— der Alpha-Kanal der Farb-Textur ist flach opak, Spur tot. Verbleibende Spur: Depth-/G-Buffer des
+CharaView (`RenderTargetManager`, Offset 0x360 Depth/Stencil, 0x308 G-Buffer) als Geometrie-Maske
 kopieren — Hintergrund hat keine Geometrie, Depth bleibt auf Clear-Wert (dieselbe Technik wie die
-bekannten ReShade-"transparente Screenshots" der GPose-Community).
+bekannten ReShade-"transparente Screenshots" der GPose-Community). Aufwand: eigene Staging-Kopie
+mit typeless Format (z.B. R24G8_TYPELESS) + Threshold, gleicher Mechanismus wie der bestehende
+Farb-Readback.
 
 ## Bekannte Limitierung: fremde Agents können den Render-Slot übernehmen
 

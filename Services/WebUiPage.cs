@@ -103,7 +103,7 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
     <button id="p3dspin" onclick="toggleAutoSpin()" title="Wie bei Online-Shops — dreht das Model automatisch. Ziehen mit der Maus oder Zurücksetzen stoppt es wieder.">🎠 Auto-Drehen</button>
     <button onclick="resetPreview3D()" title="Falls das Bild feststeckt oder was Falsches zeigt (z.B. ein fremdes Portrait) — stoppt auch Auto-Drehen">🔄 Preview zurücksetzen</button>
     <button id="p3dtrans" onclick="toggleTransparent()" title="Experimentell: färbt den grauen Studio-Hintergrund transparent (naiver Chroma-Key — dunkle Klamotten/Haare können mit erwischt werden)">🪄 Transparenter Hintergrund</button>
-    <button id="p3dfreeze" onclick="toggleFreeze()" title="Pose einfrieren — Kamera (Drehen/Zoomen) bleibt bedienbar, nur die Idle-Animation stoppt (kein 'springt jede Sekunde')">🧊 Pose einfrieren</button>
+    <button id="p3dfreeze" class="active" onclick="toggleFreeze()" title="Pose einfrieren (Standard: an) — Kamera (Drehen/Zoomen) bleibt bedienbar, nur die Idle-Animation stoppt">🧊 Pose einfrieren</button>
     <a href="#" onclick="loadPreview3DDebug();return false" style="font-size:12px">🩺 Preview-Stream-Debug (fps, Fehler, Frame-Größe)</a>
     <pre id="p3ddebug" style="display:none;font-size:11px;background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:8px;margin-top:6px;white-space:pre-wrap"></pre>
   </div>
@@ -258,6 +258,7 @@ async function runPreview3DStream(signal){
 async function resetPreview3D(){
   stopAutoSpin();
   await post('/api/action/preview3d/reset');
+  $('#p3dfreeze').classList.add('active'); // server re-arms freeze-by-default after reinit
   startPreview3D(); // reconnect the stream — the old one keeps serving frames until reset lands
 }
 

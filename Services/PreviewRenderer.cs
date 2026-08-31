@@ -92,6 +92,11 @@ public sealed unsafe class PreviewRenderer : IDisposable
     private bool _freezePose;
     private nint _freezeSkeleton; // Render.Skeleton* of the CharaView clone, refreshed each Tick while frozen, 0 = don't touch
     private hkQsTransformf[][]? _frozenModel; // per partial skeleton, per bone, model space
+    // Freeze is the DEFAULT (user request, once v4 verified live): a static shot is the whole point
+    // of the preview, and frozen + idle throttle costs near zero. Deferred a second past init so
+    // the snapshot catches a settled idle pose, not a mid-load/T-pose frame.
+    private int _autoFreezeCountdown;
+    private const int AutoFreezeDelayFrames = 60;
 
     /// <summary>Freeze the previewed character's pose: snapshot the skeleton once, then stomp the
     /// engine's freshly-computed pose with it every frame from inside the UpdateBonePhysics hook.
@@ -103,6 +108,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
             _freezePose = false;
             _freezeSkeleton = 0;
             _frozenModel = null;
+            _autoFreezeCountdown = 0; // explicit unfreeze also cancels a pending freeze-by-default
             _updateBonePhysicsHook?.Disable();
             return;
         }
@@ -348,6 +354,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
         _initialized = true;
         // ponytail: seed a few refresh frames so early renders can't be clobbered by agent activity.
         _pendingRecopyFrames = 3;
+        _autoFreezeCountdown = AutoFreezeDelayFrames; // freeze-by-default, see field comment
     }
 
     /// <summary>Request N future Ticks to re-copy from the source provider (fixes ApplyState frame-lag and Examine hijack).</summary>
@@ -493,6 +500,8 @@ public sealed unsafe class PreviewRenderer : IDisposable
         if (ch == null) return;
 
         agent->CharaView.Update(_counter, ch);
+        if (_autoFreezeCountdown > 0 && --_autoFreezeCountdown == 0 && !_freezePose) SetFreezePose(true);
+
         // freeze: refresh the clone's skeleton pointer for the UpdateBonePhysics detour (which runs
         // in the game's render task, where the pose is actually computed — writing bones HERE was
         // attempt 3 and did nothing, see the freeze block's comment)
