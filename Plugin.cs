@@ -279,10 +279,10 @@ public class Plugin : IAsyncDalamudPlugin
     private void PinBrowsingwayOverlaySize()
     {
         if (!Configuration.WebUiEnabled || BwPinKilled) return;
-        // BISECTED LIVE: calling SetWindowSize EVERY frame was THE stutter ("stottert nur wenn
-        // das WebGUI aufgeht" — killing exactly this switch cured it). A per-frame Always-pin
-        // forces Browsingway into continuous resize/relayout. Re-pin every 2s (still beats any
-        // manual resize attempt within moments) and immediately when minimize toggles.
+        // Throttled to every 2s (was per-frame): a per-frame Always-pin makes the overlay window
+        // re-layout continuously — needless work, and it muddied a live stutter bisection (the
+        // actual culprit that day was a sick Browsingway CEF process, cured by toggling
+        // Browsingway off/on — documented in doku/character-preview.md).
         var minimizedChanged = BwOverlayMinimized != _lastBwMinimized;
         if (!minimizedChanged && Environment.TickCount64 - _lastBwPinMs < 2000) return;
         _lastBwPinMs = Environment.TickCount64;

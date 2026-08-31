@@ -257,6 +257,17 @@ native ImGui-Fenster offen war (die Dispatch-Logik lief nur innerhalb `DrawChara
   `AgentMiragePrismMiragePlate`, `AgentStatus`) — per Grep gegen FFXIVClientStructs gefunden, nicht
   live beobachtet, präventiv abgedeckt (0.0.0.161).
 
+## Bekanntes Fremdproblem: Browsingway-CEF-Prozess "krank"
+
+Live diagnostiziert (0.0.0.228-Bisect): massives Spiel-Stottern, sobald das Web-Overlay offen war —
+ABER: alle Plugin-Subsysteme einzeln UND gleichzeitig abgeschaltet (Kill-Switches: freezehook,
+capture, tick, depth, texhook, bwpin) änderte NICHTS, und dieselbe Seite im externen Browser lief
+ohne jedes Stottern. Ursache: der CEF-Kindprozess von Browsingway war in dieser Spiel-Session
+defekt gestartet (vermutlich GPU-Prozess-Absturz → Software-Rendering). **Fix: Browsingway-Plugin
+einmal deaktivieren + aktivieren** (frische CEF-Prozesse) — danach sofort wieder flüssig.
+Kein GlamSource-Bug; die Kill-Switches (`POST /api/debug/kill?sys=...&on=...`) bleiben für künftige
+Bisects drin.
+
 ## Offene Punkte
 
 - **Pose einfrieren: dritter Versuch (Brio-Technik, Bone-Overwrite) eingebaut, live-Verifikation
