@@ -557,6 +557,24 @@ public sealed unsafe class PreviewRenderer : IDisposable
         var ch = agent->CharaView.GetCharacter();
         if (ch == null) return;
 
+        // emote pose (see _emoteTimelineId's comment) — BaseOverride re-pinned every tick,
+        // PlayTimeline once per selection for the immediate blend
+        if (_emoteTimelineId != 0)
+        {
+            ch->Timeline.BaseOverride = _emoteTimelineId;
+            if (_emotePlayPending)
+            {
+                _emotePlayPending = false;
+                ch->Timeline.TimelineSequencer.PlayTimeline(_emoteTimelineId);
+            }
+        }
+        else if (_emoteClearPending)
+        {
+            _emoteClearPending = false;
+            ch->Timeline.BaseOverride = 0;
+            ch->Timeline.TimelineSequencer.PlayTimeline(3); // 3 = normal idle (Brio's reset value)
+        }
+
         // smart framing, ease-out half ("nie in einer Box wirken"): if the char clips the RT
         // border (arm swung past the edge mid-rotation, or a zoom fine front-on but not side-on),
         // gently pull the camera back each tick until he's fully in frame. 2%/tick reads as a
@@ -787,11 +805,34 @@ public sealed unsafe class PreviewRenderer : IDisposable
     public void SetWeaponDrawn(bool drawn)
     {
         _weaponDrawn = drawn;
-        if (_freezePose)
-        {
-            SetFreezePose(false);
-            _autoFreezeCountdown = 90;
-        }
+        ThawForAnimation();
+    }
+
+    private void ThawForAnimation()
+    {
+        if (!_freezePose) { if (_autoFreezeCountdown > 0) _autoFreezeCountdown = 90; return; }
+        SetFreezePose(false);
+        _autoFreezeCountdown = 90;
+    }
+
+    // Emote pose — Brio's mechanism (their ActionTimelineCapability, works on any Character*, no
+    // GPose and NO unlock check at this layer: BannerTimeline/emote gating happens in the game's
+    // UI when it builds its list, not where the timeline actually plays — unowned emotes render
+    // fine, it's purely local): Timeline.BaseOverride pins the loop, TimelineSequencer.PlayTimeline
+    // blends into it immediately. BaseOverride is re-applied every Tick because CharaView.Update
+    // re-syncs from the live source (same re-stomp pattern as ToggleDrawWeapon above).
+    private ushort _emoteTimelineId;
+    private bool _emotePlayPending;
+    private bool _emoteClearPending;
+
+    /// <summary>Play a looping ActionTimeline on the preview clone (0 = back to normal idle).
+    /// Framework thread. Ids come from the Emote sheet's ActionTimeline column.</summary>
+    public void SetEmoteTimeline(ushort timelineId)
+    {
+        if (timelineId == 0 && _emoteTimelineId != 0) _emoteClearPending = true;
+        _emoteTimelineId = timelineId;
+        _emotePlayPending = timelineId != 0;
+        ThawForAnimation();
     }
 
     public void Reset()

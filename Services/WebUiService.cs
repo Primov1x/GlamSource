@@ -447,6 +447,28 @@ public sealed class WebUiService : IDisposable
             return Json(new { ok = true, frozen = freezeOn });
         }
 
+        if (method == "GET" && path == "/api/preview3d/emotes" && _configuration.WebUiLive3DPreview)
+        {
+            // Emote sheet: ActionTimeline[0] = the standing loop timeline. No unlock filter on
+            // purpose — the timeline layer has no ownership gate, unowned emotes render fine
+            // (purely client-side, see PreviewRenderer's emote comment).
+            var emotes = Plugin.DataManager.GetExcelSheet<Lumina.Excel.Sheets.Emote>()!
+                .Where(e => e.ActionTimeline.Count > 0 && e.ActionTimeline[0].RowId != 0 && !string.IsNullOrEmpty(e.Name.ExtractText()))
+                .Select(e => new { name = e.Name.ExtractText(), timelineId = e.ActionTimeline[0].RowId })
+                .OrderBy(e => e.name)
+                .ToArray();
+            return Json(emotes);
+        }
+
+        if (method == "POST" && path == "/api/action/preview3d/emote" && _configuration.WebUiLive3DPreview
+            && ushort.TryParse(query["timelineId"], out var emoteTimelineId))
+        {
+            _shell.PreviewWindow?.Renderer.NotifyInteraction();
+            _framework.RunOnFrameworkThread(() => _shell.PreviewWindow?.Renderer.SetEmoteTimeline(emoteTimelineId));
+            _log.Information($"[WebUi] preview3d emote timeline: {emoteTimelineId}");
+            return Json(new { ok = true, timelineId = emoteTimelineId });
+        }
+
         if (method == "POST" && path == "/api/action/preview3d/weapon" && _configuration.WebUiLive3DPreview
             && bool.TryParse(query["on"], out var weaponOn))
         {

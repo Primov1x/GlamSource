@@ -109,6 +109,7 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
     <button id="p3dfreeze" class="active" onclick="toggleFreeze()" title="Pose einfrieren (Standard: an) — Kamera (Drehen/Zoomen) bleibt bedienbar, nur die Idle-Animation stoppt">🧊 Pose einfrieren</button>
     <button id="p3dortho" class="active" onclick="toggleOrtho()" title="Orthografische Kamera (Standard: an) — Produkt-Viewer-Projektion ohne Verzerrung, Zoom kann den Char nicht mehr anschneiden">📐 Ortho-Kamera</button>
     <button id="p3dweapon" onclick="toggleWeapon()" title="Waffe im Preview anzeigen (Standard: aus) — für geglamte Waffen">⚔️ Waffe zeigen</button>
+    <select id="p3demote" onchange="setEmote(this.value)" title="Emote-Pose (rein clientseitig — auch nicht freigeschaltete Emotes funktionieren)"><option value="0">🎭 Emote: Idle</option></select>
     <a href="#" onclick="loadPreview3DDebug();return false" style="font-size:12px">🩺 Preview-Stream-Debug (fps, Fehler, Frame-Größe)</a>
     <pre id="p3ddebug" style="display:none;font-size:11px;background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:8px;margin-top:6px;white-space:pre-wrap"></pre>
   </div>
@@ -164,6 +165,26 @@ function startPreview3D(){
   $('#p3dhint').style.display=overlayLocked?'none':'flex';
   p3dAbort=new AbortController();
   runPreview3DStream(p3dAbort.signal);
+  loadEmoteList();
+}
+
+let emoteListLoaded=false;
+async function loadEmoteList(){
+  if(emoteListLoaded)return;
+  try{
+    const emotes=await fetch('/api/preview3d/emotes').then(r=>r.json());
+    const sel=$('#p3demote');
+    for(const e of emotes){
+      const o=document.createElement('option');
+      o.value=e.timelineId;o.textContent=e.name;
+      sel.appendChild(o);
+    }
+    emoteListLoaded=true;
+  }catch(e){/* list stays idle-only */}
+}
+
+async function setEmote(id){
+  await post(`/api/action/preview3d/emote?timelineId=${id}`);
 }
 function stopPreview3D(){
   if(p3dAbort){p3dAbort.abort();p3dAbort=null}
@@ -280,6 +301,7 @@ async function resetPreview3D(){
   p3dResetView(); // digital zoom/pan back to 1:1
   await post('/api/action/preview3d/reset');
   $('#p3dfreeze').classList.add('active'); // server re-arms freeze-by-default after reinit
+  $('#p3demote').value='0'; // reinit builds a fresh clone without the emote override
   startPreview3D(); // reconnect the stream — the old one keeps serving frames until reset lands
 }
 
