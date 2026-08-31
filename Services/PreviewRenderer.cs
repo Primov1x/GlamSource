@@ -455,8 +455,11 @@ public sealed unsafe class PreviewRenderer : IDisposable
         sb.Append($"md.weapon0: id={w0.Id} type={w0.Type} variant={w0.Variant} | ");
         if (ch != null)
         {
-            var dd = ch->DrawData.Weapon(DrawDataContainer.WeaponSlot.MainHand);
-            sb.Append($"clone.dd.weapon0: id={dd.ModelId.Id} type={dd.ModelId.Type} drawObj={(nint)dd.DrawObject:X} vis={(dd.DrawObject != null ? dd.DrawObject->IsVisible : false)} hidden={dd.IsHidden} | ");
+            for (var i = 0; i < 3; i++)
+            {
+                var dd = ch->DrawData.Weapon((DrawDataContainer.WeaponSlot)i);
+                sb.Append($"clone.dd.weapon{i}({(DrawDataContainer.WeaponSlot)i}): id={dd.ModelId.Id} type={dd.ModelId.Type} drawObj={(nint)dd.DrawObject:X} vis={(dd.DrawObject != null ? dd.DrawObject->IsVisible : false)} hidden={dd.IsHidden} | ");
+            }
             sb.Append($"clone: ddWeaponHidden={ch->DrawData.IsWeaponHidden} mode={ch->Mode}");
         }
         else sb.Append("clone: null");
@@ -745,8 +748,14 @@ public sealed unsafe class PreviewRenderer : IDisposable
                     {
                         if (wch->DrawData.Weapon(DrawDataContainer.WeaponSlot.MainHand).DrawObject == null)
                         {
-                            wch->CharacterSetup.CopyFromCharacter((Character*)srcAddr, CharacterSetupContainer.CopyFlags.None);
-                            _log.Info("[PreviewRenderer] weapon path #13: CharacterSetup.CopyFromCharacter applied to clone");
+                            // matched to Brio's ActorSpawnService.CloneCharacter, the one reference
+                            // that reliably spawns exactly one weapon set: WeaponHiding flag on the
+                            // real-source copy, PLUS a second self->self copy with CopyFlags.None
+                            // ("needed for some tools like Penumbra/Glamourer" — apparently also
+                            // settles whatever the first copy leaves half-finished for weapons).
+                            wch->CharacterSetup.CopyFromCharacter((Character*)srcAddr, CharacterSetupContainer.CopyFlags.WeaponHiding);
+                            wch->CharacterSetup.CopyFromCharacter(wch, CharacterSetupContainer.CopyFlags.None);
+                            _log.Info("[PreviewRenderer] weapon path #13: CharacterSetup.CopyFromCharacter (Brio-matched, double copy) applied to clone");
                         }
                         // stance, ONE-SHOT only: per-tick forcing (246) made the game re-evaluate
                         // the weapon attach every frame — duplicate weapon, floating, no anim.
