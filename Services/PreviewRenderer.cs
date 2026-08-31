@@ -285,11 +285,17 @@ public sealed unsafe class PreviewRenderer : IDisposable
     /// slotId: 0=MainHand, 1=OffHand, 2=Head, 3=Body, 4=Hands, 5=Waist, 6=Legs, 7=Feet,
     /// 8=Earrings, 9=Necklace, 10=Bracelets, 11=RingRight, 12=RingLeft (14 slots total).
     /// Framework thread.</summary>
+    // cache of the last seeded items so the weapon mode can REPLAY them every tick: showing the
+    // weapon needs DoUpdate=true (agent flags only apply through vf10), but vf10 also wipes _items
+    // with the inactive agent's empty try-on data each Update — the replay wins the race.
+    private readonly (uint itemId, byte stain0, byte stain1, uint glamourItemId)[] _seededItems = new (uint, byte, byte, uint)[13];
+
     public void SetCharaViewItemSlot(byte slotId, uint itemId, byte stain0, byte stain1, uint glamourItemId = 0)
     {
         if (!_initialized) return;
         var agent = AgentTryon.Instance();
         if (agent == null) return;
+        if (slotId < _seededItems.Length) _seededItems[slotId] = (itemId, stain0, stain1, glamourItemId);
         agent->CharaView.SetItemSlotData(slotId, itemId, stain0, stain1, glamourItemId, false);
     }
 
@@ -668,6 +674,12 @@ public sealed unsafe class PreviewRenderer : IDisposable
         // unless explicitly requested.
         var weaponMode = _weaponDrawn || _weaponOnly;
         agent->CharaView.HideWeapon = !weaponMode;
+        // The final weapon mechanism (state-dump saga): the agent's HideWeapon/DrawWeapon flags
+        // only take effect through vf10 — which needs DoUpdate=true — which ALSO wipes _items with
+        // the inactive agent's empty try-on data every Update. So in weapon mode: DoUpdate on,
+        // agent flags set, and the cached item seed REPLAYED right after Update() below.
+        agent->CharaView.DrawWeapon = weaponMode && _weaponDrawn;
+        agent->CharaView.DoUpdate = weaponMode;
         // ModelData carries its OWN WeaponHidden byte (0x89) that CopyFromCharacter refreshes from
         // the live char every tick — clear it in weapon mode or the copied "sheathed/hidden" state
         // wins. DoUpdate is deliberately NOT touched here anymore: 224 forced it TRUE every tick
@@ -774,6 +786,14 @@ public sealed unsafe class PreviewRenderer : IDisposable
         // readback in GetWebCaptureStats shows what the engine actually keeps.
         ApplyOrtho(agent);
         agent->CharaView.Update(_counter, ch);
+        // weapon mode: vf10 just wiped _items with the agent's empty try-on data — replay the
+        // cached seed immediately so the outfit survives (see the weapon-mechanism comment above)
+        if (weaponMode)
+            for (byte s = 0; s < _seededItems.Length; s++)
+            {
+                var (itemId, s0, s1, glam) = _seededItems[s];
+                if (itemId != 0) agent->CharaView.SetItemSlotData(s, itemId, s0, s1, glam, false);
+            }
         ApplyOrtho(agent);
 
         if (_scaleWindowTicks > 0 && --_scaleWindowTicks == 0) _scaleCharaViewAllocs = false;
