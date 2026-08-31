@@ -68,12 +68,9 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 .slot .g{color:var(--success);font-size:12px}
 .slot .s{color:var(--muted);font-size:11px}
 #preview3d{background:transparent;border:0;margin-bottom:14px;cursor:grab;display:none;width:100%;height:70vh;object-fit:contain}
-/* transparent-backdrop mode. First fix made the whole #app see-through — rejected live ("char
-   sollte nur in der webview frei schweben, nicht dass der webview background fehlt"). What's
-   actually wanted: page background stays, the char floats freely and stays READABLE — a black
-   outfit on the dark UI was invisible. Product-viewer spotlight: a soft radial glow behind the
-   char, no hard edges anywhere, so nothing reads as a "box". */
-body.p3dtransparent #preview3d{background:radial-gradient(ellipse 55% 42% at 50% 46%,rgba(255,255,255,.14),rgba(255,255,255,.05) 55%,transparent 78%)}
+/* transparent mode: no special background — the spotlight behind the char is drawn INTO the
+   canvas under the same zoom/pan transform (see p3dRedraw), so it moves and scales WITH the char.
+   A fixed CSS glow (tried) reads as a frame again the moment the char is dragged off-center. */
 #preview3d.active{cursor:grabbing}
 #preview3d.panning{cursor:ns-resize}
 #p3dspin.active{color:var(--accent);font-weight:600}
@@ -297,6 +294,17 @@ function p3dRedraw(){
   ctx.imageSmoothingEnabled=true;
   ctx.imageSmoothingQuality='high'; // best browser-side upscale for the digital zoom
   ctx.setTransform(p3dScale,0,0,p3dScale,p3dOx,p3dOy);
+  if(document.body.classList.contains('p3dtransparent')){
+    // spotlight lives in bitmap space — same transform as the char, so it follows every zoom/pan
+    // ("frei beweglich ohne Box-Gefühl": nothing on screen stays fixed relative to the viewport)
+    const bw=p3dBitmap.width,bh=p3dBitmap.height;
+    const g=ctx.createRadialGradient(bw/2,bh*0.46,0,bw/2,bh*0.46,bh*0.5);
+    g.addColorStop(0,'rgba(255,255,255,.14)');
+    g.addColorStop(.55,'rgba(255,255,255,.05)');
+    g.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle=g;
+    ctx.fillRect(bw/2-bh*0.5,bh*0.46-bh*0.5,bh,bh);
+  }
   ctx.drawImage(p3dBitmap,0,0);
   ctx.setTransform(1,0,0,1,0,0);
 }
