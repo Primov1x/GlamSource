@@ -290,7 +290,9 @@ public sealed unsafe class PreviewRenderer : IDisposable
         var agent = AgentTryon.Instance();
         if (agent == null) return;
         var basePtr = (ulong*)Unsafe.AsPointer(ref agent->CharaView.ModelData);
-        basePtr[2 + slotIndex] = value;
+        // _equipmentModelIds sits at 0x20 in the CURRENT struct (index 4) — the old index 2 (0x10)
+        // silently wrote into CustomizeData (masked by CopyFromCharacter re-stomping every tick)
+        basePtr[4 + slotIndex] = value;
     }
 
     /// <summary>Write a raw 8-byte runtime model value into CharaViewModelData._weaponModelIds[slotIndex]. Framework thread.</summary>
@@ -595,7 +597,14 @@ public sealed unsafe class PreviewRenderer : IDisposable
         // showed up in the preview (reported live). HideWeapon is the real visibility flag on
         // TryonCharaView (separate from the drawn/sheathed stance) — keep the preview weaponless
         // unless explicitly requested.
-        agent->CharaView.HideWeapon = !(_weaponDrawn || _weaponOnly); // weapon-only shows it sheathed
+        var weaponMode = _weaponDrawn || _weaponOnly;
+        agent->CharaView.HideWeapon = !weaponMode;
+        // ModelData carries its OWN WeaponHidden byte (0x89) that CopyFromCharacter refreshes from
+        // the live char every tick — clear it in weapon mode or the copied "sheathed/hidden" state
+        // wins. And DoUpdate=false while a weapon shows: vf10's agent-fetch would stomp the
+        // ModelData weapon fields with the agent's EMPTY try-on data every Update otherwise.
+        agent->CharaView.ModelData.WeaponHidden = !weaponMode ? agent->CharaView.ModelData.WeaponHidden : false;
+        agent->CharaView.DoUpdate = !weaponMode;
         // The weapon DrawObject spawns fine but its own IsVisible flag stays FALSE (log-verified:
         // drawObject=non-null, objVisible=False) — force it every tick while a weapon mode is on,
         // same as the weapon-only body-hide loop already did for its case.
