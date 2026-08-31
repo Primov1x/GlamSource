@@ -753,34 +753,36 @@ public sealed unsafe class PreviewRenderer : IDisposable
 
                 // Weapon path #13 (Brio's ActorSpawnService mechanism): the NATIVE full
                 // character-setup copy builds weapon draw objects through the real setup pipeline —
-                // the UI-level ModelData copy CharaView uses never does. Guarded on "mainhand draw
-                // object missing": every unguarded re-run spawned a fresh weapon on top of the old
-                // one (live screenshot: two on the back).
+                // the UI-level ModelData copy CharaView uses never does. Was ALSO guarded on
+                // "mainhand draw object missing" — but the underlying client-object slot the game
+                // engine assigns our clone is REUSED across Release()/Initialize() cycles (and
+                // even plugin reloads: live dalamud.log showed zero "weapon path #13" lines despite
+                // repeated "Waffe" presses this whole session — stale non-null DrawObject from a
+                // much earlier test skipped the block every single time). _weaponSetupPending
+                // already gates this to run once per weapon-mode activation; the DrawObject-null
+                // check was redundant AND actively wrong. Removed.
                 if (weaponMode && _weaponSetupPending)
                 {
                     var srcAddr = _sourceProvider?.Invoke() ?? nint.Zero;
                     if (srcAddr != nint.Zero)
                     {
-                        if (wch->DrawData.Weapon(DrawDataContainer.WeaponSlot.MainHand).DrawObject == null)
-                        {
-                            // matched to Brio's ActorSpawnService.CloneCharacter, the one reference
-                            // that reliably spawns exactly one weapon set: WeaponHiding flag on the
-                            // real-source copy, PLUS a second self->self copy with CopyFlags.None
-                            // ("needed for some tools like Penumbra/Glamourer" — apparently also
-                            // settles whatever the first copy leaves half-finished for weapons).
-                            //
-                            // What Brio ALSO does that we never had: ActorRedrawService.Redraw()
-                            // wraps the whole spawn in DisableDraw() → copy → wait IsReadyToDraw()
-                            // → EnableDraw(). Live-verified our copy alone leaves real model ids +
-                            // non-null DrawObject + hidden=False, and STILL nothing renders — the
-                            // struct fields update but the GPU resource for a weapon slot that was
-                            // never drawn before is never (re)built without a draw cycle. Same fix.
-                            wch->GameObject.DisableDraw();
-                            wch->CharacterSetup.CopyFromCharacter((Character*)srcAddr, CharacterSetupContainer.CopyFlags.WeaponHiding);
-                            wch->CharacterSetup.CopyFromCharacter(wch, CharacterSetupContainer.CopyFlags.None);
-                            _weaponEnableDrawPending = true;
-                            _log.Info("[PreviewRenderer] weapon path #13: CharacterSetup.CopyFromCharacter (Brio-matched, double copy) applied to clone, draw disabled pending re-enable");
-                        }
+                        // matched to Brio's ActorSpawnService.CloneCharacter, the one reference
+                        // that reliably spawns exactly one weapon set: WeaponHiding flag on the
+                        // real-source copy, PLUS a second self->self copy with CopyFlags.None
+                        // ("needed for some tools like Penumbra/Glamourer" — apparently also
+                        // settles whatever the first copy leaves half-finished for weapons).
+                        //
+                        // What Brio ALSO does that we never had: ActorRedrawService.Redraw()
+                        // wraps the whole spawn in DisableDraw() → copy → wait IsReadyToDraw()
+                        // → EnableDraw(). Live-verified our copy alone leaves real model ids +
+                        // non-null DrawObject + hidden=False, and STILL nothing renders — the
+                        // struct fields update but the GPU resource for a weapon slot that was
+                        // never drawn before is never (re)built without a draw cycle. Same fix.
+                        wch->GameObject.DisableDraw();
+                        wch->CharacterSetup.CopyFromCharacter((Character*)srcAddr, CharacterSetupContainer.CopyFlags.WeaponHiding);
+                        wch->CharacterSetup.CopyFromCharacter(wch, CharacterSetupContainer.CopyFlags.None);
+                        _weaponEnableDrawPending = true;
+                        _log.Info("[PreviewRenderer] weapon path #13: CharacterSetup.CopyFromCharacter (Brio-matched, double copy) applied to clone, draw disabled pending re-enable");
                         // stance, ONE-SHOT only: per-tick forcing (246) made the game re-evaluate
                         // the weapon attach every frame — duplicate weapon, floating, no anim.
                         // The thaw window SetWeaponDrawn opened lets the transition play out.
