@@ -72,6 +72,14 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
    object-fit:fill stretching the horizontally-squeezed pixels back out. RT edge = canvas edge
    stays true, so clipping still happens at the viewport border like any 3D product viewer. */
 #preview3d{background:transparent;border:0;margin:0 auto 14px;cursor:grab;display:none;height:70vh;aspect-ratio:0.8;object-fit:fill}
+/* character tab layout: slots | model | detail — panel scrolls internally, page never does */
+#charlayout{display:grid;grid-template-columns:minmax(190px,230px) 1fr minmax(280px,360px);gap:14px;align-items:start}
+#charslots{display:flex;flex-direction:column;gap:6px;max-height:72vh;overflow-y:auto}
+#charslots .slot{padding:6px 8px}
+#chardetail{max-height:72vh;overflow-y:auto;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:10px}
+#chardetail .header img{width:40px;height:40px}
+.tbl{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-left:6px}
+.p3dtoolbar .tbl:first-child{margin-left:0}
 #preview3d.active{cursor:grabbing}
 #preview3d.panning{cursor:ns-resize}
 #p3dspin.active{color:var(--accent);font-weight:600}
@@ -101,21 +109,31 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 </section>
 
 <section id="view-character" style="display:none">
-  <canvas id="preview3d"></canvas>
-  <div class="empty" id="p3dhint" style="display:none;font-size:12px">Click 🔓 above to lock the overlay, then drag the model to rotate.</div>
-  <div class="row" style="margin-top:6px;margin-bottom:10px;flex-wrap:wrap;gap:8px">
-    <button id="p3dspin" onclick="toggleAutoSpin()" title="Wie bei Online-Shops — dreht das Model automatisch. Ziehen mit der Maus oder Zurücksetzen stoppt es wieder.">🎠 Auto-Drehen</button>
-    <button onclick="resetPreview3D()" title="Falls das Bild feststeckt oder was Falsches zeigt (z.B. ein fremdes Portrait) — stoppt auch Auto-Drehen">🔄 Preview zurücksetzen</button>
-    <button id="p3dtrans" class="active" onclick="toggleTransparent()" title="Transparenter Hintergrund (Standard: an) — Depth-Maske, farbunabhängig, dunkle Outfits sicher">🪄 Transparenter Hintergrund</button>
-    <button id="p3dfreeze" class="active" onclick="toggleFreeze()" title="Pose einfrieren (Standard: an) — Kamera (Drehen/Zoomen) bleibt bedienbar, nur die Idle-Animation stoppt">🧊 Pose einfrieren</button>
-    <button id="p3dortho" class="active" onclick="toggleOrtho()" title="Orthografische Kamera (Standard: an) — Produkt-Viewer-Projektion ohne Verzerrung, Zoom kann den Char nicht mehr anschneiden">📐 Ortho-Kamera</button>
-    <button id="p3dweapon" onclick="toggleWeapon()" title="Waffe im Preview anzeigen (Standard: aus) — für geglamte Waffen">⚔️ Waffe zeigen</button>
-    <select id="p3demote" onchange="setEmote(this.value)" title="Emote-Pose (rein clientseitig — auch nicht freigeschaltete Emotes funktionieren)"><option value="0">🎭 Emote: Idle</option></select>
-    <a href="#" onclick="loadPreview3DDebug();return false" style="font-size:12px">🩺 Preview-Stream-Debug (fps, Fehler, Frame-Größe)</a>
-    <pre id="p3ddebug" style="display:none;font-size:11px;background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:8px;margin-top:6px;white-space:pre-wrap"></pre>
+  <!-- three columns like the in-game character sheet: gear slots | live model | item lookup panel.
+       Clicking a slot opens the lookup RIGHT THERE (no tab switch, panel scrolls internally, the
+       page itself never scrolls). -->
+  <div id="charlayout">
+    <div id="charslots"><div class="empty" id="snapinfo">Loading…</div></div>
+    <div>
+      <canvas id="preview3d"></canvas>
+      <div class="empty" id="p3dhint" style="display:none;font-size:12px">Click 🔓 above to lock the overlay, then drag the model to rotate.</div>
+    </div>
+    <div id="chardetail"><div class="empty">🡐 Slot anklicken für Herkunft/Quellen</div></div>
   </div>
-  <div class="empty" id="snapinfo">Loading…</div>
-  <div class="snapgrid" id="snap"></div>
+  <div class="row p3dtoolbar" style="margin-top:6px;margin-bottom:10px;flex-wrap:wrap;gap:8px;align-items:center">
+    <span class="tbl">Ansicht</span>
+    <button id="p3dspin" onclick="toggleAutoSpin()" title="Dreht das Model automatisch — Ziehen oder Zurücksetzen stoppt">🎠 Drehen</button>
+    <button id="p3dortho" class="active" onclick="toggleOrtho()" title="Orthografische Produkt-Viewer-Projektion (Standard: an) — ohne Verzerrung, Zoom schneidet nichts ab">📐 Ortho</button>
+    <button onclick="resetPreview3D()" title="Kompletter Neuaufbau — falls das Bild feststeckt oder was Falsches zeigt">🔄 Zurücksetzen</button>
+    <span class="tbl">Pose</span>
+    <button id="p3dfreeze" class="active" onclick="toggleFreeze()" title="Pose einfrieren (Standard: an) — Kamera bleibt frei, nur die Animation steht">🧊 Einfrieren</button>
+    <button id="p3dweapon" onclick="toggleWeapon()" title="Waffe ziehen (Standard: aus) — für geglamte Waffen; setzt ein aktives Emote zurück">⚔️ Waffe</button>
+    <select id="p3demote" onchange="setEmote(this.value)" title="Statische Emote-Pose (rein clientseitig — auch nicht freigeschaltete funktionieren); steckt die Waffe weg"><option value="0">🎭 Emote: Idle</option></select>
+    <span class="tbl">Anzeige</span>
+    <button id="p3dtrans" class="active" onclick="toggleTransparent()" title="Transparenter Hintergrund (Standard: an) — Depth-Maske, dunkle Outfits sicher">🪄 Transparenz</button>
+    <a href="#" onclick="loadPreview3DDebug();return false" style="font-size:12px" title="fps, Fehler, Frame-Größe">🩺 Debug</a>
+  </div>
+  <pre id="p3ddebug" style="display:none;font-size:11px;background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:8px;margin-top:6px;white-space:pre-wrap"></pre>
 </section>
 
 <section id="view-viewer" style="display:none">
@@ -404,18 +422,21 @@ $('#q').addEventListener('input',e=>{
   },250);
 });
 
-async function openItem(id){
-  $('#results').innerHTML='';$('#q').value='';
-  $('#detail').innerHTML='<div class="empty"><span class="spinner"></span>Loading…</div>';
-  const d=await fetch('/api/item/'+id).then(r=>r.ok?r.json():null);
-  if(!d){$('#detail').innerHTML='<div class="empty">⚠️ Not found.</div>';return}
+function buildItemHtml(d){
   let h=`<div class="header">${img(d.iconId,48)}<div><div class="name">${esc(d.name)}</div><div class="meta">Item ID ${d.itemId} · iLvl ${d.itemLevel}${d.isMarketable?' · marketable':''}</div></div></div><div class="cards">`;
   for(const s of d.sources??[]){
     h+=renderSource(s,d.itemId);
   }
   h+='</div>';
   if(!(d.sources??[]).length)h+='<div class="empty">🤷 No known source found.</div>';
-  $('#detail').innerHTML=h;
+  return h;
+}
+
+async function openItem(id){
+  $('#results').innerHTML='';$('#q').value='';
+  $('#detail').innerHTML='<div class="empty"><span class="spinner"></span>Loading…</div>';
+  const d=await fetch('/api/item/'+id).then(r=>r.ok?r.json():null);
+  $('#detail').innerHTML=d?buildItemHtml(d):'<div class="empty">⚠️ Not found.</div>';
 }
 
 function renderSource(s,itemId){
@@ -448,15 +469,26 @@ function npcRow(s){
 }
 
 async function loadSnapshot(){
-  $('#snapinfo').innerHTML='<span class="spinner"></span>Loading…';
+  const info=$('#snapinfo');
+  if(info)info.innerHTML='<span class="spinner"></span>Loading…';
   const d=await fetch('/api/snapshot').then(r=>r.json());
-  $('#snapinfo').textContent=d.activeRecentName?`Viewing: ${d.activeRecentName}`:(d.slots?.length?'Live snapshot':'No snapshot — open the Character tab in-game first.');
-  $('#snap').innerHTML=(d.slots??[]).map(s=>{
+  const slots=(d.slots??[]).map(s=>{
     const id=s.glamourItemId??s.actualItemId;
     if(!id)return'';
     const name=s.glamourItemName??s.actualItemName??'';
-    return`<div class="slot" onclick="showTab('lookup');openItem(${id})">${img(s.iconId,32)}<div><div>${esc(name)}</div><div class="${s.isGlamoured?'g':'s'}">${esc(s.slot)}${s.isGlamoured?' · glamoured':''}</div></div></div>`;
+    // opens the lookup in the RIGHT-SIDE panel — no tab switch, no page scroll
+    return`<div class="slot" onclick="showItemPanel(${id})">${img(s.iconId,32)}<div><div>${esc(name)}</div><div class="${s.isGlamoured?'g':'s'}">${esc(s.slot)}${s.isGlamoured?' · glamoured':''}</div></div></div>`;
   }).join('');
+  const head=d.activeRecentName?`<div class="empty" id="snapinfo">Viewing: ${esc(d.activeRecentName)}</div>`
+    :(slots?'':'<div class="empty" id="snapinfo">No snapshot — open the Character tab in-game first.</div>');
+  $('#charslots').innerHTML=head+slots;
+}
+
+async function showItemPanel(id){
+  const box=$('#chardetail');
+  box.innerHTML='<div class="empty"><span class="spinner"></span>Loading…</div>';
+  const d=await fetch('/api/item/'+id).then(r=>r.ok?r.json():null);
+  box.innerHTML=d?buildItemHtml(d):'<div class="empty">⚠️ Not found.</div>';
 }
 
 async function post(url){await fetch(url,{method:'POST'})}
