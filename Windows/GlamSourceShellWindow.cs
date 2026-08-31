@@ -80,6 +80,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
     private uint _previewEntityId;
     // ponytail: debounce for TargetManager.Target null-flicker while cursor moves over plugin window.
     private uint _lastLiveTarget;
+    private long _lastSelfSnapshotMs;
     private int _targetNullFrames;
     private const int TargetNullGraceFrames = 20;
     // ponytail: ignore live target for the first N frames after open — else random hardtarget bleeds in.
@@ -554,11 +555,12 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
                 MaybePushRecentForTarget(currentTarget, live);
                 _snapshot = live ?? _snapshot;
             }
-            else
+            else if (Environment.TickCount64 - _lastSelfSnapshotMs > 500)
             {
-                // no target — the preview shows SELF, so the slot list follows self EVERY frame
-                // (the first version only filled when empty: after a class/glam change the list
-                // stayed permanently stale, reported live)
+                // no target — the slot list follows SELF, but throttled to 2x/s: GetSelfEquipment
+                // goes through Glamourer IPC, and calling it EVERY framework tick halved the
+                // game's frame rate (drawCalls/s 80 -> 40, measured live)
+                _lastSelfSnapshotMs = Environment.TickCount64;
                 var self = _glamour.GetSelfEquipment();
                 if (self.Count > 0) _snapshot = self;
             }

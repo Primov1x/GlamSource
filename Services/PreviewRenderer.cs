@@ -545,19 +545,20 @@ public sealed unsafe class PreviewRenderer : IDisposable
         }
         else if (!_suspendCharacterCopy && _sourceProvider != null)
         {
-            // ponytail: no overlay + no explicit suspend → keep body dressed with self equipment
-            // via raw ModelId writes (fallback for the "no target" case).
+            // Weapons only. The equipment half of this fallback is GONE: for months it wrote to a
+            // wrong offset (masked garbage), and the moment the offset was fixed it started
+            // OVERWRITING ModelData equipment with DrawData MODEL ids every tick — while the
+            // renderer dresses the char from _items (ITEM ids, seeded via SetItemSlotData). Result
+            // was a naked character after the fix. Equipment never needed this path; weapons do
+            // (they live in ModelData._weaponModelIds and CopyFromCharacter's copy of them is
+            // stomped by the agent unless DoUpdate is off, see the weapon-mode block above).
             var addr = _sourceProvider();
             if (addr != nint.Zero)
             {
                 var cand = (Character*)addr;
                 if (cand->DrawData.OwnerObject != null)
-                {
-                    for (var i = 0; i < 10; i++)
-                        SetCharaViewEquipmentSlotRaw((byte)i, *(ulong*)Unsafe.AsPointer(ref cand->DrawData.Equipment((DrawDataContainer.EquipmentSlot)i)));
                     for (var i = 0; i < 3; i++)
                         SetCharaViewWeaponSlotRaw((byte)i, *(ulong*)Unsafe.AsPointer(ref cand->DrawData.Weapon((DrawDataContainer.WeaponSlot)i).ModelId));
-                }
             }
         }
 
