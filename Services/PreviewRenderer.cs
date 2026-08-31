@@ -761,21 +761,18 @@ public sealed unsafe class PreviewRenderer : IDisposable
                     // set and the engine re-derives invisibility from them every frame — clear
                     // container + per-slot + draw object, every tick.
                     // WeaponSlot has 3 entries (MainHand/OffHand/System) and the setup copy spawns
-                    // all three unconditionally — live: "instant 3 stück" (crafter tool + off-hand
-                    // tool + the System/Prop slot, which is facility/shield junk, not a weapon).
-                    // MainHand always shown; OffHand only if it actually carries a model (dual-wield
-                    // classes); System never.
+                    // all three unconditionally. WRONG earlier guess: System is NOT junk — it's
+                    // the crafter's SECOND tool (WEAPON_SLOT_SYSTEM, per clib: "used for crafter's
+                    // tool"). Hardcoding which slot to hide by NAME was backwards for crafters
+                    // (hid their real second tool, "immer noch 3 stück" persisted from whatever the
+                    // true empty slot was). Correct rule: show a slot iff it actually carries a
+                    // model — an unequipped slot's Id is 0 regardless of which named slot it is.
                     wch->DrawData.IsWeaponHidden = false;
                     for (var i = 0; i < 3; i++)
                     {
                         var slot = (DrawDataContainer.WeaponSlot)i;
                         ref var slotData = ref wch->DrawData.Weapon(slot);
-                        var show = slot switch
-                        {
-                            DrawDataContainer.WeaponSlot.MainHand => true,
-                            DrawDataContainer.WeaponSlot.OffHand => slotData.ModelId.Id != 0,
-                            _ => false,
-                        };
+                        var show = slotData.ModelId.Id != 0;
                         slotData.IsHidden = !show;
                         if (slotData.DrawObject != null) slotData.DrawObject->IsVisible = show;
                     }
