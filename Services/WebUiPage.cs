@@ -244,11 +244,12 @@ async function runPreview3DStream(signal){
           const bitmap=await createImageBitmap(new Blob([frameBytes],{type:mimeType}));
           if(canvas.width!==bitmap.width)canvas.width=bitmap.width;
           if(canvas.height!==bitmap.height)canvas.height=bitmap.height;
-          // clear first — a transparent PNG frame would otherwise leave the previous frame's pixels
-          // showing through underneath instead of the real (game) background behind the canvas.
-          ctx.clearRect(0,0,canvas.width,canvas.height);
-          ctx.drawImage(bitmap,0,0);
-          bitmap.close();
+          // keep the latest frame — digital zoom/pan (p3dRedraw) re-renders it locally without
+          // needing ANY new frame from the server, so the idle-throttled 1fps stream still zooms
+          // and pans at full smoothness ("Box"-Fix: camera stays wide, viewport moves client-side)
+          if(p3dBitmap)p3dBitmap.close();
+          p3dBitmap=bitmap;
+          p3dRedraw();
         }catch(e){ /* one corrupt/truncated frame — skip it, next one will be fine */ }
       }
     }
@@ -257,6 +258,7 @@ async function runPreview3DStream(signal){
 
 async function resetPreview3D(){
   stopAutoSpin();
+  p3dResetView(); // digital zoom/pan back to 1:1
   await post('/api/action/preview3d/reset');
   $('#p3dfreeze').classList.add('active'); // server re-arms freeze-by-default after reinit
   startPreview3D(); // reconnect the stream — the old one keeps serving frames until reset lands
@@ -270,12 +272,30 @@ async function loadPreview3DDebug(){
   catch(e){ pre.textContent='Fehler: '+e }
 }
 
+// Digital viewport ("Box"-Fix): the game camera stays at its default wide framing so the character
+// is ALWAYS fully inside the render target — no more clipping at the target's invisible edges when
+// zooming/panning ("char ist in einer box"). Zoom (wheel, cursor-centered) and pan (right-drag)
+// are a pure canvas transform on the latest received frame: zero server round-trips, works at full
+// smoothness even while the idle throttle has the stream at 1fps. Rotate stays server-side (the
+// camera really orbits). Trade-off: heavy zoom magnifies 576x960 source pixels (soft image) — a
+// sharper source needs the native render target enlarged (researched, separate step if wanted).
+let p3dBitmap=null,p3dScale=1,p3dOx=0,p3dOy=0;
+function p3dRedraw(){
+  const canvas=$('#preview3d');
+  const ctx=canvas.getContext('2d');
+  ctx.setTransform(1,0,0,1,0,0);
+  // clear — a transparent PNG frame would otherwise leave the previous frame's pixels showing
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  if(!p3dBitmap)return;
+  ctx.setTransform(p3dScale,0,0,p3dScale,p3dOx,p3dOy);
+  ctx.drawImage(p3dBitmap,0,0);
+  ctx.setTransform(1,0,0,1,0,0);
+}
+function p3dResetView(){p3dScale=1;p3dOx=0;p3dOy=0;p3dRedraw()}
+
 (function initPreview3DDrag(){
   const canvas=$('#preview3d');
   let p3dPanning=false;
-  // right-click-drag = pan (move where the camera looks, useful once zoomed in — orbiting alone
-  // can't shift to a different point on the model); left-drag stays rotate. Suppress the browser's
-  // own right-click menu on the canvas, it'd otherwise fire on every pan attempt.
   canvas.addEventListener('contextmenu',e=>e.preventDefault());
   canvas.addEventListener('mousedown',e=>{
     stopAutoSpin();
@@ -288,15 +308,27 @@ async function loadPreview3DDebug(){
     if(!p3dDragging&&!p3dPanning)return;
     const dx=e.clientX-p3dLastX, dy=e.clientY-p3dLastY;
     p3dLastX=e.clientX;p3dLastY=e.clientY;
-    if(p3dPanning) post(`/api/action/preview3d/pan?dx=${(dx*0.75).toFixed(2)}&dy=${(dy*0.75).toFixed(2)}`);
-    else post(`/api/action/preview3d/rotate?dx=${(dx*0.75).toFixed(2)}&dy=${(dy*0.75).toFixed(2)}`);
+    if(p3dPanning){
+      // CSS px to canvas px (canvas is object-fit-scaled in the page)
+      const rect=canvas.getBoundingClientRect();
+      const k=canvas.width/rect.width;
+      p3dOx+=dx*k;p3dOy+=dy*k;
+      p3dRedraw();
+    } else post(`/api/action/preview3d/rotate?dx=${(dx*0.75).toFixed(2)}&dy=${(dy*0.75).toFixed(2)}`);
   });
   canvas.addEventListener('wheel',e=>{
     e.preventDefault();
     const rect=canvas.getBoundingClientRect();
-    const px=((e.clientX-rect.left)/rect.width*2-1).toFixed(3); // -1..1, canvas-center-relative
-    const py=((e.clientY-rect.top)/rect.height*2-1).toFixed(3);
-    post(`/api/action/preview3d/zoomat?delta=${(-e.deltaY*0.002).toFixed(3)}&px=${px}&py=${py}`);
+    // cursor position in canvas pixels — zoom around it so the point under the mouse stays put
+    const cx=(e.clientX-rect.left)*canvas.width/rect.width;
+    const cy=(e.clientY-rect.top)*canvas.height/rect.height;
+    const factor=Math.exp(-e.deltaY*0.002);
+    const next=Math.min(16,Math.max(0.5,p3dScale*factor));
+    const f=next/p3dScale;
+    p3dOx=cx-f*(cx-p3dOx);
+    p3dOy=cy-f*(cy-p3dOy);
+    p3dScale=next;
+    p3dRedraw();
   },{passive:false});
 })();
 

@@ -1,6 +1,6 @@
 # Character-Tab Web-Preview — Stand & Doku
 
-Stand: 0.0.0.170. Betrifft die Web-UI (`Services/WebUiPage.cs`/`WebUiService.cs`) und die
+Stand: 0.0.0.171. Betrifft die Web-UI (`Services/WebUiPage.cs`/`WebUiService.cs`) und die
 CharaView-Anbindung (`Services/PreviewRenderer.cs`, `Windows/GlamourPreviewWindow.cs`,
 `Windows/GlamSourceShellWindow.cs`). Für den Release-Prozess selbst siehe [`../RELEASING.md`](../RELEASING.md).
 
@@ -34,11 +34,15 @@ ein `<canvas>` gezeichnet (kein `<img src=multipart>` — siehe "Warum kein `<im
 ## Features im Character-Tab
 
 - **Drehen**: Linksklick-Ziehen → Yaw/Pitch der Kamera (nicht des Modells).
-- **Zoom**: Mausrad, multiplikativ (prozentualer Schritt, nicht additiv — sonst fühlt sich Zoom
-  Richtung Nahaufnahme immer langsamer an). Bereich 0.5–80× (war ursprünglich 6×).
-- **Zoom-zu-Cursor**: zoomt Richtung Mausposition, nicht nur zur Bildmitte (`PanCamera`, existierte
-  vorher ungenutzt im Code).
-- **Rechtsklick-Ziehen**: Pan (Kamerahöhe/-position verschieben) — nützlich sobald reingezoomt.
+- **Zoom + Pan sind seit 0.0.0.171 DIGITAL** ("Box"-Fix): die Spiel-Kamera bleibt auf ihrem weiten
+  Standard-Framing (Char immer komplett im Rendertarget, kein Abschneiden an den unsichtbaren
+  Kanten mehr), Mausrad-Zoom (cursor-zentriert, 0.5–16×) und Rechtsklick-Pan sind reine
+  Canvas-Transformationen auf dem letzten empfangenen Frame — null Server-Roundtrips, butterweich
+  auch während die Idle-Drossel den Stream auf 1fps hält. Trade-off: starker Zoom vergrößert
+  576x960-Quellpixel (weich) — schärfer ginge nur über ein vergrößertes natives Rendertarget
+  (recherchiert: `Device::CreateTexture2D`-Hook + CharaView-Recreation, separater Schritt falls
+  gewünscht). Die alten Server-Endpoints `zoom`/`zoomat`/`pan` existieren weiter, UI nutzt sie
+  nicht mehr.
 - **🎠 Auto-Drehen**: Turntable-Rotation wie bei Online-Shop-Produktansichten.
 - **🔄 Preview zurücksetzen**: volles `Release()`+`Initialize()` — Notausstieg falls die Vorschau
   hängt oder was Falsches zeigt (siehe Bugs unten). Stoppt auch Auto-Drehen.
