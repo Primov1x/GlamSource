@@ -10,26 +10,30 @@ internal static class WebUiPage
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GlamSource</title>
-<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230d0f14'/%3E%3Ctext x='16' y='23' font-size='20' text-anchor='middle' fill='%23d4af5a'%3E✦%3C/text%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23141312'/%3E%3Ctext x='16' y='23' font-size='20' text-anchor='middle' fill='%23c8a75e'%3E✦%3C/text%3E%3C/svg%3E">
 <style>
+/* FFXIV-inspired, modernized: warm charcoal panels with a faint vertical gradient, thin gold
+   hairline borders, small-caps gold labels — the in-game UI language without its bitmap frames.
+   Emoji are BANNED from UI chrome: Browsingway's embedded Chromium has no emoji font, they
+   rendered as empty boxes (seen live). */
 :root{
-  --bg:#0d0f14; --panel:#161a22; --panel2:#1d222d; --border:#2a3040;
-  --text:#d8dce6; --muted:#8a91a3; --accent:#d4af5a; --success:#6fbf73; --warn:#e0a03c;
+  --bg:#141312; --panel:#1e1c1a; --panel2:#262320; --border:#3a352c; --gold:#c8a75e;
+  --gold-dim:#8a7443; --text:#e2dccb; --muted:#948c7a; --accent:#c8a75e; --success:#8fbf73; --warn:#e0a03c;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:transparent;color:var(--text);font:14px/1.5 "Segoe UI",system-ui,sans-serif;margin:0}
-#titlebar{display:flex;align-items:center;gap:10px;background:var(--panel2);border-bottom:1px solid var(--border);padding:6px 12px;user-select:none}
-#titlebar .brand{color:var(--accent);font-weight:600;font-size:14px;letter-spacing:.5px}
+#titlebar{display:flex;align-items:center;gap:10px;background:linear-gradient(180deg,#2a2723,#1e1c19);border-bottom:1px solid var(--gold-dim);padding:6px 12px;user-select:none}
+#titlebar .brand{color:var(--gold);font-weight:600;font-size:14px;letter-spacing:1.5px;text-transform:uppercase}
 #titlebar .sub{color:var(--muted);font-size:11px}
 #titlebar .spacer{flex:1}
-#titlebar button{background:none;border:1px solid var(--border);color:var(--muted);width:22px;height:22px;border-radius:5px;cursor:pointer;font-size:13px;line-height:1}
-#titlebar button:hover{border-color:var(--accent);color:var(--accent)}
-#app{background:var(--bg);padding:18px 24px;max-width:1100px;min-height:calc(100vh - 36px)}
-nav{display:flex;gap:8px;margin-bottom:18px}
-nav button{background:var(--panel);border:1px solid var(--border);color:var(--text);padding:8px 18px;border-radius:8px;cursor:pointer;font-size:14px;transition:.15s}
-nav button:hover{border-color:var(--accent)}
-nav button.active{background:var(--accent);color:#14161c;font-weight:600}
+#titlebar button{background:none;border:1px solid var(--border);color:var(--muted);width:22px;height:22px;border-radius:4px;cursor:pointer;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center}
+#titlebar button:hover{border-color:var(--gold);color:var(--gold)}
+#titlebar button svg{width:12px;height:12px;fill:currentColor}
+#app{background:linear-gradient(180deg,#17161494,#141312f0),var(--bg);padding:16px 22px;max-width:1200px;min-height:calc(100vh - 36px)}
+nav{display:flex;gap:2px;margin-bottom:16px;border-bottom:1px solid var(--border)}
+nav button{background:transparent;border:0;border-bottom:2px solid transparent;color:var(--muted);padding:8px 20px;cursor:pointer;font-size:13px;letter-spacing:1px;text-transform:uppercase;transition:.15s}
+nav button:hover{color:var(--text)}
+nav button.active{color:var(--gold);border-bottom-color:var(--gold);font-weight:600}
 input[type=search]{width:100%;max-width:420px;background:var(--panel);border:1px solid var(--border);color:var(--text);padding:10px 14px;border-radius:8px;font-size:15px;outline:none}
 input[type=search]:focus{border-color:var(--accent)}
 .results{margin-top:10px;display:flex;flex-direction:column;gap:4px;max-width:420px}
@@ -62,10 +66,11 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 @keyframes spin{to{transform:rotate(360deg)}}
 .row img,.matrow img,.slot img,.header img{background:var(--panel2);object-fit:contain}
 .snapgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin-top:14px}
-.slot{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:8px 10px;cursor:pointer;transition:.12s}
-.slot:hover{border-color:var(--accent)}
-.slot img{width:32px;height:32px;border-radius:5px}
-.slot .g{color:var(--success);font-size:12px}
+/* gear slot tiles, in-game character-sheet look: square icon in a gold-hairline frame */
+.slot{display:flex;align-items:center;gap:10px;background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--border);border-radius:6px;padding:8px 10px;cursor:pointer;transition:.12s}
+.slot:hover{border-color:var(--gold);box-shadow:0 0 6px rgba(200,167,94,.25)}
+.slot img{width:34px;height:34px;border-radius:4px;border:1px solid var(--gold-dim);flex-shrink:0}
+.slot .g{color:var(--success);font-size:11px}
 .slot .s{color:var(--muted);font-size:11px}
 /* aspect-ratio = the WORLD aspect the server camera renders (PreviewRenderer.PreviewAspect, 0.8 —
    wider than the RT's native 0.6 for more side room, "bei Emotes sind Teile abgehakt"), with
@@ -78,13 +83,15 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 #charslots .slot{padding:6px 8px}
 #chardetail{max-height:72vh;overflow-y:auto;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:10px}
 #chardetail .header img{width:40px;height:40px}
-.tbl{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-left:6px}
+.tbl{color:var(--gold-dim);font-size:10px;text-transform:uppercase;letter-spacing:1.5px;margin-left:10px}
+.p3dtoolbar{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--border);border-radius:8px;padding:8px 12px}
 .p3dtoolbar .tbl:first-child{margin-left:0}
+.p3dtoolbar button,.p3dtoolbar select{background:#151310;border:1px solid var(--border);color:var(--text);padding:5px 12px;border-radius:5px;cursor:pointer;font-size:12px;transition:.12s}
+.p3dtoolbar button:hover,.p3dtoolbar select:hover{border-color:var(--gold)}
+.p3dtoolbar button.active{color:var(--gold);border-color:var(--gold-dim);background:#211d15;font-weight:600}
+.p3dtoolbar a{color:var(--muted)}
 #preview3d.active{cursor:grabbing}
 #preview3d.panning{cursor:ns-resize}
-#p3dspin.active{color:var(--accent);font-weight:600}
-#p3dtrans.active{color:var(--accent);font-weight:600}
-#p3dfreeze.active{color:var(--accent);font-weight:600}
 </style>
 </head>
 <body>
@@ -93,14 +100,13 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
   <span class="sub">web ui</span>
   <span class="spacer"></span>
   <button id="btn-min" title="Minimieren — nur die Titelleiste bleibt sichtbar" onclick="toggleMinimize()">–</button>
-  <button id="btn-lock" title="Lock overlay position — needed to drag-rotate the 3D preview (Browsingway has no title bar; unlocked, any drag moves the whole window instead)" onclick="toggleLock()">🔓</button>
-  <button title="Hide (reopen from the GlamSource window)" onclick="post('/api/action/overlay/hide')">×</button>
+  <button id="btn-lock" title="Overlay-Position sperren — nötig, um das Modell per Ziehen zu drehen (entsperrt verschiebt Ziehen das ganze Fenster)" onclick="toggleLock()"><svg viewBox="0 0 24 24"><path d="M12 2a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5zm-3 5a3 3 0 0 1 6 0v3H9V7z"/></svg></button>
+  <button title="Ausblenden (über das GlamSource-Fenster wieder öffnen)" onclick="post('/api/action/overlay/hide')">×</button>
 </div>
 <div id="app">
 <nav>
-  <button id="tab-lookup" class="active" onclick="showTab('lookup')">Lookup</button>
-  <button id="tab-character" onclick="showTab('character')">Character</button>
-  <button id="tab-viewer" onclick="showTab('viewer')">3D Viewer</button>
+  <button id="tab-lookup" class="active" onclick="showTab('lookup')">Suche</button>
+  <button id="tab-character" onclick="showTab('character')">Charakter</button>
 </nav>
 
 <section id="view-lookup">
@@ -119,37 +125,25 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
       <canvas id="preview3d"></canvas>
       <div class="empty" id="p3dhint" style="display:none;font-size:12px">Click 🔓 above to lock the overlay, then drag the model to rotate.</div>
     </div>
-    <div id="chardetail"><div class="empty">🡐 Slot anklicken für Herkunft/Quellen</div></div>
+    <div id="chardetail"><div class="empty">Slot anklicken für Herkunft &amp; Quellen</div></div>
   </div>
   <div class="row p3dtoolbar" style="margin-top:6px;margin-bottom:10px;flex-wrap:wrap;gap:8px;align-items:center">
     <span class="tbl">Ansicht</span>
-    <button id="p3dspin" onclick="toggleAutoSpin()" title="Dreht das Model automatisch — Ziehen oder Zurücksetzen stoppt">🎠 Drehen</button>
-    <button id="p3dortho" class="active" onclick="toggleOrtho()" title="Orthografische Produkt-Viewer-Projektion (Standard: an) — ohne Verzerrung, Zoom schneidet nichts ab">📐 Ortho</button>
-    <button onclick="resetPreview3D()" title="Kompletter Neuaufbau — falls das Bild feststeckt oder was Falsches zeigt">🔄 Zurücksetzen</button>
+    <button id="p3dspin" onclick="toggleAutoSpin()" title="Dreht das Model automatisch — Ziehen oder Zurücksetzen stoppt">Drehen</button>
+    <button id="p3dortho" class="active" onclick="toggleOrtho()" title="Orthografische Produkt-Viewer-Projektion (Standard: an) — ohne Verzerrung, Zoom schneidet nichts ab">Ortho</button>
+    <button onclick="resetPreview3D()" title="Kompletter Neuaufbau — falls das Bild feststeckt oder was Falsches zeigt">Zurücksetzen</button>
     <span class="tbl">Pose</span>
-    <button id="p3dfreeze" class="active" onclick="toggleFreeze()" title="Pose einfrieren (Standard: an) — Kamera bleibt frei, nur die Animation steht">🧊 Einfrieren</button>
-    <button id="p3dweapon" onclick="toggleWeapon()" title="Waffe ziehen (Standard: aus) — für geglamte Waffen; setzt ein aktives Emote zurück">⚔️ Waffe</button>
-    <select id="p3demote" onchange="setEmote(this.value)" title="Statische Emote-Pose (rein clientseitig — auch nicht freigeschaltete funktionieren); steckt die Waffe weg"><option value="0">🎭 Emote: Idle</option></select>
+    <button id="p3dfreeze" class="active" onclick="toggleFreeze()" title="Pose einfrieren (Standard: an) — Kamera bleibt frei, nur die Animation steht">Einfrieren</button>
+    <button id="p3dweapon" onclick="toggleWeapon()" title="Waffe ziehen (Standard: aus) — für geglamte Waffen; setzt ein aktives Emote zurück">Waffe</button>
+    <select id="p3demote" onchange="setEmote(this.value)" title="Statische Emote-Pose (rein clientseitig — auch nicht freigeschaltete funktionieren); steckt die Waffe weg"><option value="0">Emote: Idle</option></select>
     <span class="tbl">Anzeige</span>
-    <button id="p3dtrans" class="active" onclick="toggleTransparent()" title="Transparenter Hintergrund (Standard: an) — Depth-Maske, dunkle Outfits sicher">🪄 Transparenz</button>
-    <a href="#" onclick="loadPreview3DDebug();return false" style="font-size:12px" title="fps, Fehler, Frame-Größe">🩺 Debug</a>
+    <button id="p3dtrans" class="active" onclick="toggleTransparent()" title="Transparenter Hintergrund (Standard: an) — Depth-Maske, dunkle Outfits sicher">Transparenz</button>
+    <a href="#" onclick="loadPreview3DDebug();return false" style="font-size:12px" title="fps, Fehler, Frame-Größe">Debug</a>
   </div>
   <pre id="p3ddebug" style="display:none;font-size:11px;background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:8px;margin-top:6px;white-space:pre-wrap"></pre>
 </section>
 
-<section id="view-viewer" style="display:none">
-  <div class="empty" id="viewerinfo"><span class="spinner"></span>Loading model…</div>
-  <div id="viewer3d" style="width:100%;height:70vh;border:1px solid var(--border);border-radius:8px;overflow:hidden;display:none"></div>
-  <div id="pose-toggle" style="display:none;margin-top:6px;gap:4px" class="row">
-    <button id="pose-idle" onclick="setViewerPose('idle')" title="The model's own bind pose — no live game data read at all, so nothing here can glitch from a bad capture">🧍 Idle</button>
-    <button id="pose-weapon" onclick="setViewerPose('weapon')" title="First time the character was seen with weapon drawn — captured once, frozen">⚔️ Waffe</button>
-    <button id="pose-live" onclick="setViewerPose('live')" title="Whatever the character is doing right this second">🔴 Live</button>
-    <button onclick="resetPose()" title="Bad capture? Clear the frozen Idle/Weapon snapshots so they get re-captured next time you're in that state">♻️ Neu erfassen</button>
-    <button id="btn-eyedrop" onclick="toggleEyedrop()" title="Click a spot on the model to read its exact rendered pixel color (hex) — for reporting a specific color that looks wrong">🎨 Farbe messen</button>
-    <span id="eyedrop-result" style="margin-left:6px"></span>
-  </div>
-  <div style="margin-top:4px"><a href="/api/model3d/textures" target="_blank" style="font-size:12px">🖼️ Rohe Texturen ansehen (unbeleuchtet)</a></div>
-</section>
+
 
 </div>
 <script>
@@ -157,18 +151,16 @@ const $=s=>document.querySelector(s);
 const icon=id=>{if(!id)return'';const f=String(Math.floor(id/1000)*1000).padStart(6,'0');const n=String(id).padStart(6,'0');return`https://xivapi.com/i/${f}/${n}.png`};
 const esc=t=>(t??'').toString().replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const img=(id,size)=>`<img src="${icon(id)}" width="${size}" height="${size}" loading="lazy" onerror="this.style.visibility='hidden'">`;
-const TYPE_ICON={craft:'🔨',vendor:'🛒',quest:'❗',duty:'⚔️'};
-function typeIcon(cls){return TYPE_ICON[cls]??'✦'}
+function typeIcon(cls){return ''} // emoji render as empty boxes in Browsingway — the text badge is enough
 
 let currentTab='lookup';
 function showTab(t){
   currentTab=t;
-  for(const x of['lookup','character','viewer']){
+  for(const x of['lookup','character']){
     $('#view-'+x).style.display=x===t?'':'none';
     $('#tab-'+x).classList.toggle('active',x===t);
   }
   if(t==='character'){loadSnapshot();startPreview3D()}else{stopPreview3D()}
-  if(t==='viewer')startViewer();
 }
 
 // minimize to the title bar (Dalamud-style collapse isn't possible for a Browsingway page — the
@@ -432,7 +424,7 @@ $('#q').addEventListener('input',e=>{
     if(q.length<3){box.innerHTML='';return}
     box.innerHTML='<div class="empty"><span class="spinner"></span>Searching…</div>';
     const r=await fetch('/api/search?q='+encodeURIComponent(q)).then(r=>r.json());
-    box.innerHTML=r.length?r.map(x=>`<div class="row" onclick="openItem(${x.id})">${img(x.iconId,28)}<span>${esc(x.name)}</span></div>`).join(''):'<div class="empty">🔍 No items found.</div>';
+    box.innerHTML=r.length?r.map(x=>`<div class="row" onclick="openItem(${x.id})">${img(x.iconId,28)}<span>${esc(x.name)}</span></div>`).join(''):'<div class="empty">Keine Items gefunden.</div>';
   },250);
 });
 
@@ -442,7 +434,7 @@ function buildItemHtml(d){
     h+=renderSource(s,d.itemId);
   }
   h+='</div>';
-  if(!(d.sources??[]).length)h+='<div class="empty">🤷 No known source found.</div>';
+  if(!(d.sources??[]).length)h+='<div class="empty">Keine bekannte Quelle gefunden.</div>';
   return h;
 }
 
@@ -450,7 +442,7 @@ async function openItem(id){
   $('#results').innerHTML='';$('#q').value='';
   $('#detail').innerHTML='<div class="empty"><span class="spinner"></span>Loading…</div>';
   const d=await fetch('/api/item/'+id).then(r=>r.ok?r.json():null);
-  $('#detail').innerHTML=d?buildItemHtml(d):'<div class="empty">⚠️ Not found.</div>';
+  $('#detail').innerHTML=d?buildItemHtml(d):'<div class="empty">Nicht gefunden.</div>';
 }
 
 function renderSource(s,itemId){
@@ -502,169 +494,10 @@ async function showItemPanel(id){
   const box=$('#chardetail');
   box.innerHTML='<div class="empty"><span class="spinner"></span>Loading…</div>';
   const d=await fetch('/api/item/'+id).then(r=>r.ok?r.json():null);
-  box.innerHTML=d?buildItemHtml(d):'<div class="empty">⚠️ Not found.</div>';
+  box.innerHTML=d?buildItemHtml(d):'<div class="empty">Nicht gefunden.</div>';
 }
 
 async function post(url){await fetch(url,{method:'POST'})}
-
-// --- glTF mesh viewer (live skeleton pose baked server-side; equipment from current snapshot) ---
-// three.js from CDN; the whole scene is client-side WebGL — smooth camera, zero game load.
-let viewerStarted=false;
-async function startViewer(){
-  if(viewerStarted){reloadViewerModel();return}
-  viewerStarted=true;
-  const info=$('#viewerinfo');
-  try{
-    const THREE=await import('three');
-    const {GLTFLoader}=await import('three/addons/loaders/GLTFLoader.js');
-    const {OrbitControls}=await import('three/addons/controls/OrbitControls.js');
-    const {RoomEnvironment}=await import('three/addons/environments/RoomEnvironment.js');
-    const box=$('#viewer3d');
-    box.style.display='block';
-    // preserveDrawingBuffer: the eyedropper reads pixels back from this canvas after each frame
-    const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true,preserveDrawingBuffer:true});
-    renderer.setSize(box.clientWidth,box.clientHeight);
-    // ponytail: lights at 2.0+2.0 with no tone mapping blew every mid-tone toward white/saturated
-    // — a near-black dyed material (baseColorFactor ~0.12) still rendered as bright vivid color.
-    // ACES + realistic light levels is the standard three.js fix for "everything looks washed out".
-    renderer.toneMapping=THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure=1.55;
-    renderer.outputColorSpace=THREE.SRGBColorSpace;
-    box.appendChild(renderer.domElement);
-    const scene=new THREE.Scene();
-    scene.background=new THREE.Color(0x555555);
-    // ponytail: "fehlendes Gold"/"Glas-Effekt fehlt" — metal trim now bakes real metallicFactor=1
-    // (see GltfBuilder's metal/roughness texture), but PBR metal only shows an environment
-    // REFLECTION, no diffuse color of its own — with zero environment data it renders flat black
-    // (or blown-out white at a grazing highlight angle) regardless of the baked gold hue
-    // underneath. A simple procedural room environment gives metal/glass surfaces something to
-    // reflect, the standard three.js fix for exactly this ("PBR metal looks black").
-    const pmrem=new THREE.PMREMGenerator(renderer);
-    scene.environment=pmrem.fromScene(new RoomEnvironment(),0.04).texture;
-    const camera=new THREE.PerspectiveCamera(45,box.clientWidth/box.clientHeight,0.01,100);
-    camera.position.set(0,1.2,2.2);
-    const controls=new OrbitControls(camera,renderer.domElement);
-    controls.target.set(0,1.0,0);
-    // ponytail: original single-key setup left the face/chin/under-brow in heavy shadow (screenshot
-    // comparison against the real in-game render: ours read dark/muddy, "fitting room" flat) — with
-    // correct diffuse colors now shipped, the remaining gap was pure lighting: too little fill,
-    // exposure too low. Softer key, brighter ambient, an added front fill (real portrait 3-point
-    // setup), and a touch more exposure.
-    // ponytail: "sharp/kein Ingame-Look" — three hard DirectionalLights + a flat AmbientLight give
-    // crisp, unshaded-feeling specular hotspots real in-game portrait lighting doesn't have. A
-    // HemisphereLight (sky/ground gradient) replaces the flat ambient for a softer base, key/fill
-    // get a slight warm/cool split (matches the game's warm key + cool bounce), and key intensity
-    // drops since the hemisphere now carries part of the fill duty.
-    // ponytail: the previous pass overcorrected — HemisphereLight's dark ground color (0x3a3530)
-    // plus a weaker key/fill crushed the face into near-black at this close camera angle ("Horror
-    // game aus den 80ern" vs the real screenshot). Softness came from ditching hard multi-light
-    // specular, not from starving overall brightness — keep the hemisphere for the gradient feel,
-    // but lift its ground floor and put key/fill intensity back near the original working levels.
-    scene.add(new THREE.HemisphereLight(0xfff4e6,0x6b6058,0.9));
-    const key=new THREE.DirectionalLight(0xfff1e0,1.3);
-    key.position.set(2,3,2.5);
-    scene.add(key);
-    const fill=new THREE.DirectionalLight(0xe6eeff,0.75);
-    fill.position.set(-1.5,1.2,2.5);
-    scene.add(fill);
-    const rim=new THREE.DirectionalLight(0xffffff,0.4);
-    rim.position.set(-2,1.5,-2);
-    scene.add(rim);
-    window._glamViewer={THREE,GLTFLoader,scene,renderer,camera,controls,box,model:null};
-    $('#pose-toggle').style.display='flex';
-    $('#pose-idle').style.fontWeight='bold';
-    await reloadViewerModel();
-    (function animate(){requestAnimationFrame(animate);controls.update();renderer.render(scene,camera)})();
-    new ResizeObserver(()=>{renderer.setSize(box.clientWidth,box.clientHeight);camera.aspect=box.clientWidth/box.clientHeight;camera.updateProjectionMatrix()}).observe(box);
-    renderer.domElement.addEventListener('click',onViewerClick);
-  }catch(e){
-    info.textContent='⚠️ Viewer failed to load: '+e.message;
-    viewerStarted=false;
-  }
-}
-
-async function resetPose(){await post('/api/action/pose/reset');reloadViewerModel()}
-
-let eyedropActive=false;
-function toggleEyedrop(){
-  eyedropActive=!eyedropActive;
-  $('#btn-eyedrop').style.fontWeight=eyedropActive?'bold':'normal';
-  if(!eyedropActive)$('#eyedrop-result').textContent='';
-}
-function onViewerClick(ev){
-  if(!eyedropActive)return;
-  const v=window._glamViewer;
-  const rect=v.renderer.domElement.getBoundingClientRect();
-  const x=Math.round(ev.clientX-rect.left);
-  const yTop=Math.round(ev.clientY-rect.top);
-  const yGl=Math.round(rect.height-yTop); // WebGL reads bottom-up
-  const gl=v.renderer.getContext();
-  const px=new Uint8Array(4);
-  gl.readPixels(x,yGl,1,1,gl.RGBA,gl.UNSIGNED_BYTE,px);
-  const hex='#'+[px[0],px[1],px[2]].map(c=>c.toString(16).padStart(2,'0')).join('');
-  $('#eyedrop-result').innerHTML=`<span style="display:inline-block;width:12px;height:12px;background:${hex};border:1px solid #fff;vertical-align:middle"></span> ${hex} rgb(${px[0]},${px[1]},${px[2]})`;
-}
-
-let viewerPose='idle';
-function setViewerPose(p){
-  viewerPose=p;
-  ['idle','weapon','live'].forEach(x=>$('#pose-'+x).style.fontWeight=(x===p?'bold':'normal'));
-  reloadViewerModel();
-}
-
-async function reloadViewerModel(){
-  const v=window._glamViewer;
-  if(!v)return;
-  const info=$('#viewerinfo');
-  info.innerHTML='<span class="spinner"></span>Loading model…';
-  info.style.display='flex';
-  try{
-    const r=await fetch('/api/model3d.glb?pose='+viewerPose+'&t='+Date.now());
-    if(!r.ok){info.textContent='🤷 No model — open the Character tab in-game first.';return}
-    const buf=await r.arrayBuffer();
-    const gltf=await new Promise((res,rej)=>new v.GLTFLoader().parse(buf,'',res,rej));
-    if(v.model)v.scene.remove(v.model);
-    v.model=gltf.scene;
-    // ponytail: first step toward actually-FFXIV-like shading instead of flat glTF PBR — materials
-    // tagged with a "role" (skin/hair/eye, see GltfBuilder.cs's extras field) get upgraded from the
-    // loader's default MeshStandardMaterial to MeshPhysicalMaterial with the property that role
-    // actually needs: sheen for skin's soft/waxy look, anisotropic specular for hair's strand
-    // highlight streak, clearcoat for a wet-eye look. GLTFLoader copies glTF "extras" straight onto
-    // material.userData (parser.assignExtrasToUserData) — no manual JSON parsing needed here.
-    // materials are cache-shared across meshes by the loader (same glTF material index -> same
-    // instance) — upgrade each distinct instance once via a lookup, or a shared material would get
-    // replaced-and-disposed on the first mesh and leave later meshes pointing at a disposed one.
-    const upgraded=new Map();
-    v.model.traverse(o=>{
-      const role=o.material?.userData?.role;
-      if(!role||!(o.material instanceof v.THREE.MeshStandardMaterial))return;
-      const old=o.material;
-      if(upgraded.has(old)){o.material=upgraded.get(old);return}
-      // ponytail: "cannot read properties of undefined (reading 'x')" — MeshPhysicalMaterial.copy()
-      // unconditionally copies Vector2/Color sub-props (e.g. clearcoatNormalScale) that only exist
-      // on ANOTHER MeshPhysicalMaterial; `old` here is a plain MeshStandardMaterial from the
-      // loader, so those are undefined and .copy() dies reaching into them. Copy just the fields
-      // that actually exist on a MeshStandardMaterial instead of a blind .copy().
-      const phys=new v.THREE.MeshPhysicalMaterial({
-        map:old.map,normalMap:old.normalMap,normalScale:old.normalScale,
-        metalnessMap:old.metalnessMap,roughnessMap:old.roughnessMap,
-        color:old.color,metalness:old.metalness,roughness:old.roughness,
-        alphaTest:old.alphaTest,alphaMap:old.alphaMap,transparent:old.transparent,
-        side:old.side,
-      });
-      if(role==='skin'){phys.sheen=0.35;phys.sheenColor=new v.THREE.Color(0xffe0cc);phys.sheenRoughness=0.6}
-      else if(role==='hair'){if('anisotropy' in phys){phys.anisotropy=0.6;phys.anisotropyRotation=Math.PI/2}phys.clearcoat=0.15;phys.clearcoatRoughness=0.4}
-      // ponytail: clearcoat=0.8/roughness=0.05 (near-mirror) blew the iris out to solid white under
-      // the key light — "Gläser" complaint, eyes read as glass marbles instead of colored irises.
-      // Much lower clearcoat keeps a wet-eye highlight without drowning the underlying color.
-      else if(role==='eye'){phys.clearcoat=0.25;phys.clearcoatRoughness=0.2}
-      upgraded.set(old,phys);
-      o.material=phys;
-    });
-    v.scene.add(v.model);
-    info.style.display='none';
-  }catch(e){info.textContent='⚠️ '+e.message}
-}
 
 let overlayLocked=false;
 function toggleLock(){
