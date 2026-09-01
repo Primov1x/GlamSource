@@ -466,7 +466,13 @@ public sealed unsafe class PreviewRenderer : IDisposable
                 // pipeline does. If this stays null on our puppet, that's the real "why nothing
                 // renders": no Weapon scene object ever gets created, regardless of ModelId.
                 var weaponObjPtr = *(nint*)((byte*)Unsafe.AsPointer(ref dd) + 0x08);
-                sb.Append($"clone.dd.weapon{i}({(DrawDataContainer.WeaponSlot)i}): id={dd.ModelId.Id} type={dd.ModelId.Type} weaponObj={weaponObjPtr:X} drawObj={(nint)dd.DrawObject:X} vis={(dd.DrawObject != null ? dd.DrawObject->IsVisible : false)} hidden={dd.IsHidden} state=0x{dd.State:X2} | ");
+                // live-confirmed: weaponObjPtr == drawObj (Weapon IS-A DrawObject, same address —
+                // the object genuinely exists, "Create() never called" theory refuted). Next
+                // suspect: Weapon.AttachTarget (CharacterBase* @ +0xA58 from the Weapon object's
+                // OWN base) — if null/wrong, the object exists but isn't parented to the clone's
+                // hand bone, so it may render off in space or get culled as detached.
+                var attachTarget = weaponObjPtr != 0 ? *(nint*)((byte*)weaponObjPtr + 0xA58) : 0;
+                sb.Append($"clone.dd.weapon{i}({(DrawDataContainer.WeaponSlot)i}): id={dd.ModelId.Id} type={dd.ModelId.Type} weaponObj={weaponObjPtr:X} attachTarget={attachTarget:X} charBody={(nint)ch->GameObject.DrawObject:X} drawObj={(nint)dd.DrawObject:X} vis={(dd.DrawObject != null ? dd.DrawObject->IsVisible : false)} hidden={dd.IsHidden} state=0x{dd.State:X2} | ");
             }
             // 4th, never-touched slot: DrawDataContainer._unkWeaponData @ 0x160 — checking whether
             // a residual/duplicate draw object lives here, outside the 3 slots we manage.
