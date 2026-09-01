@@ -1,5 +1,21 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## TODO — Localization (DE/EN, client-language-driven)
+
+Not started, no time slot yet found. Real scope: extract every user-facing string out of both
+UIs, build a DE/EN table, wire it to Dalamud's client language, rebuild + verify. Not a quick
+add-on — plan it as its own task.
+
+- **ImGui** (`Windows/GlamSourceShellWindow.cs`, `Windows/ItemDetailWindow.cs`) — ~40+ hardcoded
+  strings (labels, tooltips, section headers).
+- **Web UI** (`Services/WebUiPage.cs`) — ~50+ strings baked into the HTML/JS template.
+- Trigger: Dalamud's `IClientState.ClientLanguage` (or `IDalamudPluginInterface.UiLanguage`) —
+  needs checking which one actually reflects the user's chosen UI language vs. game client
+  language, they're not always the same.
+- Needs a translation-table structure (dictionary keyed by string id, or resx) picked before
+  starting — retrofitting one after strings are already extracted means doing the extraction
+  twice.
+
 Running log of the item-detail/source pipeline (`GlamSource.Core/ItemDetailService.cs`) work
 from this session. Audited via `GlamSource.Mock`'s local test server against real `D:\FF\game`
 data (500-item random samples, and targeted spot-checks), not guesswork.
