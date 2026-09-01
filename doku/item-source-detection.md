@@ -93,6 +93,12 @@ Genuinely can't be tested in `GlamSource.Mock` (no live game, no real characters
 mount→item resolution itself (CSV lookup) is verified though: mount id 1 (Company Chocobo) →
 item 6001 (Chocobo Whistle) → real quest-reward sources, confirmed via the local test server.
 
+**Where it shows up**: no dedicated mount UI — it rides the existing pending-item push (see "Web
+UI polish" below) straight into the normal Lookup-tab item panel. Source line comes from the same
+`CollectSources.csv` used for minions/mounts in general (quest/achievement/Gold Saucer/duty/etc.),
+so it's a real source, not just "unbekannt". What it does **not** show: who was riding it — only
+the mount-unlock item's own source, no "seen on player X" context.
+
 ## Recents: delete + cap
 
 The native ImGui sidebar (`GlamSourceShellWindow.DrawRecentSidebar`) already had both a delete
