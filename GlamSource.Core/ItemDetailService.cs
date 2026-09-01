@@ -762,6 +762,27 @@ public sealed class ItemDetailService : IItemDetailService
             }
         }
 
+        // 11b. Merge a token-exchange Trial/Raid Drop entry with a coffer "Obtained from" entry for
+        // the SAME item — "der coffer gibts aus der duty und sonst nirgends": live example was
+        // "Trial Drop: Totem Gear (Enuo)" + "Obtained from: Weapon Coffer of Naught" showing as two
+        // separate cards for what's really one acquisition path (kill the trial, get either the
+        // exchange currency or the coffer). Our own data has no independent "which duty does this
+        // coffer drop from" — the coffer's own detail literally shows "no known current source" for
+        // the tested example — so this only merges when they co-occur on the same item, not a
+        // verified cross-reference; safe because a coffer with a genuinely different source would
+        // show its OWN card correctly if this item ever also has a second matching duty entry.
+        var exchangeIdx = results.FindIndex(s => (s.Type == ItemSourceType.Trial || s.Type == ItemSourceType.Raid) && s.CfcRowIds != null);
+        var cofferIdx = results.FindIndex(s => s.Type == ItemSourceType.Other && s.Description.StartsWith("Obtained from: ", StringComparison.Ordinal) && s.SourceItemId != null);
+        if (exchangeIdx >= 0 && cofferIdx >= 0)
+        {
+            var exchange = results[exchangeIdx];
+            var coffer = results[cofferIdx];
+            var merged = exchange with { Description = $"{exchange.Description} — {coffer.Description}" };
+            results.RemoveAt(Math.Max(exchangeIdx, cofferIdx));
+            results.RemoveAt(Math.Min(exchangeIdx, cofferIdx));
+            results.Add(merged);
+        }
+
         // 12. Generic fallback â€” nothing found, and not a known legacy/retired/superseded item either.
         // Verified against live game data (not just our own sheets): items that land here
         // genuinely have no current recipe/vendor/duty-drop entry.
