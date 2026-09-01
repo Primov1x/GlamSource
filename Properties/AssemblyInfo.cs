@@ -1,8 +1,8 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
 
-[assembly: AssemblyVersion("0.0.0.281")]
-[assembly: AssemblyFileVersion("0.0.0.281")]
+[assembly: AssemblyVersion("0.0.0.282")]
+[assembly: AssemblyFileVersion("0.0.0.282")]
 // ponytail: GenerateAssemblyInfo=false (see GlamSource.csproj) means the csproj's
 // <InternalsVisibleTo>GlamSource.Mock</InternalsVisibleTo> MSBuild property never actually turns
 // into this attribute — it needs the SDK's own assembly-info generation, which is off. Was silently

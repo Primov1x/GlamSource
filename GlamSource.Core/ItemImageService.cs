@@ -59,22 +59,34 @@ public sealed class ItemImageService : IItemImageService, IDisposable
         {
             await RateLimit();
 
-            var slug = Uri.EscapeDataString(itemName.Replace(' ', '_'));
+            var underscored = itemName.Replace(' ', '_');
+            var slug = Uri.EscapeDataString(underscored);
             var html = await _httpClient.GetStringAsync($"https://ffxiv.consolegameswiki.com/wiki/{slug}");
 
+            // Bundle/set pages (e.g. "Abes Attire") embed the SAME wide promo gallery images
+            // (*_img1..4.jpg, 400px) on every individual piece's page — "widest image wins" always
+            // picked those over the actual per-item "<Name>_Male.jpeg" portrait (280px), so every
+            // piece in a set returned byte-identical images (live: 16042/16043 both 36049 bytes,
+            // confirmed as the shared Abes_Attire_img4.jpg, not the distinct real portraits).
+            // The item's own worn-portrait filename always starts with the item's name — match on
+            // that FIRST, only fall back to widest-non-icon if no name match exists on the page.
             string? best = null;
             var bestWidth = 0;
+            string? nameMatch = null;
             foreach (Match m in ImgTag.Matches(html))
             {
                 var file = m.Groups["file"].Value;
                 if (file.Contains("icon", StringComparison.OrdinalIgnoreCase)) continue;
                 if (!int.TryParse(m.Groups["width"].Value, out var width)) continue;
                 if (width < 150) continue; // UI chrome (class frames, store badges) tops out ~25px
+                if (file.StartsWith(underscored, StringComparison.OrdinalIgnoreCase))
+                    nameMatch ??= "https://ffxiv.consolegameswiki.com" + m.Groups["src"].Value;
                 if (width <= bestWidth) continue;
                 bestWidth = width;
                 best = "https://ffxiv.consolegameswiki.com" + m.Groups["src"].Value;
             }
 
+            best = nameMatch ?? best;
             _cache[itemId] = best;
             return best;
         }
