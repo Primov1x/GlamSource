@@ -472,7 +472,23 @@ public sealed unsafe class PreviewRenderer : IDisposable
                 // OWN base) — if null/wrong, the object exists but isn't parented to the clone's
                 // hand bone, so it may render off in space or get culled as detached.
                 var attachTarget = weaponObjPtr != 0 ? *(nint*)((byte*)weaponObjPtr + 0xA58) : 0;
-                sb.Append($"clone.dd.weapon{i}({(DrawDataContainer.WeaponSlot)i}): id={dd.ModelId.Id} type={dd.ModelId.Type} weaponObj={weaponObjPtr:X} attachTarget={attachTarget:X} charBody={(nint)ch->GameObject.DrawObject:X} drawObj={(nint)dd.DrawObject:X} vis={(dd.DrawObject != null ? dd.DrawObject->IsVisible : false)} hidden={dd.IsHidden} state=0x{dd.State:X2} | ");
+                // user theory: "out of vision spawnt" — bad bone-attach offset would put the
+                // weapon at some default/wrong transform, easily outside the puppet's tight ortho
+                // framing. Skeleton* @ CharacterBase+0xA0 (own base, not DrawObject's) + the
+                // Object base's own Position (typically FieldOffset 0x50 area on Object) as a
+                // rough sanity check — is the weapon's skeleton even set, and roughly where does
+                // the object THINK it is.
+                var weaponSkeleton = weaponObjPtr != 0 ? *(nint*)((byte*)weaponObjPtr + 0xA0) : 0;
+                var weaponPos = weaponObjPtr != 0 ? *(System.Numerics.Vector3*)((byte*)weaponObjPtr + 0x50) : default;
+                // clib Object.cs: "[FieldOffset(0x30)] public Object* ChildObject; // for humans
+                // this is a weapon" — AttachTarget says the WEAPON knows its parent; this checks
+                // whether the PARENT (body) knows about the weapon as its child. If the scene
+                // graph traversal walks parent->child to decide what to draw, a one-way link
+                // (attached but not childed) would explain "everything looks right, nothing
+                // renders" — the renderer may simply never visit an unlinked child.
+                var bodyPtr = (nint)ch->GameObject.DrawObject;
+                var bodyChild = bodyPtr != 0 ? *(nint*)((byte*)bodyPtr + 0x30) : 0;
+                sb.Append($"clone.dd.weapon{i}({(DrawDataContainer.WeaponSlot)i}): id={dd.ModelId.Id} type={dd.ModelId.Type} weaponObj={weaponObjPtr:X} attachTarget={attachTarget:X} charBody={bodyPtr:X} bodyChildObject={bodyChild:X} weaponSkeleton={weaponSkeleton:X} weaponPos={weaponPos} drawObj={(nint)dd.DrawObject:X} vis={(dd.DrawObject != null ? dd.DrawObject->IsVisible : false)} hidden={dd.IsHidden} state=0x{dd.State:X2} | ");
             }
             // 4th, never-touched slot: DrawDataContainer._unkWeaponData @ 0x160 — checking whether
             // a residual/duplicate draw object lives here, outside the 3 slots we manage.
