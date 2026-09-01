@@ -458,7 +458,15 @@ public sealed unsafe class PreviewRenderer : IDisposable
             for (var i = 0; i < 3; i++)
             {
                 var dd = ch->DrawData.Weapon((DrawDataContainer.WeaponSlot)i);
-                sb.Append($"clone.dd.weapon{i}({(DrawDataContainer.WeaponSlot)i}): id={dd.ModelId.Id} type={dd.ModelId.Type} drawObj={(nint)dd.DrawObject:X} vis={(dd.DrawObject != null ? dd.DrawObject->IsVisible : false)} hidden={dd.IsHidden} state=0x{dd.State:X2} | ");
+                // DrawObjectData.Weapon* @ +0x08 — the actual Client::Graphics::Scene::Weapon scene
+                // object (separate from DrawData.DrawObject @ +0x18). clib's pinned version here
+                // doesn't expose it by name; raw offset read. Weapon inherits CharacterBase/
+                // DrawObject and has its OWN Create()/Initialize() — writing a ModelId into
+                // DrawData never calls those, something else in the normal live-character update
+                // pipeline does. If this stays null on our puppet, that's the real "why nothing
+                // renders": no Weapon scene object ever gets created, regardless of ModelId.
+                var weaponObjPtr = *(nint*)((byte*)Unsafe.AsPointer(ref dd) + 0x08);
+                sb.Append($"clone.dd.weapon{i}({(DrawDataContainer.WeaponSlot)i}): id={dd.ModelId.Id} type={dd.ModelId.Type} weaponObj={weaponObjPtr:X} drawObj={(nint)dd.DrawObject:X} vis={(dd.DrawObject != null ? dd.DrawObject->IsVisible : false)} hidden={dd.IsHidden} state=0x{dd.State:X2} | ");
             }
             // 4th, never-touched slot: DrawDataContainer._unkWeaponData @ 0x160 — checking whether
             // a residual/duplicate draw object lives here, outside the 3 slots we manage.
