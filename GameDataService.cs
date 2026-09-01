@@ -263,6 +263,21 @@ public unsafe class GameDataService : IGlamourService
         };
     }
 
+    /// <summary>Native Mount.MountId of the given actor, or null if not mounted / not a character.
+    /// Same Character* pattern as GetDrawDataEquipment below — verified field via FFXIVClientStructs
+    /// (Character.Mount at 0x670, IsMounted() == Mount.MountId != 0).</summary>
+    public uint? GetMountId(IGameObject target)
+    {
+        if (target is not IPlayerCharacter playerChar)
+            return null;
+
+        var charPtr = (Character*)playerChar.Address;
+        if (charPtr == null || charPtr->Mount.MountId == 0)
+            return null;
+
+        return charPtr->Mount.MountId;
+    }
+
     private IReadOnlyList<EquipmentSlot> GetDrawDataEquipment(IGameObject target)
     {
         if (target is not IPlayerCharacter playerChar)

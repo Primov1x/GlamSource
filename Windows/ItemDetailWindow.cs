@@ -29,6 +29,12 @@ public class ItemDetailWindow : Window, IDisposable
     private readonly IUniversalisService _universalisService;
     private readonly ITextureProvider? _textureProvider;
     private readonly IDataManager? _data;
+    private readonly IItemImageService? _imageService;
+    // ponytail: same wiki preview image the web UI shows (see ItemImageService), just decoded to a
+    // real GPU texture here instead of an <img src>. Keyed + disposed per item id; null value means
+    // "looked it up, nothing found" so we don't re-request every Draw() frame.
+    private readonly Dictionary<uint, Dalamud.Interface.Textures.TextureWraps.IDalamudTextureWrap?> _previewTextureCache = new();
+    private readonly HashSet<uint> _previewLoading = new();
     private Plugin _plugin = null!;
     // ponytail: optional per-slot context (Gear/Glamour/Stain snapshot). null = old single-item mode.
     private EquipmentSlot? _slotContext;
@@ -121,9 +127,13 @@ public class ItemDetailWindow : Window, IDisposable
             new Vector4(0.5f, 0.5f, 0.5f, 1f),
             new Vector4(0.15f, 0.15f, 0.15f, 1f),
             "OTHER"),
+        [ItemSourceType.TripleTriad] = (
+            new Vector4(0.85f, 0.55f, 0.2f, 1f),
+            new Vector4(0.22f, 0.14f, 0.05f, 1f),
+            "TRIPLE TRIAD"),
     };
 
-    public ItemDetailWindow(IItemDetailService detailService, IItemSourceService sourceService, IUniversalisService universalisService, ITextureProvider? textureProvider = null, IDataManager? data = null)
+    public ItemDetailWindow(IItemDetailService detailService, IItemSourceService sourceService, IUniversalisService universalisService, ITextureProvider? textureProvider = null, IDataManager? data = null, IItemImageService? imageService = null)
         : base($"Item Detail###ItemDetailWindow", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
     {
         _detailService = detailService;
@@ -131,6 +141,7 @@ public class ItemDetailWindow : Window, IDisposable
         _universalisService = universalisService;
         _textureProvider = textureProvider;
         _data = data;
+        _imageService = imageService;
         SizeConstraints = new WindowSizeConstraints
         {
             MinimumSize = new Vector2(380, 250),
@@ -176,6 +187,44 @@ public class ItemDetailWindow : Window, IDisposable
         });
     }
 
+    private void LoadPreviewImage(uint itemId, string itemName)
+    {
+        if (_imageService == null || _textureProvider == null) return;
+        if (_previewTextureCache.ContainsKey(itemId) || !_previewLoading.Add(itemId)) return;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var bytes = await _imageService.GetPreviewImageBytesAsync(itemId, itemName);
+                var tex = bytes != null ? await _textureProvider.CreateFromImageAsync(bytes, $"ItemPreview_{itemId}") : null;
+                _previewTextureCache[itemId] = tex;
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.Warning(ex, "[PREVIEW] Failed to load preview image for item {Id}", itemId);
+                _previewTextureCache[itemId] = null;
+            }
+            finally
+            {
+                _previewLoading.Remove(itemId);
+            }
+        });
+    }
+
+    private void DrawPreviewImage(uint itemId)
+    {
+        if (!_previewTextureCache.TryGetValue(itemId, out var tex) || tex == null)
+            return;
+
+        // ponytail: cap displayed size in font units, same idea as the web UI's `max-width:280px`
+        // on .preview img — a wide wiki screenshot shouldn't blow out the window.
+        var maxEdge = ImGui.GetFontSize() * 14f;
+        var scale = MathF.Min(1f, maxEdge / MathF.Max(tex.Width, tex.Height));
+        ImGui.Image(tex.Handle, new Vector2(tex.Width * scale, tex.Height * scale));
+        ImGui.Spacing();
+    }
+
     private void NavigateToItem(uint itemId)
     {
         if (_showingItemId.HasValue && _showingItemId.Value > 0)
@@ -212,6 +261,8 @@ public class ItemDetailWindow : Window, IDisposable
                     _marketLoading = false;
                 });
             }
+
+            LoadPreviewImage(itemId, detail.Name);
         }
         else
         {
@@ -247,6 +298,7 @@ public class ItemDetailWindow : Window, IDisposable
         }
 
         DrawItemHeader(detail);
+        DrawPreviewImage(detail.ItemId);
 
         if (_slotContext != null)
             DrawSlotContext(_slotContext);
@@ -296,10 +348,37 @@ public class ItemDetailWindow : Window, IDisposable
 
         ImGui.BeginGroup();
         ImGui.Text(detail.Name);
-        ImGui.TextDisabled($"Item ID {detail.ItemId}  \u00b7  iLvl {detail.ItemLevel}");
+        var metaLine = $"Item ID {detail.ItemId}  \u00b7  iLvl {detail.ItemLevel}";
+        if (!string.IsNullOrEmpty(detail.SetName))
+            metaLine += $"  \u00b7  Set: {detail.SetName}";
+        ImGui.TextDisabled(metaLine);
         ImGui.EndGroup();
 
         ImGui.Spacing();
+
+        // ponytail: same "Item.ItemSeries" grouping the web UI shows \u2014 clickable chips, same
+        // navigation as the [i] info buttons elsewhere in this window (push history, load new item).
+        if (detail.SetMembers is { Count: > 0 })
+        {
+            ImGui.TextDisabled("Rest of the set:");
+            for (var i = 0; i < detail.SetMembers.Count; i++)
+            {
+                var member = detail.SetMembers[i];
+                if (i > 0) ImGui.SameLine();
+                using (ImRaii.PushId($"setmember_{member.ItemId}"))
+                {
+                    if (_textureProvider != null && member.IconId > 0)
+                    {
+                        var tex = _textureProvider.GetFromGameIcon(new GameIconLookup(member.IconId)).GetWrapOrEmpty();
+                        ImGui.Image(tex.Handle, new Vector2(RowIconSize, RowIconSize));
+                        ImGui.SameLine();
+                    }
+                    if (ImGui.SmallButton(member.Name))
+                        NavigateToItem(member.ItemId);
+                }
+            }
+            ImGui.Spacing();
+        }
 
         if (_history.Count > 0)
         {
@@ -1473,5 +1552,8 @@ public class ItemDetailWindow : Window, IDisposable
 
     public void Dispose()
     {
+        foreach (var tex in _previewTextureCache.Values)
+            tex?.Dispose();
+        _previewTextureCache.Clear();
     }
 }

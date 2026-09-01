@@ -1,0 +1,353 @@
+MountId,ItemId,Name
+1,6001,Company Chocobo
+4,6002,Goobbue
+5,6006,Legacy Chocobo
+6,6008,Magitek Armor
+8,6007,Coeurl
+9,6009,Ahriman
+15,6269,Unicorn
+18,6990,Behemoth
+19,6991,Cavalry Drake
+20,6992,Laurel Goobbue
+21,6993,Gilded Magitek Armor
+22,6994,Nightmare
+25,7553,Fat Chocobo
+26,7554,Cavalry Elbst
+27,7555,Bomb Palanquin
+28,7844,Aithon
+29,7845,Xanthos
+30,7846,Gullfaxi
+31,7847,Enbarr
+32,7848,Warlion
+33,7849,Warbear
+34,8207,Draught Chocobo
+35,8208,Direwolf
+36,8209,Storm Warsteed
+37,8210,Serpent Warsteed
+38,8211,Flame Warsteed
+40,8212,Markab
+41,8702,Ceremony Chocobo
+42,8726,Sleipnir
+43,9354,Boreas
+44,9353,Parade Chocobo
+45,12075,Black Chocobo
+46,10078,Adamantoise
+47,10080,Kirin
+48,10081,Logistics System
+49,10079,Fenrir
+52,12993,Amber Draught Chocobo
+53,12071,Sanuwa
+54,12072,Griffin
+55,12073,Manacutter
+56,12074,War Panther
+58,12076,Gobwalker
+59,12992,Twintania
+62,13098,Witch's Broom
+67,13287,Pegasus
+68,13689,White Devil
+69,13690,Red Baron
+70,13288,Wyvern
+71,23981,SDS Fenrir
+72,14082,Kongamato
+73,14083,Zu
+74,14084,Bennu
+75,14085,White Lanner
+76,14086,Rose Lanner
+77,14087,Round Lanner
+78,14088,Warring Lanner
+80,14089,Gloria-class Airship
+81,14982,Flying Cumulus
+82,14090,Original Fat Chocobo
+83,15433,Astrope
+84,15430,Fat Moogle
+86,15429,Cloud Mallow
+87,15431,Whisper-go
+90,15432,Dark Lanner
+91,15932,Aerodynamics System
+92,15933,Disembodied Head
+93,15934,Managarm
+94,15946,Whisper A-go-go
+95,16565,Goten
+96,16566,Ginga
+97,16561,Mystic Panda
+98,16562,Sophic Lanner
+99,21050,Starlight Bear
+100,16564,Black Pegasus
+101,16563,Arrhidaeus
+102,16567,Raigo
+104,17007,Demonic Lanner
+105,17008,Firebird
+106,17009,Eggshilaration System
+108,17010,Lone Hellhound
+109,17011,Pack Hellhound
+110,17012,Archon Throne
+111,16037,Syldra
+112,20548,Falcon
+113,17675,Lone Faehound
+114,17676,Pack Faehound
+115,20549,Blissful Kamuy
+116,20550,Reveling Kamuy
+121,20551,Magitek Predator
+122,20552,Battle Lion
+123,20553,Battle Bear
+124,20554,Battle Panther
+125,20555,Yol
+126,20556,Alte Roite
+127,20557,Centurio Tiger
+130,20637,Ixion
+133,21047,Legendary Kamuy
+135,21049,Nezha Chariot
+136,21048,Striped Ray
+138,21051,Aquamarine Carbuncle
+139,21192,Citrine Carbuncle
+140,21052,Flying Chair
+141,21053,Magitek Avenger
+142,21054,Korpokkur Kolossus
+143,21902,Red Hare
+144,21903,Auspicious Kamuy
+145,21906,Magitek Death Claw
+146,21904,Marid
+148,22459,True Griffin
+150,21907,Tyrannosaur
+151,24624,Regalia Type-G
+152,21908,Broken Heart (right)
+153,21909,Broken Heart (left)
+154,21910,Typhon
+156,21905,Air Force
+158,23020,Lunar Kamuy
+159,23023,Dodo
+160,23021,Indigo Whale
+161,22600,Rathalos
+162,23025,Magitek Conveyor
+163,23123,Prototype Conveyor
+164,23022,Mikoshi
+166,23024,Juedi
+167,23125,Logistics Node
+168,23124,Safeguard System
+170,23982,Grani
+171,23983,Fatter Cat
+172,23984,Euphonious Kamuy
+173,23985,Model O
+174,23986,Magitek Sky Armor
+175,24627,Magicked Carpet
+176,23987,Magna Roader
+177,23988,Fat Black Chocobo
+178,24219,Eldthurs
+179,24622,Maxima Roader
+180,24628,Sabotender Emperador
+181,24625,Kamuy of the Nine Tails
+182,24623,Hallowed Kamuy
+183,24629,War Tiger
+184,24630,Eurekan Petrel
+185,24631,Magitek Avenger A1
+186,24626,Demi-Ozma
+187,27967,Amaro
+188,26779,Skyslipper
+189,26778,Fae Gwiber
+190,26780,Triceratops
+191,26781,Ironfrog Mover
+192,26783,Innocent Gwiber
+193,26782,Magicked Bed
+194,26784,Circus Ahriman
+195,25057,Sunspun Cumulus
+197,27971,Battle Tiger
+200,28116,Morbol
+201,28117,Portly Porxie
+202,28118,Epimetheus
+203,28119,Menoetius
+204,28120,Construct VII
+205,28121,Shadow Gwiber
+206,28122,Spriggan Stonecarrier
+207,28123,Forgiven Reticence
+208,28124,Dhalmel
+209,28125,Albino Karakul
+211,28917,Ufiti
+212,33684,Deinonychus
+213,30102,Construct 14
+214,28508,Kingly Peacock
+215,30103,Great Vessel of Ronka
+216,30104,Pteranodon
+217,30105,Ruby Gwiber
+218,30106,Hybodus
+219,30107,Ramuh
+220,30108,Rubellite Carbuncle
+222,30859,Chocobo Carriage
+223,30860,Rolling Tankard
+224,30861,Gabriel α
+225,30862,Megalotragus
+226,30863,Gwiber of Light
+228,30864,Jibanyan Couch
+229,31396,Magitek Hyperconveyor
+230,30866,Ehll Tou
+231,30865,Incitatus
+232,32837,Snowman
+233,32838,Lunar Whale
+234,32839,Eden
+235,32840,Cerberus
+236,32841,Big Shell
+237,32842,Arion
+238,32843,Emerald Gwiber
+239,32844,Prototype Roader
+240,32845,Chocorpokkur
+241,32846,Gabriel Mark III
+242,33674,Antelope Doe
+243,33675,Antelope Stag
+245,33218,Landerwaffe
+246,33676,Al-iklil
+247,33677,Cruise Chaser
+248,33145,Construct VI-S
+249,33685,Diamond Gwiber
+250,33686,Polar Bear
+252,33687,Gilded Mikoshi
+253,33688,Resplendent Vessel of Ronka
+254,33689,Magicked Card
+255,33678,Island Mandragora
+256,33679,Island Onion Prince
+257,33680,Island Eggplant Knight
+258,33681,Island Garlic Jester
+259,33682,Island Tomato King
+260,33683,Island Mandragora Queen
+261,36000,Lynx of Eternal Darkness
+262,36001,Lynx of Divine Light
+263,36002,Argos
+264,36006,Dreadnaught
+265,36008,Demi-Phoinix
+266,36003,Calydontis
+267,36004,Victor
+268,36007,Level Checker
+269,36009,Papa Paissa
+273,36005,Wivre
+274,36010,Porxie King
+277,38455,Garlond GL-II
+279,36632,Mechanical Lotus
+280,36905,Fylgja
+281,36906,Alkonost
+282,40382,Island Buffalo
+283,45071,Brachiosaur
+284,36910,Pod 602
+285,39485,Moon-hopper
+286,39495,Island Alligator
+287,36907,Hippo Cart
+288,36904,Troll
+290,36908,UFO
+291,36909,Vinegaroon
+292,36911,Orthos Craklaw
+293,36912,Bluefeather Lynx
+294,36913,Megashiba
+297,40383,Traveling Supporter
+298,38456,Miw Miisv
+299,38457,Wondrous Lanner
+300,38458,Magicked Umbrella
+301,38459,Magicked Parasol
+302,38460,Starlight Steed
+303,38461,Sil'dihn Throne
+304,38462,Silkie
+305,38463,Sunforged
+306,38464,Lynx of Imperious Wind
+308,39486,Aeturna
+310,39487,Set of Ceruleum Balloons
+311,39488,Anden III
+312,39489,Blackjack
+313,39490,Phaethon
+314,39491,Pinky
+315,39492,Lynx of Righteous Fire
+316,39493,Magitek Avenger G1
+317,39494,Chrysomallos
+318,40384,Garlond GL-IS
+319,40385,Megaloambystoma
+320,40386,Rising Phoenix
+321,40387,Burabura Chochin
+322,40388,Shishioji
+323,40389,Shadow Wolf
+324,40390,Magicked Children's Bed
+325,40391,Lynx of Fallen Shadow
+326,41487,Torgal
+327,41488,Ark
+328,41489,Apocryphal Bahamut
+329,41490,Crescent Moon
+330,41491,Rhiyes
+331,41492,Oppressor
+332,41493,Lynx of Abyssal Grief
+333,41494,Sabotender de la Luna
+334,41495,Spectral Statice
+335,41496,Garlond GL-IIT
+336,41497,Peatie
+337,41498,Alsvid
+338,41499,Quaqua
+339,41649,Island Peerifool
+340,41650,Island Adenium
+342,43590,Ty'aitya
+343,43591,Air-wheeler A9
+344,43592,Alpaca
+345,43593,Wings of Ruin
+346,43594,Wings of Resolve
+347,43595,Outrunner
+348,43596,Mehwapyarra
+349,43597,Monowheel S1
+350,43598,Rroneek
+351,43599,Ullr
+352,43600,Qeziigural
+353,44245,Automatoise
+354,41802,Mountain Zu
+356,44502,Barreltender
+357,44503,Eggeater
+358,44497,Punutiy
+359,44504,Alexandrian Axe Beak
+360,44501,Shroud of Darkness
+361,44500,Dais of Darkness
+362,44498,Hovering Hot Pot
+363,44499,Wings of Eternity
+364,44505,Vacuum Suit
+365,44958,Venturous Kamuy
+371,50435,Cosmic Countenance
+372,47978,Demon Haul
+373,47979,Petalodus
+374,45577,Snowstreamer
+379,47334,Pilgrim's Protector
+381,47977,Branchbearer
+382,47974,Air-wheeler C9
+383,47975,Ancient Airship
+385,48232,High Mobility Vacuum Suit
+386,47973,Warp Loader
+388,47980,His Royal Headness on Parade
+389,47976,Wings of the Knighthood
+390,48231,Magitek Slasher
+393,46830,Vurgar the Loyal
+394,50436,Wanyudo
+395,46831,Forgiven Mimicry
+396,46827,Ambulario
+397,46828,Shagcoat Cat
+398,46833,Seikret
+399,46834,Felyne Support Team Cart
+400,46829,Yan
+401,46825,Interstellar Dhalmel
+402,47336,Cosmoboard
+403,46832,Chandelier of First Light
+407,46826,Wings of Death
+408,47335,Ornamental Shrublet
+409,52257,Interstellar Leafkin
+411,50437,Dynamite
+412,50438,Genie of the Lamp
+413,50439,Lowrider T1RANT
+414,50440,Uolon
+415,50441,Volatile Gravity Vacuum Suit
+416,50442,Cosmic Armored Weapon
+417,52258,Inflatable Mograft
+419,52640,Starlight Sleigh
+420,52259,Wings of Legacy
+421,50443,Hardy-Daytona
+422,50444,Wings of Mist
+425,50445,Rapid-fab Vacuum Suit
+426,50446,Alert Red Warp Loader
+427,50447,Royal Magicked Carpet
+428,50448,Turali Snowman
+429,52260,Night Stallion
+430,52261,Magitek Scorpion
+432,52262,Rocket Punch
+435,52264,Colibri Callado
+437,52266,Duck-billed Porter
+438,52267,Cosmic Armored Weapon Beta
+440,52268,Cosmic Predator
+444,52270,Wings of Nihility
+445,52271,Excavating Vacuum Suit
+446,52272,Carbide Grey Warp Loader

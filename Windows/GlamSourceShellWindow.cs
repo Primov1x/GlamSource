@@ -947,15 +947,22 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
                 ImGui.SetTooltip("Remove from Recent");
         }
         if (removeIdx is int idx)
+            RemoveRecent(idx);
+    }
+
+    /// <summary>Delete a stored Recent — the native sidebar's X-button handler, extracted so the
+    /// web UI's Recents sidebar can do the same thing (was ImGui-only before).</summary>
+    public void RemoveRecent(int index)
+    {
+        var recents = _configuration.RecentTargets;
+        if (index < 0 || index >= recents.Count) return;
+        var removed = recents[index];
+        recents.RemoveAt(index);
+        _configuration.Save();
+        if (_activeRecentName == removed.Name)
         {
-            var removed = recents[idx];
-            _configuration.RecentTargets.RemoveAt(idx);
-            _configuration.Save();
-            if (_activeRecentName == removed.Name)
-            {
-                _recentOverride = null;
-                _activeRecentName = null;
-            }
+            _recentOverride = null;
+            _activeRecentName = null;
         }
     }
 

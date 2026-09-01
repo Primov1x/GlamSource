@@ -1,0 +1,262 @@
+CardRowId,NpcName,ZoneName,MapX,MapY
+2,Memeroon,Upper La Noscea,15,24
+4,Triple Triad master,The Gold Saucer,4,7
+5,Roger,Central Thanalan,20,21
+8,Maisenta,New Gridania,12,11
+8,Wymond,Ul'dah - Steps of Nald,10,9
+9,Roger,Central Thanalan,20,21
+11,Ourdilic,Coerthas Central Highlands,6,23
+12,Aurifort of the Three Clubs,The Gold Saucer,4,8
+12,Mother Miounne,New Gridania,12,14
+13,Guhtwint of the Three Diamonds,The Gold Saucer,4,7
+14,Memeroon,Upper La Noscea,15,24
+15,Joellaut,Coerthas Central Highlands,13,16
+15,Jonas of the Three Spades,The Gold Saucer,5,7
+16,Maisenta,New Gridania,12,11
+18,Baderon,Limsa Lominsa Upper Decks,12,11
+20,Jonas of the Three Spades,The Gold Saucer,5,7
+20,Trachtoum,Lower La Noscea,36,16
+21,Mimidoa,Lower La Noscea,25,35
+22,Helmhart,Eastern Thanalan,20,21
+23,Buscarron,South Shroud,18,20
+24,Piralnaut,East Shroud,17,27
+25,Fufulupa,Western Thanalan,23,17
+26,Ourdilic,Coerthas Central Highlands,6,23
+27,Aurifort of the Three Clubs,The Gold Saucer,4,8
+27,Guhtwint of the Three Diamonds,The Gold Saucer,4,7
+28,Momodi,Ul'dah - Steps of Nald,12,10
+29,Baderon,Limsa Lominsa Upper Decks,12,11
+30,Mother Miounne,New Gridania,12,14
+31,indolent imperial,Mor Dhona,12,17
+32,indolent imperial,Mor Dhona,12,17
+33,Mimidoa,Lower La Noscea,25,35
+33,Sezul Totoloc,North Shroud,24,23
+34,Helmhart,Eastern Thanalan,20,21
+34,Rowena,Mor Dhona,22,5
+35,Marcette,Central Shroud,17,19
+35,Piralnaut,East Shroud,17,27
+36,F'hobhas,Central Thanalan,24,14
+37,Memeroon,Upper La Noscea,15,24
+38,Ourdilic,Coerthas Central Highlands,6,23
+38,Sezul Totoloc,North Shroud,24,23
+40,Swift,Ul'dah - Steps of Nald,8,9
+41,Landenel,South Shroud,17,28
+41,Trachtoum,Lower La Noscea,36,16
+42,Marcette,Central Shroud,17,19
+43,Master Mogzin,The Churning Mists,16,29
+43,Vorsaile Heuloix,New Gridania,10,11
+44,Buscarron,South Shroud,18,20
+45,Hab,Southern Thanalan,25,41
+45,King Elmer III,The Gold Saucer,4,8
+45,Ruhtwyda of the Three Hearts,The Gold Saucer,4,8
+46,Fufulupa,Western Thanalan,23,17
+46,Hab,Southern Thanalan,25,41
+47,indolent imperial,Mor Dhona,12,17
+48,Buscarron,South Shroud,18,20
+48,Vorsaile Heuloix,New Gridania,10,11
+49,Gegeruju,Eastern La Noscea,34,31
+49,R'ashaht Rhiki,Limsa Lominsa Upper Decks,13,13
+50,Ruhtwyda of the Three Hearts,The Gold Saucer,4,8
+52,Landenel,South Shroud,17,28
+53,Vorsaile Heuloix,New Gridania,10,11
+54,R'ashaht Rhiki,Limsa Lominsa Upper Decks,13,13
+56,Gegeruju,Eastern La Noscea,34,31
+58,Sezul Totoloc,North Shroud,24,23
+59,Joellaut,Coerthas Central Highlands,13,16
+59,Swift,Ul'dah - Steps of Nald,8,9
+60,Rowena,Mor Dhona,22,5
+61,King Elmer III,The Gold Saucer,4,8
+62,Hab,Southern Thanalan,25,41
+64,indolent imperial,Mor Dhona,12,17
+65,Mordyn,Limsa Lominsa Upper Decks,11,8
+65,O'kalkaya,Limsa Lominsa Upper Decks,12,14
+65,R'ashaht Rhiki,Limsa Lominsa Upper Decks,13,13
+66,Vorsaile Heuloix,New Gridania,10,11
+67,Swift,Ul'dah - Steps of Nald,8,9
+70,Lewena,The Gold Saucer,5,6
+72,Lewena,The Gold Saucer,5,6
+73,Lewena,The Gold Saucer,5,6
+73,hall overseer,The Battlehall,4,4
+81,Noes,Old Gridania,11,6
+82,Mogmill,The Churning Mists,28,35
+83,Mogmill,The Churning Mists,28,35
+84,Yellow Moon,Ul'dah - Steps of Thal,14,13
+85,Vath deftarm,The Dravanian Forelands,24,19
+86,Dominiac,Coerthas Western Highlands,17,23
+86,Ercanbald,Rhalgr's Reach,10,10
+88,Gibrillont,Foundation,13,12
+89,Wawalago,Limsa Lominsa Lower Decks,8,15
+90,Marcechamp,The Dravanian Forelands,32,23
+91,idle imperial,Azys Lla,28,31
+92,Midnight Dew,Idyllshire,6,7
+93,Marielle,The Sea of Clouds,15,38
+94,Mero Roggo,The Dravanian Hinterlands,13,37
+96,Yayake,Ul'dah - Steps of Nald,7,12
+97,Vath deftarm,The Dravanian Forelands,24,19
+98,Linu Vali,The Sea of Clouds,7,14
+101,Dominiac,Coerthas Western Highlands,17,23
+102,Elaisse,The Pillars,8,11
+103,Laniaitte,The Sea of Clouds,17,37
+104,Laniaitte,The Sea of Clouds,17,37
+105,voracious Vath,The Dravanian Forelands,24,20
+106,Seika,Idyllshire,7,7
+107,Seika,Idyllshire,7,7
+108,Mogmill,The Churning Mists,28,35
+109,Vath deftarm,The Dravanian Forelands,24,19
+109,voracious Vath,The Dravanian Forelands,24,20
+111,Midnight Dew,Idyllshire,6,7
+112,Redbill storeboy,Idyllshire,4,5
+113,Swift,Ul'dah - Steps of Nald,8,9
+115,Mogmill,The Churning Mists,28,35
+117,Seika,Idyllshire,7,7
+117,Tapklix,The Dravanian Hinterlands,22,19
+119,idle imperial,Azys Lla,28,31
+121,House Fortemps manservant,Fortemps Manor,6,6
+123,Linu Vali,The Sea of Clouds,7,14
+124,Master Mogzin,The Churning Mists,16,29
+126,Mordyn,Limsa Lominsa Upper Decks,11,8
+127,Yayake,Ul'dah - Steps of Nald,7,12
+128,Memeroon,Upper La Noscea,15,24
+129,Redbill storeboy,Idyllshire,4,5
+130,Mero Roggo,The Dravanian Hinterlands,13,37
+131,Noes,Old Gridania,11,6
+132,Klynthota,Mor Dhona,30,14
+133,House Fortemps manservant,Fortemps Manor,6,6
+134,House Fortemps manservant,Fortemps Manor,6,6
+135,Klynthota,Mor Dhona,30,14
+136,Tapklix,The Dravanian Hinterlands,22,19
+140,Klynthota,Mor Dhona,30,14
+141,Wymond,Ul'dah - Steps of Nald,10,9
+142,Elaisse,The Pillars,8,11
+143,Marielle,The Sea of Clouds,15,38
+144,O'kalkaya,Limsa Lominsa Upper Decks,12,14
+145,Mordyn,Limsa Lominsa Upper Decks,11,8
+146,Master Mogzin,The Churning Mists,16,29
+147,Linu Vali,The Sea of Clouds,7,14
+148,idle imperial,Azys Lla,28,31
+149,O'kalkaya,Limsa Lominsa Upper Decks,12,14
+150,Klynthota,Mor Dhona,30,14
+151,idle imperial,Azys Lla,28,31
+152,Redbill storeboy,Idyllshire,4,5
+153,Master Mogzin,The Churning Mists,16,29
+154,Wyra “Greenhands” Lyehga,The Battlehall,3,3
+155,Flichoirel the Lordling,The Battlehall,4,4
+158,Prideful Stag,The Battlehall,4,3
+160,hall overseer,The Battlehall,4,4
+161,Mero Roggo,The Dravanian Hinterlands,13,37
+162,Sezul Totoloc,North Shroud,24,23
+163,Tapklix,The Dravanian Hinterlands,22,19
+164,Nell Half-full,The Battlehall,3,4
+167,Flichoirel the Lordling,The Battlehall,4,4
+179,Redbill storeboy,Idyllshire,4,5
+183,Gyoei,Yanxia,16,32
+184,Tsuzura,The Ruby Sea,29,16
+185,Garima,The Fringes,28,20
+186,Ercanbald,Rhalgr's Reach,10,10
+187,Kotokaze,Kugane,10,10
+188,Munglig,The Azim Steppe,12,34
+188,Nigen,The Azim Steppe,32,12
+188,Ogodei,The Azim Steppe,22,21
+189,Umber Torrent,The Lochs,16,25
+192,imperial deserter,The Lochs,33,30
+193,Kaizan,The Ruby Sea,22,9
+194,Nigen,The Azim Steppe,32,12
+195,Ogodei,The Azim Steppe,22,21
+196,Munglig,The Azim Steppe,12,34
+197,Ironworks hand,Rhalgr's Reach,14,11
+198,imperial deserter,The Lochs,33,30
+201,Hachinan,Yanxia,27,13
+202,Kiuka,The Doman Enclave,6,5
+205,Garima,The Fringes,28,20
+207,imperial deserter,The Lochs,33,30
+208,Hanagasa,Kugane,10,12
+209,Hanagasa,Kugane,10,12
+211,Masatsuchi,Yanxia,30,20
+212,Isobe,The Ruby Sea,21,20
+214,Yusui,The Ruby Sea,32,37
+217,Umber Torrent,The Lochs,16,25
+218,Masatsuchi,Yanxia,30,20
+219,Kikimo,Kugane,9,14
+220,Isobe,The Ruby Sea,21,20
+221,Ushiogi,The Ruby Sea,22,8
+222,Ushiogi,The Ruby Sea,22,8
+223,Botan,Kugane,8,15
+225,Ushiogi,The Ruby Sea,22,8
+226,Botan,Kugane,8,15
+227,Botan,Kugane,8,15
+229,Hanagasa,Kugane,10,12
+231,Hokushin,Kugane,14,11
+236,Botan,Kugane,8,15
+237,Hetsukaze,Kugane,8,14
+238,Hachinan,Yanxia,27,13
+239,Hokushin,Kugane,14,11
+240,Ironworks hand,Rhalgr's Reach,14,11
+242,Hetsukaze,Kugane,8,14
+243,Hetsukaze,Kugane,8,14
+245,Hetsukaze,Kugane,8,14
+247,Ironworks hand,Rhalgr's Reach,14,11
+248,Gyoei,Yanxia,16,32
+250,Hanagasa,Kugane,10,12
+251,Mero Roggo,The Dravanian Hinterlands,13,37
+253,Glynard,The Crystarium,11,15
+254,Drery,Amh Araeng,12,17
+255,Ibenart,Kholusia,19,17
+256,Drery,Amh Araeng,12,17
+257,Gyuf Uin,Il Mheg,16,31
+258,Hargra,The Rak'tika Greatwood,19,26
+259,Saushs Koal,The Tempest,32,17
+265,Lamlyn,Lakeland,36,20
+266,Grewenn,Eulmore,13,10
+268,Hargra,The Rak'tika Greatwood,19,26
+270,Grewenn,Eulmore,13,10
+274,Eo Sigun,Il Mheg,22,4
+276,Eo Sigun,Il Mheg,22,4
+284,Redard,The Rak'tika Greatwood,20,27
+287,Redard,The Rak'tika Greatwood,20,27
+294,Cobleva,Lakeland,14,8
+296,Cobleva,Lakeland,14,8
+298,Arsieu,Gangos,6,7
+299,Arsieu,Gangos,6,7
+302,furtive former imperial,Terncliff,5,6
+309,Droyn,Ul'dah - Steps of Thal,12,13
+310,Droyn,Ul'dah - Steps of Thal,12,13
+313,Lewto-Sue,Amh Araeng,27,16
+314,Lewto-Sue,Amh Araeng,27,16
+321,Sladkey,Gangos,6,7
+322,Sladkey,Gangos,6,7
+327,Aiglephine,Labyrinthos,29,13
+328,Qetanur,Thavnair,20,9
+330,Mehryde,Radz-at-Han,11,8
+331,Cheatingway,Old Sharlayan,11,9
+332,Cheatingway,Old Sharlayan,11,9
+338,Celia,Old Sharlayan,16,7
+340,worldly imperial,Garlemald,32,17
+341,Celia,Old Sharlayan,16,7
+348,Ghasa,Thavnair,20,28
+350,Prudence,Mor Dhona,31,12
+351,Prudence,Mor Dhona,31,12
+358,Kilfufu,Ul'dah - Steps of Nald,13,8
+369,Gamingway,Mare Lamentorum,18,16
+378,Tokimori,Kugane,9,9
+382,Ruissenaud,Labyrinthos,9,27
+385,Ruissenaud,Labyrinthos,9,27
+394,Ylaire,Old Gridania,8,11
+395,Ylaire,Old Gridania,8,11
+396,Ylaire,Old Gridania,8,11
+398,Maillart,Old Sharlayan,9,15
+399,Maillart,Old Sharlayan,9,15
+406,Nyikweni,Tuliyollal,15,14
+407,Wopli,Urqopacha,29,13
+408,Warsowok,Kozama'uka,12,27
+409,Br'uk Noq',Yak T'el,13,15
+410,Luwyawa,Shaaloani,29,30
+411,Uataaye,Heritage Found,20,9
+412,Larisa,Solution Nine,6,14
+413,Gavoll Ja,Tuliyollal,16,3
+428,Pawkukwe,Lower Jeuno,7,7
+429,Pawkukwe,Lower Jeuno,7,7
+430,Miitso,Lower Jeuno,6,6
+431,Miitso,Lower Jeuno,6,6
+437,Malevolent Weasel,The Gold Saucer,5,6
+442,Pudeel Ja,Yak T'el,33,37
+443,Pudeel Ja,Yak T'el,33,37

@@ -1,0 +1,220 @@
+# Item Source Detection — Coverage, Fixes, New Lookups
+
+Running log of the item-detail/source pipeline (`GlamSource.Core/ItemDetailService.cs`) work
+from this session. Audited via `GlamSource.Mock`'s local test server against real `D:\FF\game`
+data (500-item random samples, and targeted spot-checks), not guesswork.
+
+## Craft-button bug (root cause, fixed)
+
+`ItemSourceDetail.Type` (an enum) was serializing as a bare number in both `WebUiService.cs` and
+`GlamSource.Mock/WebPreviewServer.cs`. The frontend (`WebUiPage.cs`) sniffs source type via
+regexes (`/craft/i`, `/vendor|shop/i`, `/quest/i`, `/trial|raid|dungeon/i`) against that string —
+a number never matches, so the "Open Crafting Log" button and all vendor/quest/duty badge
+coloring silently never appeared for **any** item, not just craftables. Fixed by adding
+`JsonStringEnumConverter()` to both services' `JsonSerializerOptions`.
+
+## Source-coverage audit — before/after
+
+Baseline: random 500-item sample, 203 items (40%) landed on the generic "no known source"
+fallback. After this session's fixes: 96 items (19%) — roughly half of the previously-unexplained
+items now get an accurate, specific message instead of a shrug.
+
+New detection strategies added to `BuildSources()`, each verified against a real example before
+shipping (wiki cross-checks, live XIVAPI v2 lookups, or direct Lumina structure dumps via a
+throwaway debug endpoint in `WebPreviewServer.cs`, removed after each check):
+
+| Category | Signal | Example verified |
+|---|---|---|
+| **Unobtainable slot** | `Item.ItemUICategory.Name == "Unobtainable"` | All 21 hits in the audit were belts — Stormblood (4.0) removed the belt slot entirely |
+| **Legacy 1.0 gear** | Name starts with `"Dated "` / `"Weathered "` | Predates patch 1.19; only players who transferred a 1.0 character have these, confirmed via Gamer Escape's Dated/Weathered categories |
+| **Aetherial gear** | Name starts with `"Aetherial "` | ARR-era dungeon treasure chest / Battlecraft Leve loot pool — 2nd most common leftover pattern after Dated/Weathered |
+| **Retired → Augmented** | `FindItemIdByExactName("Augmented " + item.Name)` finds a match | Verified for Ironworks Armguards of Maiming → retired patch 5.3, only the Augmented version is still sold (cross-checked against XIVAPI v2 live data AND the wiki, both agree) |
+| **Retired dye** | `ItemUICategory == "Dye"` but `ItemSearchCategory.RowId == 0` | Patch 7.5 consolidated most named dyes into the Spectrum Dye system (Calamity Salvager exchange) |
+| **Materia** | `ItemUICategory == "Materia"` | Not sourced from a place — converts out of 100%-spiritbonded gear |
+| **Garden seeds** | `ItemUICategory == "Gardening"` | Cross-bred in a garden plot, not purchased |
+| **Fishing** | New `FishingSpot` sheet cache (`BuildFishingCache`) | `FishingSpot.Item[]` holds raw Item RowIds directly (no `GatheringItem` indirection like Botanist/Miner nodes) — **can't be verified inside `GlamSource.Mock`**, DalaMock's bundled Lumina.Excel has a column-hash mismatch on this sheet. Needs in-game check after deploy. |
+| **Triple Triad cards** | New `TripleTriadCardNpcs.csv` (scraped from [FFTriadBuddy](https://github.com/MgAl2O4/FFTriadBuddy), MIT) | Lumina's own `TripleTriadCard`/`TripleTriadResident` sheets don't expose reward→NPC linkage in this build (fields are just `Unknown0..5` / a bare `Order` column) — no safe way to derive it locally. Chain: `Item.ItemAction.Data[0]` → `TripleTriadCard` RowId → CSV → NPC name/zone/coords. Verified: item 9803 (Rhitahtyn sas Arvina Card) → "Indolent Imperial" @ Mor Dhona (11.9, 17.4), matches the wiki exactly. |
+| **Minions & mounts** | New `CollectSources.csv` (FFXIV Collect API, non-commercial use, attribution in the source text) | No Lumina sheet exposes minion/mount unlock sources at all — every mechanism FFXIV has (FATE gold completion, Hunting Log, achievement, Gold Saucer currency, promo/collector's-edition item) shows up here. 930 items covered (583 minions + 353 mounts). |
+
+### Confirmed-correct-as-is (not bugs)
+
+- **Behemoth Barding** (id 6031) — ARR Collector's Edition bonus, genuinely never obtainable any
+  other way. Generic fallback text is accurate.
+- **Doman Whetstone** (id 10322) — retired patch 5.3, no successor item (unlike the
+  Augmented-gear pattern), so falls to the generic fallback correctly.
+
+### Explicitly not pursued (real, but low-value or genuinely blocked)
+
+- **FC Workshop items** (Grade N Wheel of Company/Industry, Counterfoils) — separate Company
+  Workshop crafting system, not the standard `Recipe` sheet. 1-4 items per pattern, not worth a
+  dedicated detector.
+- Ishgard Restoration / Bozja / Chocobo Racing one-offs — no shared `ItemUICategory` signal (all
+  land under generic "Miscellany"/"Other"), each would need individual research for 1-2 items.
+
+## Item Set grouping (Mog Station bundles)
+
+`Item.ItemSeries` is the game's own bundle grouping — verified against the real Mog Station store
+(`store.finalfantasyxiv.com`, a fully client-rendered SPA with no search feature, so this couldn't
+be scraped in bulk) and against Garland Tools' own item data (`seriesId` + member list matched
+exactly). `ItemDetail.SetName` / `ItemDetail.SetMembers` surface this — no scraping needed, it's
+already in the Lumina data everyone else was cross-referencing against.
+
+The exact Mog Station **product page URL** remains unavailable: no site (Gamer Escape, Garland
+Tools) has it compiled, and the store itself has no search to construct a deep link from. Skipped
+as not worth ~300+ individual browser-rendered page scrapes for a link the set-name+member-list
+already makes mostly redundant.
+
+## Item preview images
+
+`GlamSource.Core/ItemImageService.cs` — on-demand scrape of `ffxiv.consolegameswiki.com`'s
+per-item infobox image (the "worn" screenshot, not the icon), cached in memory per item id. Not a
+bulk pre-scrape: most of the ~40k items are never opened, so only fetch when a user actually views
+one. New endpoint `GET /api/itemimage/{id}` (both `WebUiService.cs` and the Mock), lazy-loaded
+into the item panel after the rest of the detail already rendered (`loadItemPreviewImage()` in
+`WebUiPage.cs`) — never blocks the item view on a network round-trip.
+
+## Mount lookup ("who's mount is this")
+
+`GameDataService.GetMountId(IGameObject)` reads `Character.Mount.MountId` natively
+(`FFXIVClientStructs.FFXIV.Client.Game.Character.Character`, field at `0x670`,
+`IsMounted() == Mount.MountId != 0`). `ItemDetailService.ResolveMountItemId(mountId)` maps that to
+the mount's unlock item via a new `MountItemMap.csv` — the **same** FFXIV Collect mounts dataset
+already scraped for `CollectSources.csv`, its `id` field is literally the Mount sheet RowId
+(cross-checked against the Triple Triad card id convention, same pattern, already verified there).
+
+Two triggers, both resolve straight into the existing `ItemDetailWindow.ShowItem(itemId)` — no new
+UI needed, source/set/image all come along for free:
+
+- **Context menu**: right-click a mounted player → "Check Mount" (`ContextMenuService`, only
+  appears when the target is actually mounted and the mount resolves)
+- **Target-based**: `/glamsource mount` — same resolution against `TargetManager.Target`
+
+Genuinely can't be tested in `GlamSource.Mock` (no live game, no real characters to mount) — the
+mount→item resolution itself (CSV lookup) is verified though: mount id 1 (Company Chocobo) →
+item 6001 (Chocobo Whistle) → real quest-reward sources, confirmed via the local test server.
+
+## Recents: delete + cap
+
+The native ImGui sidebar (`GlamSourceShellWindow.DrawRecentSidebar`) already had both a delete
+button (×) and cap-at-10-drop-oldest behavior (`Configuration.cs`). Only the **web UI** Recents
+strip was missing delete — added `RemoveRecent(int)` (extracted from the sidebar's inline handler,
+same pattern as the existing `ActivateRecent` extraction), a new `POST
+/api/action/recent/{index}/remove` endpoint, and a × button per chip in `WebUiPage.cs`. Faked in
+`GlamSource.Mock` too (`FakeRecents`/`_fakeOutfits` became mutable lists instead of a fixed array).
+
+## Examine-window item click
+
+`ContextMenuService.ExtractItemIdFromAddon`'s `"CharacterInspect"` case called only
+`ExtractHoveredItemId()` (generic hover fallback), silently ignoring an already-written
+`ExtractCharacterInspectItemId()` that reads the Examine window's own `InventoryType.Examine`
+container directly — more reliable for the paperdoll's equipped-gear icons. Fixed:
+`"CharacterInspect" => ExtractCharacterInspectItemId() ?? ExtractHoveredItemId()`. Clicking an item
+(glamoured or not) in someone's Examine window now opens our context-menu entry and pushes the
+item into the web UI, same as any other item click.
+
+## ORB (Opaque Response Blocking) — item preview images
+
+Hotlinking the wiki image URL directly in an `<img src>` got blocked by Chromium's ORB inside the
+real Browsingway overlay (`A resource is blocked by OpaqueResponseBlocking`). Root cause:
+cross-origin `<img>` fetch of a third-party host. Fixed by proxying the actual image **bytes**
+through our own server instead — `GET /api/itemimage/{id}` now returns `image/jpeg` bytes directly
+(same-origin), matching the pre-existing `/api/icon/` pattern, instead of a JSON `{url}` for the
+browser to fetch cross-origin itself. `ItemImageService.GetPreviewImageBytesAsync` added for this.
+`WebUiPage.cs`'s `.preview` div now just does `<img src="/api/itemimage/${id}">` directly — no more
+separate `loadItemPreviewImage()` fetch-and-set-src round trip.
+
+## Settings in the web UI
+
+Mirrors the straightforward `Configuration`-backed toggles from `GlamSourceShellWindow`'s Settings
+tab — deliberately **excludes** "Web UI" itself (would self-disable the page you're viewing) and
+"Movable Window" (ImGui-only concept). `GET /api/settings` + 5 `POST
+/api/action/settings/{key}?value=` endpoints (`showcraftingsavings`, `debugapi`, `autooverlay`,
+`live3dpreview`, `mountupdistance`). The debug-API toggle also starts/stops the actual
+`DebugApiService` via `_shell.OnDebugApiToggle`, not just a bool flip. Gearset-picker and
+Mount-picker (native `RaptureGearsetModule` / unlocked-mounts reads) explicitly **not** ported —
+same kind of native-read work as the mount lookup above, just not built yet.
+
+## Web UI polish
+
+- **Recents delete** in the web UI (native sidebar already had it) — `RemoveRecent(int)` extracted
+  from `DrawRecentSidebar`'s inline handler, `POST /api/action/recent/{index}/remove`, × button per
+  chip.
+- **Item ID search** — `/api/search?q=` short-circuits to a direct row lookup when the query is
+  pure digits, bypassing the 3-character minimum, both frontend and backend.
+- **Charakter-tab image centering** — `#chardetail .preview img` scoped CSS (centered, capped
+  220px), left as-is (280px, left-aligned) in the Item Search tab per explicit instruction to scope
+  the change to the Charakter tab only.
+- **Item Search tab** renamed from "Suche", each result row now also shows a 40×40 preview
+  thumbnail alongside the existing game icon.
+- **Pending-item push** — `WebUiService.PushItemToWeb(uint)` / `GET /api/pendingitem` (one-shot
+  get-and-clear), polled every 1500ms by the frontend. Lets any native trigger (mount lookup,
+  Examine click) land the item in the web UI's Lookup tab without the user doing anything.
+
+## Native ImGui window — Set/Triple-Triad/preview-image parity
+
+`ItemDetailWindow.cs` gained the same features as the web UI's item panel: Set-Name + clickable
+"rest of the set" chips in the header, a `[ItemSourceType.TripleTriad]` entry in `SourceStyles`,
+and **native texture loading** for the wiki preview image via
+`ITextureProvider.CreateFromImageAsync(bytes)` (cached per item, disposed with the window).
+Constructor gained an optional `IItemImageService? imageService` param.
+
+## Plugin.cs — real `ContextMenu` injection bug
+
+`[PluginService] internal static IContextMenu ContextMenu { get; private set; }` was the only one
+of 15 `[PluginService]` properties with no matching constructor-parameter assignment (all others do
+e.g. `PluginInterface = _pluginInterface;`). In the real game this went unnoticed — Dalamud's
+reflection-based `[PluginService]` injection populates it regardless. Any host that loads the
+plugin class directly (see below) instead of through that reflection step gets a permanently-null
+`ContextMenu` and crashes constructing `ContextMenuService`. Fixed: added `IContextMenu
+contextMenu` constructor parameter + `ContextMenu = contextMenu;`, matching the other 14. Real bug,
+kept regardless of how the investigation below turned out.
+
+## GlamSource.Mock — real-window investigation, and the visual rework that replaced it
+
+Attempted loading the real `GlamSource.Plugin` in Mock via DalaMock's own `PluginLoader`
+(`MockContainer.GetPluginLoader().AddPlugin(...)` / `StartPlugin(...)`) to get pixel-identical
+in-game windows instead of hand-built ones. Got it constructing and starting cleanly (found the
+`ContextMenu` bug above along the way; also needed hand-written `NullSigScanner` /
+`NullGameInteropProvider` `IMockService` stubs — DalaMock.Core ships no mocks for
+`ISigScanner`/`IGameInteropProvider`, and `PluginLoader.StartPlugin` builds an entirely separate
+container that only pulls in things registered `.As<IMockService>()`). A `PluginStarted`
+event-subscription ordering bug was also found and fixed (`MockDalamudUi` must be constructed via
+`GetMockUi()` *before* `StartPlugin()`, or the plugin's draw callback never gets wired up).
+
+Actually **drawing** the real `GlamSourceShellWindow` hangs hard, though: its tree touches native
+FFXIVClientStructs accessors (`InventoryManager.Instance()`, `UIModule.Instance()`,
+`AgentRecipeNote.Instance()`, `QuestManager.IsQuestComplete()`, plus `PreviewRenderer.cs`'s CharaView
+hooks). ClientStructs' own `Service<T>` singleton resolution — separate from and bypassing the
+injected Dalamud service interfaces DalaMock mocks — scans the *current process* for real game
+memory structures on first touch, and hangs unpredictably outside an actual `ffxiv_dx11.exe`
+process (confirmed: Windows reported the process as not responding). Hardening every native
+touch-point across those files is a large, uncertain-outcome job — abandoned per explicit
+instruction to prioritize stability. `NullSigScanner`/`NullGameInteropProvider` stay in the repo
+(`GlamSource.Mock/NullNativeServices.cs`) as a reference if this gets revisited; unused today.
+
+**What replaced it**: `MockShellWindow.cs` — a hand-built window that copies GlamSourceShellWindow's
+*layout* (Lookup/Character/Settings tabs, 3-column slot grid + center preview, Recents sidebar)
+using only mock-safe data — `EditableGlamourService` (no ClientStructs) for equipment, and
+DalaMock's own `MockTextureProvider`/`MockDataManager` (real Dalamud interfaces, Lumina-backed icon
+rendering, no native reads either — resolved from `mockContainer.GetContainer()`) for item icons.
+Features that genuinely need a live game (Apply-to-Self/Fitting Room via Glamourer IPC, Gearset
+combos via `RaptureGearsetModule`, Mount picker via unlocked-mounts reads) are shown disabled with
+a tooltip instead of faked. Recents has no backing `Configuration` in Mock, so it's a plain
+in-memory list seeded via a "Save as Recent" button (snapshots the current Player-Editor state).
+Replaces the old flat `MockMainWindow` equipment table (deleted, fully superseded).
+
+## Files touched
+
+- `GlamSource.Core/ItemDetailService.cs`, `ItemSourceService.cs` (new `TripleTriad` enum value),
+  `ItemImageService.cs` (new)
+- `GlamSource.Core/LuminaSupplemental/`: `TripleTriadCardNpcs.csv`, `CollectSources.csv`,
+  `MountItemMap.csv` (new, all embedded resources)
+- `GameDataService.cs` — `GetMountId`
+- `Services/WebUiService.cs`, `Services/WebUiPage.cs`, `Services/ContextMenuService.cs`
+- `Windows/GlamSourceShellWindow.cs` — `RemoveRecent`
+- `Plugin.cs` — `/glamsource mount`, wiring, `ContextMenu` constructor injection fix
+- `Windows/ItemDetailWindow.cs` — Set chips, Triple Triad style, native preview-image loading
+- `GlamSource.Mock/WebPreviewServer.cs` — mirrors every new endpoint for local testing
+- `GlamSource.Mock/MockShellWindow.cs` (new) — Lookup/Character/Settings layout stand-in
+- `GlamSource.Mock/MockMainWindow.cs` (deleted, superseded by `MockShellWindow`)
+- `GlamSource.Mock/NullNativeServices.cs` (new, unused today) — PluginLoader investigation leftover

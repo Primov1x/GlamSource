@@ -22,6 +22,7 @@ public enum ItemSourceType
     Airship,
     Submarine,
     Relic,
+    TripleTriad,
     Other
 }
 

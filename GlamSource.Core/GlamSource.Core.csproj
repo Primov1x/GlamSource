@@ -17,6 +17,9 @@
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="LuminaSupplemental\MogstationItems.csv" />
+    <EmbeddedResource Include="LuminaSupplemental\TripleTriadCardNpcs.csv" />
+    <EmbeddedResource Include="LuminaSupplemental\CollectSources.csv" />
+    <EmbeddedResource Include="LuminaSupplemental\MountItemMap.csv" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="Lumina">

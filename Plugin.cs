@@ -59,6 +59,8 @@ public class Plugin : IAsyncDalamudPlugin
     private readonly PreviewRenderer previewRenderer;
     private readonly ContextMenuService contextMenuService;
     private readonly ItemDetailWindow itemDetailWindow;
+    private readonly ItemDetailService itemDetailService;
+    private readonly ItemImageService itemImageService;
     private readonly UniversalisService? _universalisService;
     public readonly CraftingCostService CraftingCostService;
     public static IGlamourService? GlamourServiceOverride;
@@ -84,7 +86,8 @@ public class Plugin : IAsyncDalamudPlugin
         IFramework framework,
         ICondition condition,
         ISigScanner sigScanner,
-        IGameInteropProvider gameInterop)
+        IGameInteropProvider gameInterop,
+        IContextMenu contextMenu)
     {
         _pluginInterface = pluginInterface;
         _textureProvider = textureProvider;
@@ -113,6 +116,14 @@ public class Plugin : IAsyncDalamudPlugin
         Condition = _condition;
         SigScanner = sigScanner;
         GameInterop = gameInterop;
+        // ponytail: real bug, not just a Mock workaround — every other [PluginService] property here
+        // gets manually re-assigned from a constructor param (so this class doesn't actually depend
+        // on Dalamud's own reflection-based [PluginService] injection at all), but ContextMenu was
+        // missing from that list. In the real game [PluginService] populated it anyway so it went
+        // unnoticed; DalaMock's Autofac-based plugin loader has no such reflection step, so
+        // `ContextMenu` stayed permanently null and crashed the very first `new ContextMenuService(
+        // ContextMenu, ...)` call below with an NRE.
+        ContextMenu = contextMenu;
 
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         var sourceService = new LuminaItemSourceService(DataManager.GameData);
@@ -127,19 +138,25 @@ public class Plugin : IAsyncDalamudPlugin
             () => Configuration);
 
 
-        var itemDetailService = new ItemDetailService(DataManager.GameData);
+        itemDetailService = new ItemDetailService(DataManager.GameData);
         var universalisHttpClient = new System.Net.Http.HttpClient();
         _universalisService = new UniversalisService(universalisHttpClient, "Shiva", "Light");
         var craftingCostService = new CraftingCostService(itemDetailService, _universalisService!);
         CraftingCostService = craftingCostService;
-        itemDetailWindow = new ItemDetailWindow(itemDetailService, sourceService, _universalisService, textureProvider, DataManager);
+        // ponytail: separate instance from WebUiService's own — cheap (in-memory cache, no shared
+        // state needed), avoids reshaping WebUiService's constructor for this.
+        itemImageService = new ItemImageService(new System.Net.Http.HttpClient());
+        itemDetailWindow = new ItemDetailWindow(itemDetailService, sourceService, _universalisService, textureProvider, DataManager, itemImageService);
         itemDetailWindow.SetPlugin(this);
         WindowSystem.AddWindow(itemDetailWindow);
 
         contextMenuService = new ContextMenuService(ContextMenu, _gameGui, itemId =>
         {
             itemDetailWindow.ShowItem(itemId);
-        });
+            // ponytail: webUiService is constructed further below — fine, this only runs when the
+            // user actually clicks the context menu entry, long after the constructor finishes.
+            webUiService?.PushItemToWeb(itemId);
+        }, gameDataService, itemDetailService);
 
         shellWindow = new GlamSourceShellWindow(
             this,
@@ -229,6 +246,7 @@ public class Plugin : IAsyncDalamudPlugin
             previewRenderer.Dispose();
             _log.Info("[Plugin] DisposeAsync() previewRenderer disposed");
             itemDetailWindow.Dispose();
+            itemImageService.Dispose();
             contextMenuService.Dispose();
             _universalisService?.Dispose();
             CraftingCostService?.Dispose();
@@ -393,6 +411,10 @@ public class Plugin : IAsyncDalamudPlugin
             else
                 previewWindow.OpenForCurrentTarget();
         }
+        else if (string.Equals(arg, "mount", StringComparison.OrdinalIgnoreCase))
+        {
+            OpenTargetMount();
+        }
         else
         {
             shellWindow.Toggle();
@@ -406,4 +428,24 @@ public class Plugin : IAsyncDalamudPlugin
     }
 
     public void ToggleMainUi() => shellWindow.Toggle();
+
+    // ponytail: target-based twin of the "Check Mount" context-menu entry — same resolution
+    // (GameDataService.GetMountId -> ItemDetailService.ResolveMountItemId -> ItemDetailWindow.ShowItem),
+    // just reading the current target instead of the right-clicked actor. Silently no-ops if there's
+    // no target, it's not mounted, or the mount isn't in the scraped dataset — same as the context
+    // menu entry simply not appearing in those cases.
+    private void OpenTargetMount()
+    {
+        var target = TargetManager.Target;
+        if (target == null) return;
+
+        var mountId = GameDataService.GetMountId(target);
+        if (mountId is not > 0) return;
+
+        var mountItemId = itemDetailService.ResolveMountItemId(mountId.Value);
+        if (mountItemId is not > 0) return;
+
+        itemDetailWindow.ShowItem(mountItemId.Value);
+        webUiService?.PushItemToWeb(mountItemId.Value);
+    }
 }

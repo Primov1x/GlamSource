@@ -44,6 +44,7 @@ input[type=search]:focus{border-color:var(--accent)}
 .row{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid transparent;border-radius:8px;padding:6px 10px;cursor:pointer;transition:.12s}
 .row:hover{border-color:var(--accent);background:var(--panel2)}
 .row img{width:28px;height:28px;border-radius:4px}
+.row img.rowpreview{width:40px;height:40px;border-radius:6px;margin-left:auto;object-fit:cover}
 .cards{display:flex;flex-direction:column;gap:14px;margin-top:16px}
 .card{background:var(--panel);border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:10px;padding:14px 16px;box-shadow:0 2px 10px rgba(0,0,0,.35)}
 .card h3{display:flex;align-items:center;gap:8px;font-size:14px;margin-bottom:8px}
@@ -65,6 +66,12 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 .header img{width:48px;height:48px;border-radius:8px}
 .header .name{font-size:18px;font-weight:600}
 .header .meta{color:var(--muted);font-size:12px}
+.preview:empty{display:none}
+.preview img{max-width:280px;max-height:280px;border-radius:8px;border:1px solid var(--border);margin-bottom:10px}
+/* Charakter tab: every preview image landing in #chardetail (slot click, set-member chips) —
+   centered, a touch smaller than the Suche tab's left-aligned one. */
+#chardetail .preview{text-align:center}
+#chardetail .preview img{max-width:220px;max-height:220px;margin-left:auto;margin-right:auto}
 .empty{color:var(--muted);margin-top:14px;display:flex;align-items:center;gap:8px}
 .spinner{width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;display:inline-block}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -84,18 +91,24 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
    stays true, so clipping still happens at the viewport border like any 3D product viewer. */
 #preview3d{background:transparent;border:0;margin:0 auto 14px;cursor:grab;display:none;height:640px;aspect-ratio:0.8;object-fit:fill}
 /* character tab layout: slots | model | detail — panel scrolls internally, page never does */
-#charlayout{display:grid;grid-template-columns:minmax(110px,140px) minmax(190px,230px) 1fr minmax(280px,360px);gap:14px;align-items:start}
+#charlayout{display:grid;grid-template-columns:minmax(190px,230px) 1fr minmax(280px,360px);gap:14px;align-items:start}
 #charslots{display:flex;flex-direction:column;gap:6px;max-height:660px;overflow-y:auto}
 #charslots .slot{padding:6px 8px}
-#charrecents{display:flex;flex-direction:column;gap:4px;max-height:660px;overflow-y:auto}
-#charrecents .recent{padding:5px 6px;border-radius:6px;cursor:pointer;font-size:12px;line-height:1.3;background:var(--panel);border:1px solid transparent}
-#charrecents .recent:hover{border-color:var(--border)}
-#charrecents .recent.active{border-color:var(--accent)}
-#charrecents .recent .world{color:var(--muted);font-size:11px}
 #chardetail{max-height:660px;min-height:200px;overflow-y:auto;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:10px}
 #chardetail>.empty{justify-content:center;margin-top:80px}
 #chardetail .header img{width:40px;height:40px}
 .tbl{color:var(--gold-dim);font-size:10px;text-transform:uppercase;letter-spacing:1.5px;margin-left:10px}
+/* recents: separate footer strip below the layout, above the view toolbar — own block, not
+   mixed into either */
+#recentsFooter{margin-top:14px;padding-top:10px;border-top:1px solid var(--border)}
+#recentsFooter .label{color:var(--gold-dim);font-size:10px;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:6px}
+#charrecents{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px}
+#charrecents .recent{flex:0 0 auto;padding:6px 14px;border-radius:20px;cursor:pointer;font-size:12px;white-space:nowrap;background:var(--panel);border:1px solid var(--border)}
+#charrecents .recent:hover{border-color:var(--gold-dim)}
+#charrecents .recent.active{border-color:var(--accent);color:var(--gold)}
+#charrecents .recent .world{color:var(--muted);font-size:11px;margin-left:6px}
+#charrecents .recent .del{color:var(--muted);margin-left:8px;padding:0 2px;border-radius:4px}
+#charrecents .recent .del:hover{color:var(--text);background:var(--panel2)}
 .p3dtoolbar{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--border);border-radius:8px;padding:8px 12px}
 .p3dtoolbar .tbl:first-child{margin-left:0}
 .p3dtoolbar button,.p3dtoolbar select{background:#151310;border:1px solid var(--border);color:var(--text);padding:5px 12px;border-radius:5px;cursor:pointer;font-size:12px;transition:.12s}
@@ -117,12 +130,13 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 </div>
 <div id="app">
 <nav>
-  <button id="tab-lookup" class="active" onclick="showTab('lookup')">Suche</button>
+  <button id="tab-lookup" class="active" onclick="showTab('lookup')">Item Search</button>
   <button id="tab-character" onclick="showTab('character')">Charakter</button>
+  <button id="tab-settings" onclick="showTab('settings')">Settings</button>
 </nav>
 
 <section id="view-lookup">
-  <input type="search" id="q" placeholder="Search any item…" autofocus>
+  <input type="search" id="q" placeholder="Search any item… or paste an item ID" autofocus>
   <div class="results" id="results"></div>
   <div id="detail"></div>
 </section>
@@ -132,13 +146,16 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
        Clicking a slot opens the lookup RIGHT THERE (no tab switch, panel scrolls internally, the
        page itself never scrolls). -->
   <div id="charlayout">
-    <div id="charrecents"><div class="empty"><span class="spinner"></span></div></div>
     <div id="charslots"><div class="empty"><span class="spinner"></span></div></div>
     <div>
       <canvas id="preview3d"></canvas>
       <div class="empty" id="p3dhint" style="display:none;font-size:12px">Overlay ist entsperrt — Schloss oben rechts sperren, dann per Ziehen drehen.</div>
     </div>
     <div id="chardetail"><div class="empty">Slot anklicken für Herkunft &amp; Quellen</div></div>
+  </div>
+  <div id="recentsFooter">
+    <div class="label">Zuletzt angesehen</div>
+    <div id="charrecents"><div class="empty"><span class="spinner"></span></div></div>
   </div>
   <div class="row p3dtoolbar" style="margin-top:6px;margin-bottom:10px;flex-wrap:wrap;gap:8px;align-items:center">
     <span class="tbl">Ansicht</span>
@@ -153,6 +170,12 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
   <pre id="p3ddebug" style="display:none;font-size:11px;background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:8px;margin-top:6px;white-space:pre-wrap"></pre>
 </section>
 
+<section id="view-settings" style="display:none">
+  <!-- ponytail: mirrors GlamSourceShellWindow.DrawSettingsTab's Configuration-backed toggles —
+       not "Web UI" itself (self-disable) or "Movable Window" (ImGui-only), and not the
+       Gearset/Mount pickers (need live native reads, still native-window-only for now). -->
+  <div id="settingsBody"><div class="empty"><span class="spinner"></span></div></div>
+</section>
 
 
 </div>
@@ -168,12 +191,35 @@ function typeIcon(cls){return ''} // emoji render as empty boxes in Browsingway 
 let currentTab='lookup';
 function showTab(t){
   currentTab=t;
-  for(const x of['lookup','character']){
+  for(const x of['lookup','character','settings']){
     $('#view-'+x).style.display=x===t?'':'none';
     $('#tab-'+x).classList.toggle('active',x===t);
   }
   if(t==='character'){loadSnapshot(true);loadRecents();startPreview3D()}else{stopPreview3D()}
+  if(t==='settings')loadSettings();
 }
+
+async function loadSettings(){
+  const s=await fetch('/api/settings').then(r=>r.json());
+  $('#settingsBody').innerHTML=`
+    <div class="row" style="cursor:default"><label style="display:flex;align-items:center;gap:8px;width:100%"><input type="checkbox" id="set-craft" ${s.showCraftingSavings?'checked':''} onchange="saveSetting('showcraftingsavings',this.checked)"> Show Crafting Savings<span style="margin-left:auto;color:var(--muted);font-size:12px">Compare market price vs. crafting cost</span></label></div>
+    <div class="row" style="cursor:default"><label style="display:flex;align-items:center;gap:8px;width:100%"><input type="checkbox" id="set-debug" ${s.debugApiEnabled?'checked':''} onchange="saveSetting('debugapi',this.checked)"> Debug API<span style="margin-left:auto;color:var(--muted);font-size:12px">Read-only HTTP API on localhost:23423</span></label></div>
+    <div class="row" style="cursor:default"><label style="display:flex;align-items:center;gap:8px;width:100%"><input type="checkbox" id="set-overlay" ${s.webUiAutoOverlay?'checked':''} onchange="saveSetting('autooverlay',this.checked)"> Auto-Overlay<span style="margin-left:auto;color:var(--muted);font-size:12px">Browsingway overlay shows/hides with this window</span></label></div>
+    <div class="row" style="cursor:default"><label style="display:flex;align-items:center;gap:8px;width:100%"><input type="checkbox" id="set-3d" ${s.webUiLive3DPreview?'checked':''} onchange="saveSetting('live3dpreview',this.checked)"> 3D Preview (experimental)<span style="margin-left:auto;color:var(--muted);font-size:12px">Riskier GPU readback path — disable if you see crashes</span></label></div>
+    <div class="row" style="cursor:default"><label style="display:flex;align-items:center;gap:8px;width:100%">Mount-up distance<input type="range" min="0" max="100" value="${s.mountUpDistance}" style="flex:1" oninput="$('#set-mountdist-val').textContent=this.value+'m'" onchange="saveSetting('mountupdistance',this.value)"><span id="set-mountdist-val" style="color:var(--muted);font-size:12px;min-width:36px">${Math.round(s.mountUpDistance)}m</span></label></div>
+  `;
+}
+async function saveSetting(key,value){
+  await post('/api/action/settings/'+key+'?value='+encodeURIComponent(value));
+}
+
+// ponytail: "push" an item from a native trigger (Examine-window right-click, /glamsource mount) —
+// see WebUiService.PushItemToWeb/api/pendingitem. Polled independent of which tab is showing so it
+// works no matter where the user currently is; switches to Suche and opens it when one arrives.
+setInterval(async()=>{
+  const r=await fetch('/api/pendingitem').then(r=>r.ok?r.json():null).catch(()=>null);
+  if(r?.itemId){showTab('lookup');openItem(r.itemId)}
+},1500);
 
 // minimize to the title bar (Dalamud-style collapse isn't possible for a Browsingway page — the
 // overlay window keeps its size, but the content below the bar disappears and the stream stops)
@@ -427,15 +473,26 @@ $('#q').addEventListener('input',e=>{
   deb=setTimeout(async()=>{
     const q=e.target.value.trim();
     const box=$('#results');
-    if(q.length<3){box.innerHTML='';return}
+    const isId=/^\d+$/.test(q); // pure-digit query = item ID lookup, skip the 3-char name minimum
+    if(!isId&&q.length<3){box.innerHTML='';return}
+    if(q.length<1){box.innerHTML='';return}
     box.innerHTML='<div class="empty"><span class="spinner"></span>Searching…</div>';
     const r=await fetch('/api/search?q='+encodeURIComponent(q)).then(r=>r.json());
-    box.innerHTML=r.length?r.map(x=>`<div class="row" onclick="openItem(${x.id})">${img(x.iconId,28)}<span>${esc(x.name)}</span></div>`).join(''):'<div class="empty">Keine Items gefunden.</div>';
+    box.innerHTML=r.length?r.map(x=>`<div class="row" onclick="openItem(${x.id})">${img(x.iconId,28)}<span>${esc(x.name)}</span><img class="rowpreview" src="/api/itemimage/${x.id}" loading="lazy" onerror="this.remove()"></div>`).join(''):'<div class="empty">Keine Items gefunden.</div>';
   },250);
 });
 
-function buildItemHtml(d){
-  let h=`<div class="header">${img(d.iconId,48)}<div><div class="name">${esc(d.name)}</div><div class="meta">Item ID ${d.itemId} · iLvl ${d.itemLevel}${d.isMarketable?' · marketable':''}</div></div></div><div class="cards">`;
+// openFn: which function re-opens an item from within this panel — 'openItem' (Suche tab, writes
+// to #detail) or 'showItemPanel' (Charakter tab, writes to #chardetail). Set-member chips need to
+// call back into whichever panel is actually showing, not always the Suche one.
+function buildItemHtml(d,openFn='openItem'){
+  let h=`<div class="header">${img(d.iconId,48)}<div><div class="name">${esc(d.name)}</div><div class="meta">Item ID ${d.itemId} · iLvl ${d.itemLevel}${d.isMarketable?' · marketable':''}${d.setName?` · Set: ${esc(d.setName)}`:''}</div></div></div><div class="preview"><img src="/api/itemimage/${d.itemId}" loading="lazy" onerror="this.parentElement.style.display='none'"></div>`;
+  if((d.setMembers??[]).length){
+    h+=`<div class="tbl">Rest of the set</div><div style="display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 14px">`;
+    for(const m of d.setMembers)h+=`<div class="row" style="width:auto" onclick="${openFn}(${m.itemId})">${img(m.iconId,24)}<span>${esc(m.name)}</span></div>`;
+    h+='</div>';
+  }
+  h+='<div class="cards">';
   // ponytail: same shop/vendor sold from several NPC locations used to render as one full repeated
   // card per location ("unübersichtlich" — a shop with 3 vendor spots meant 3 near-identical cards).
   // Group by description (+ cost, in case two shops share a name but differ in price) into ONE card
@@ -523,19 +580,23 @@ async function loadRecents(){
   const recents=await fetch('/api/recents').then(r=>r.json());
   const box=$('#charrecents');
   if(!recents.length){box.innerHTML='<div class="empty">(noch keine)</div>';return}
-  box.innerHTML=recents.map(r=>`<div class="recent${r.active?' active':''}" onclick="activateRecent(${r.index})">${esc(r.name)}${r.world?`<div class="world">${esc(r.world)}</div>`:''}</div>`).join('');
+  box.innerHTML=recents.map(r=>`<div class="recent${r.active?' active':''}" onclick="activateRecent(${r.index})">${esc(r.name)}${r.world?`<span class="world">${esc(r.world)}</span>`:''}<span class="del" title="Remove from Recent" onclick="event.stopPropagation();removeRecent(${r.index})">×</span></div>`).join('');
 }
 async function activateRecent(index){
   await post('/api/action/recent/'+index);
   await loadRecents();
   await loadSnapshot(true);
 }
+async function removeRecent(index){
+  await post('/api/action/recent/'+index+'/remove');
+  await loadRecents();
+}
 
 async function showItemPanel(id){
   const box=$('#chardetail');
   box.innerHTML='<div class="empty"><span class="spinner"></span>Loading…</div>';
   const d=await fetch('/api/item/'+id).then(r=>r.ok?r.json():null);
-  box.innerHTML=d?buildItemHtml(d):'<div class="empty">Nicht gefunden.</div>';
+  box.innerHTML=d?buildItemHtml(d,'showItemPanel'):'<div class="empty">Nicht gefunden.</div>';
 }
 
 async function post(url){await fetch(url,{method:'POST'})}

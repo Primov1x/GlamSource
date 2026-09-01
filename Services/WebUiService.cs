@@ -11,6 +11,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
@@ -34,6 +35,13 @@ public sealed class WebUiService : IDisposable
     private readonly ModelExport.ModelExportService _modelExport;
     private readonly Lumina.GameData _modelExportGameData;
     private readonly GlamourerColorIpc _glamourerColors;
+    // ponytail: on-demand wiki image lookup (see ItemImageService) — self-owned HttpClient, same as
+    // how UniversalisService/CraftingCostService are wired elsewhere, no need to route through Plugin.cs.
+    private readonly ItemImageService _imageService = new(new System.Net.Http.HttpClient());
+    // ponytail: "push" an item into the web UI from a native trigger (Examine-window right-click,
+    // /glamsource mount) — there's no live socket to the browser tab, so this is a one-slot mailbox
+    // the page polls and clears (GET /api/pendingitem below), same shape as _webPreviewGear above.
+    private uint? _pendingWebItemId;
     // ponytail: named pose snapshots (e.g. "idle", "weapon"), self-refreshed whenever the framework
     // thread happens to observe the character in that state — no user action needed. Concurrent
     // dictionary because writes happen on the framework thread while reads happen on arbitrary
@@ -58,7 +66,15 @@ public sealed class WebUiService : IDisposable
     private TcpListener? _listener6;
     private CancellationTokenSource? _cts;
 
-    private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    // JsonStringEnumConverter: without it ItemSourceDetail.Type serializes as a bare number
+    // (e.g. 1), but WebUiPage.cs's JS sniffs the source type via /craft/i, /vendor|shop/i etc.
+    // regexes against that string — a number never matches, so the "Open Crafting Log" button
+    // (and the vendor/quest/duty badge coloring) silently never appeared for ANY item.
+    private static readonly JsonSerializerOptions JsonOpts = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        Converters = { new JsonStringEnumConverter() },
+    };
 
     private readonly string? _browsingwayConfigPath;
 
@@ -141,6 +157,10 @@ public sealed class WebUiService : IDisposable
             _log.Error($"[WebUi] EnsureBrowsingwayInlay failed: {ex.Message}");
         }
     }
+
+    // ponytail: called from Plugin.cs (context-menu "Item Source"/"Check Mount" clicks, /glamsource
+    // mount) to push an item into whichever tab the web UI happens to be showing.
+    public void PushItemToWeb(uint itemId) => _pendingWebItemId = itemId;
 
     public void SetEnabled(bool enabled)
     {
@@ -331,10 +351,83 @@ public sealed class WebUiService : IDisposable
         if (method == "GET" && (path == "/" || path == "/ui"))
             return ("200 OK", "text/html; charset=utf-8", Encoding.UTF8.GetBytes(WebUiPage.Html));
 
+        if (method == "GET" && path == "/api/pendingitem")
+        {
+            var id = _pendingWebItemId;
+            _pendingWebItemId = null; // one-shot — polling picks it up once, not repeatedly
+            return Json(new { itemId = id });
+        }
+
+        // ponytail: mirrors the straightforward Configuration-backed toggles from
+        // GlamSourceShellWindow.DrawSettingsTab — deliberately NOT "Web UI" itself (toggling that
+        // off from the page you're currently looking at would just kill your own connection) and
+        // NOT "Movable Window" (an ImGui-window-only concept, meaningless for a browser page). The
+        // Gearset/Mount pickers need live native reads (RaptureGearsetModule, unlocked mounts) —
+        // same shape as the mount-lookup work, just not built out here yet.
+        if (method == "GET" && path == "/api/settings")
+        {
+            return Json(new
+            {
+                _configuration.ShowCraftingSavings,
+                _configuration.DebugApiEnabled,
+                _configuration.WebUiAutoOverlay,
+                _configuration.WebUiLive3DPreview,
+                _configuration.MountUpDistance,
+            });
+        }
+
+        if (method == "POST" && path == "/api/action/settings/showcraftingsavings" && bool.TryParse(query["value"], out var scs))
+        {
+            _configuration.ShowCraftingSavings = scs;
+            _configuration.Save();
+            return Json(new { ok = true });
+        }
+
+        if (method == "POST" && path == "/api/action/settings/debugapi" && bool.TryParse(query["value"], out var dae))
+        {
+            _configuration.DebugApiEnabled = dae;
+            _configuration.Save();
+            _shell.OnDebugApiToggle?.Invoke(dae);
+            return Json(new { ok = true });
+        }
+
+        if (method == "POST" && path == "/api/action/settings/autooverlay" && bool.TryParse(query["value"], out var awo))
+        {
+            _configuration.WebUiAutoOverlay = awo;
+            _configuration.Save();
+            return Json(new { ok = true });
+        }
+
+        if (method == "POST" && path == "/api/action/settings/live3dpreview" && bool.TryParse(query["value"], out var l3d))
+        {
+            _configuration.WebUiLive3DPreview = l3d;
+            _configuration.Save();
+            return Json(new { ok = true });
+        }
+
+        if (method == "POST" && path == "/api/action/settings/mountupdistance" && float.TryParse(query["value"], System.Globalization.CultureInfo.InvariantCulture, out var mud))
+        {
+            _configuration.MountUpDistance = mud;
+            _configuration.Save();
+            return Json(new { ok = true });
+        }
+
         if (method == "GET" && path == "/api/search")
         {
             var q = query["q"] ?? "";
             var itemSheet = _detail.GameData.GetExcelSheet<Lumina.Excel.Sheets.Item>();
+
+            // ponytail: a pure-digit query means "look this item ID up directly" (handy when
+            // cross-checking specific IDs), not a 3+ char name substring search.
+            if (uint.TryParse(q, out var directId))
+            {
+                var item = itemSheet?.GetRowOrDefault(directId);
+                object idResult = item is { } i
+                    ? new[] { new { id = directId, name = i.Name.ToString(), iconId = (uint)i.Icon } }
+                    : Array.Empty<object>();
+                return Json(idResult);
+            }
+
             object result = q.Length < 3
                 ? Array.Empty<object>()
                 : _glamour.SearchItems(q).Take(30)
@@ -347,6 +440,21 @@ public sealed class WebUiService : IDisposable
         {
             var detail = _detail.GetDetail(itemId);
             return detail == null ? Json(new { error = "not found" }, "404 Not Found") : Json(detail);
+        }
+
+        if (method == "GET" && path.StartsWith("/api/itemimage/") && uint.TryParse(path["/api/itemimage/".Length..], out var imgItemId))
+        {
+            // ponytail: proxies the actual image bytes (not just the URL) so the browser loads it
+            // same-origin — hotlinking the wiki URL directly from an <img src> got blocked by
+            // Chromium's Opaque Response Blocking inside the Browsingway overlay (reported live).
+            // Same reasoning as /api/icon/ above already proxying game icon bytes instead of trying
+            // to point at an external CDN. Blocking .GetAwaiter().GetResult() is fine — this whole
+            // Route() call already runs on a ThreadPool request thread, not the UI/Framework one.
+            var detail = _detail.GetDetail(imgItemId);
+            if (detail == null) return ("404 Not Found", "text/plain", Encoding.UTF8.GetBytes("item not found"));
+            var bytes = _imageService.GetPreviewImageBytesAsync(imgItemId, detail.Name).GetAwaiter().GetResult();
+            if (bytes == null) return ("404 Not Found", "text/plain", Encoding.UTF8.GetBytes("no preview image"));
+            return ("200 OK", "image/jpeg", bytes);
         }
 
         if (method == "GET" && path.StartsWith("/api/icon/") && uint.TryParse(path["/api/icon/".Length..], out var iconId))
@@ -426,6 +534,13 @@ public sealed class WebUiService : IDisposable
                 r.World,
                 active = r.Name == _shell.DebugActiveRecentName,
             }));
+        }
+
+        if (method == "POST" && path.StartsWith("/api/action/recent/") && path.EndsWith("/remove")
+            && int.TryParse(path["/api/action/recent/".Length..^"/remove".Length], out var removeRecentIdx))
+        {
+            _framework.RunOnFrameworkThread(() => _shell.RemoveRecent(removeRecentIdx));
+            return Json(new { ok = true });
         }
 
         if (method == "POST" && path.StartsWith("/api/action/recent/") && int.TryParse(path["/api/action/recent/".Length..], out var recentIdx))
@@ -1035,5 +1150,9 @@ public sealed class WebUiService : IDisposable
     private static (string, string, byte[]) Json(object payload, string status = "200 OK")
         => (status, "application/json", Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload, JsonOpts)));
 
-    public void Dispose() => Stop();
+    public void Dispose()
+    {
+        Stop();
+        _imageService.Dispose();
+    }
 }

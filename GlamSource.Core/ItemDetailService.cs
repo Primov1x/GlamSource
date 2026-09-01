@@ -20,7 +20,11 @@ public record ItemDetail(
     ushort ItemLevel,
     bool IsMarketable,
     uint IconId,
-    IReadOnlyList<ItemSourceDetail> Sources);
+    IReadOnlyList<ItemSourceDetail> Sources,
+    string? SetName = null,
+    IReadOnlyList<SetMember>? SetMembers = null);
+
+public record SetMember(uint ItemId, string Name, uint IconId);
 
 public record CostEntry(
     uint ItemId,
@@ -52,6 +56,7 @@ public interface IItemDetailService
 {
     ItemDetail? GetDetail(uint itemId);
     GameData GameData { get; }
+    uint? ResolveMountItemId(uint mountId);
 }
 
 public sealed class ItemDetailService : IItemDetailService
@@ -62,6 +67,8 @@ public sealed class ItemDetailService : IItemDetailService
     private readonly Dictionary<uint, string> _npcNameCache = new();
     private readonly Dictionary<uint, List<NpcLocationInfo>> _shopNpcLookup = new();
     private readonly Dictionary<uint, List<Recipe>> _recipeByResult = new();
+    private Dictionary<string, uint>? _itemIdByName; // lazy, built once on first fallback lookup
+    private Dictionary<uint, List<(uint id, string name, uint iconId)>>? _itemsBySeriesId; // lazy
 
     private record NpcLocationInfo(
         string NpcName, string ZoneName,
@@ -103,6 +110,12 @@ public sealed class ItemDetailService : IItemDetailService
     // ponytail: ItemId -> all nodes (level, type, zone, map position) from GatheringPointBase
     private readonly Dictionary<uint, List<GatheringInfo>> _itemToGatheringCache = new();
 
+    private record FishingInfo(int GatheringLevel, string ZoneName, float MapX, float MapY, uint TerritoryTypeId, uint MapId);
+    // ponytail: ItemId -> fishing spots (level, zone, map position) from FishingSpot.Item[] — a
+    // separate sheet/mechanism from Botanist/Miner GatheringPointBase, previously not covered at
+    // all (15/135 = 11% of a random no-source audit sample turned out to just be fish).
+    private readonly Dictionary<uint, List<FishingInfo>> _itemToFishingCache = new();
+
     // ponytail: PvP items from SpecialShop (tome currencies), PvPSeries tier rewards
     private readonly Dictionary<uint, uint> _pvpItemToSeason = new();
     private readonly HashSet<uint> _pvpVendorItems = new();
@@ -110,6 +123,32 @@ public sealed class ItemDetailService : IItemDetailService
 
     // ponytail: ItemId -> Mogstation shop URL, from static scrape of Gamer Escape's Mog Station category (LuminaSupplemental/MogstationItems.csv)
     private readonly Dictionary<uint, string> _mogstationItems = new();
+
+    // ponytail: TripleTriadCard RowId -> NPC win locations. Lumina's own TripleTriadCard/
+    // TripleTriadResident sheets don't expose reward-NPC linkage (verified: TripleTriadCard's
+    // relevant fields are just "Unknown0..5", TripleTriadResident only has an "Order" column) — the
+    // client apparently doesn't ship this as a clean table. Scraped from FFTriadBuddy (MIT, static
+    // game-data snapshot, same "our own CSV scrape" precedent as MogstationItems.csv), cross-verified
+    // against the wiki for Rhitahtyn sas Arvina Card -> Indolent Imperial @ Mor Dhona (11.9, 17.4)
+    // matching npc id=25 exactly. Covers 236 of ~340 cards; the rest fall through to the generic
+    // fallback same as before, no regression.
+    private record TriadCardNpc(string NpcName, string ZoneName, float MapX, float MapY);
+    private readonly Dictionary<uint, List<TriadCardNpc>> _triadCardNpcs = new();
+
+    // ponytail: ItemId -> minion/mount sources, from FFXIV Collect's public API (non-commercial use,
+    // attribution appreciated — see BuildCollectSourceCache). No Lumina sheet exposes minion/mount
+    // unlock sources at all (checked: Item's ItemAction for a sample minion has no GameContentLinks
+    // either) — these come from every mechanic FFXIV has (FATE gold completion, Hunting Log,
+    // achievement, Gold Saucer currency, promo, seasonal event...), so a community-maintained
+    // aggregation is the only realistic source. Covers 930 items (583 minions + 353 mounts).
+    private record CollectSource(string Kind, string SourceType, string SourceText);
+    private readonly Dictionary<uint, List<CollectSource>> _collectSources = new();
+
+    // ponytail: MountId (the same id Character.Mount.MountId reads natively) -> unlock ItemId, from
+    // the same FFXIV Collect mounts dataset as _collectSources — its "id" field IS the Mount sheet
+    // RowId (same convention already verified for Triple Triad card ids matching TripleTriadCard
+    // RowIds). Lets "who's mount is this" resolve straight into the existing item-detail pipeline.
+    private readonly Dictionary<uint, uint> _mountToItemId = new();
 
     // Name-only fallback for NPCs with no location data
     private readonly Dictionary<uint, string> _shopNpcNameOnly = new();
@@ -123,6 +162,13 @@ public sealed class ItemDetailService : IItemDetailService
         // ponytail: gathering cache reads GatheringPoint/TerritoryType/Map — column-hash mismatch
         // when DalaMock's Lumina.Excel lags behind live sqpack. Skip on drift, no source data lost.
         try { BuildGatheringCache(); }
+        catch (Lumina.Excel.Exceptions.MismatchedColumnHashException) { }
+        // ponytail: same DalaMock schema-drift caveat as gathering — verified locally via a raw
+        // sheet dump before hitting this (FishingSpot.Item[] holds Item RowIds directly, X/Z ->
+        // map coords via the same ToMapCoordinate convention already proven for gathering/quest
+        // sources), but DalaMock's bundled Lumina.Excel doesn't match FishingSpot's live column
+        // hash, so it can't run end-to-end here. Needs in-game verification once deployed.
+        try { BuildFishingCache(); }
         catch (Lumina.Excel.Exceptions.MismatchedColumnHashException) { }
     }
 
@@ -143,9 +189,46 @@ public sealed class ItemDetailService : IItemDetailService
         var itemLevel = item.LevelEquip;
         var isMarketable = item.ItemSearchCategory.RowId > 0;
         var iconId = item.Icon;
+        // ponytail: Item.ItemSeries is the game's own Mog Station bundle grouping (verified: Abes
+        // Jacket -> ItemSeries.Name "Abes Attire", matching the real store's set name exactly) — no
+        // scraping needed, unlike the exact product page URL (the store itself has no search feature
+        // and is fully client-rendered, so a precise per-set link isn't cheaply obtainable).
+        var setName = item.ItemSeries.IsValid ? item.ItemSeries.Value.Name.ToString() : null;
+        if (string.IsNullOrEmpty(setName)) setName = null;
+
+        // ponytail: same ItemSeries field also lists every OTHER item sharing it — verified against
+        // Garland Tools' own data for Abes Attire (series id 25 -> Jacket/Gloves/Halfslops/Boots,
+        // exact match). Gives the "which 3-4 items make up this set" answer for free too.
+        IReadOnlyList<SetMember>? setMembers = null;
+        if (setName != null)
+        {
+            if (_itemsBySeriesId == null)
+            {
+                _itemsBySeriesId = new Dictionary<uint, List<(uint, string, uint)>>();
+                foreach (var i in itemSheet)
+                {
+                    if (!i.ItemSeries.IsValid) continue;
+                    var n = i.Name.ToString();
+                    if (string.IsNullOrEmpty(n)) continue;
+                    if (!_itemsBySeriesId.TryGetValue(i.ItemSeries.RowId, out var list))
+                    {
+                        list = new List<(uint, string, uint)>();
+                        _itemsBySeriesId[i.ItemSeries.RowId] = list;
+                    }
+                    list.Add((i.RowId, n, i.Icon));
+                }
+            }
+            if (_itemsBySeriesId.TryGetValue(item.ItemSeries.RowId, out var members))
+            {
+                setMembers = members
+                    .Where(m => m.id != itemId)
+                    .Select(m => new SetMember(m.id, m.name, m.iconId))
+                    .ToList();
+            }
+        }
 
         var sources = BuildSources(itemId, item);
-        var detail = new ItemDetail(itemId, name, itemLevel, isMarketable, iconId, sources);
+        var detail = new ItemDetail(itemId, name, itemLevel, isMarketable, iconId, sources, setName, setMembers);
 
         _cache[itemId] = detail;
         return detail;
@@ -492,6 +575,45 @@ public sealed class ItemDetailService : IItemDetailService
             }
         }
 
+        // 7c. Fishing sources
+        if (!results.Any(s => s.Type == ItemSourceType.Gathering) && _itemToFishingCache.TryGetValue(itemId, out var fishingSpots))
+        {
+            foreach (var f in fishingSpots)
+            {
+                var zoneSuffix = string.IsNullOrEmpty(f.ZoneName) ? "" : $" ({f.ZoneName})";
+                results.Add(new ItemSourceDetail(
+                    ItemSourceType.Gathering,
+                    $"Fisher Lv.{f.GatheringLevel}{zoneSuffix}",
+                    null, null,
+                    f.MapX, f.MapY,
+                    f.TerritoryTypeId, f.MapId,
+                    null, null, null, null, null, null, null, null, null));
+            }
+        }
+
+        // 7d. Triple Triad cards â€” gated on the item's own UI category first so this only ever
+        // touches actual card items, then resolves the physical card -> TripleTriadCard RowId via
+        // its ItemAction (Data[0], same "unlock item points at a definition row" pattern used by
+        // minions/mounts), and looks that up in the scraped NPC table.
+        if (item.ItemUICategory.IsValid && item.ItemUICategory.Value.Name.ToString() == "Triple Triad Card"
+            && item.ItemAction.IsValid && item.ItemAction.Value.Data.Count > 0)
+        {
+            var cardRowId = item.ItemAction.Value.Data[0];
+            if (_triadCardNpcs.TryGetValue(cardRowId, out var npcs))
+            {
+                foreach (var n in npcs)
+                {
+                    results.Add(new ItemSourceDetail(
+                        ItemSourceType.TripleTriad,
+                        "Won from an NPC in a Triple Triad match",
+                        n.NpcName, n.ZoneName,
+                        n.MapX, n.MapY,
+                        null, null,
+                        null, null, null, null, null, null, null, null, null));
+                }
+            }
+        }
+
         // 8. Mogstation â€” always shown additively alongside any other detected sources
         if (_mogstationItems.TryGetValue(itemId, out var shopUrl))
         {
@@ -502,16 +624,140 @@ public sealed class ItemDetailService : IItemDetailService
                 ShopUrl: shopUrl));
         }
 
-        // 9. Generic fallback â€” nothing found
+        // 8b. Minion/mount sources (FFXIV Collect, non-commercial use, attribution appreciated) â€”
+        // always shown additively, same reasoning as Mogstation above.
+        if (_collectSources.TryGetValue(itemId, out var collectEntries))
+        {
+            foreach (var c in collectEntries)
+            {
+                results.Add(new ItemSourceDetail(
+                    ItemSourceType.Other,
+                    $"{c.Kind}: {c.SourceType} - {c.SourceText} (via FFXIV Collect)",
+                    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
+            }
+        }
+
+        // 9. Removed equipment slot â€” the game itself files these under ItemUICategory
+        // "Unobtainable". In the 500-item audit every hit here was a belt: Stormblood (4.0) removed
+        // the belt slot entirely, so all belt items became permanently unobtainable/glamour-only.
+        // Check the game's own category before any name-pattern guessing below.
+        if (results.Count == 0 && item.ItemUICategory.IsValid && item.ItemUICategory.Value.Name.ToString() == "Unobtainable")
+        {
+            results.Add(new ItemSourceDetail(
+                ItemSourceType.Other,
+                "Unobtainable — the game itself classifies this item as no longer acquirable (e.g. gear for a since-removed equipment slot, such as belts after Stormblood).",
+                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
+        }
+
+        // 9b. Retired dye â€” patch 7.5 consolidated most named dyes into a "Spectrum Dye" system
+        // (Calamity Salvager exchanges old dyes for the new ones). Verified via the wiki, and the
+        // signal holds up locally: every retired dye in the audit had an empty ItemSearchCategory
+        // (no longer searchable/purchasable) despite still carrying the "Dye" UI category.
+        if (results.Count == 0 && item.ItemUICategory.IsValid && item.ItemUICategory.Value.Name.ToString() == "Dye"
+            && item.ItemSearchCategory.RowId == 0)
+        {
+            results.Add(new ItemSourceDetail(
+                ItemSourceType.Other,
+                "Retired dye — patch 7.5 consolidated most named dyes into the Spectrum Dye system. Exchange it for a current dye at a Calamity Salvager.",
+                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
+        }
+
+        // 9c. Materia / Gardening seeds â€” not "sourced" from a place at all, they come from a
+        // player-driven system: materia converts out of 100%-spiritbonded gear, garden seeds come
+        // from cross-breeding other seeds in a plot. No location to show, just say so.
+        if (results.Count == 0 && item.ItemUICategory.IsValid)
+        {
+            var uiCat = item.ItemUICategory.Value.Name.ToString();
+            if (uiCat == "Materia")
+            {
+                results.Add(new ItemSourceDetail(
+                    ItemSourceType.Other,
+                    "Materia — converted from fully spiritbonded (100%) equipment, not purchased or dropped directly.",
+                    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
+            }
+            else if (uiCat == "Gardening")
+            {
+                results.Add(new ItemSourceDetail(
+                    ItemSourceType.Other,
+                    "Garden seed — obtained by cross-breeding compatible seeds in a garden plot, not purchased directly.",
+                    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
+            }
+        }
+
+        // 10. 1.0-legacy gear â€” "Dated X" / "Weathered X" items predate patch 1.19; only players who
+        // transferred a character from 1.0 have them, permanently unobtainable since (verified via
+        // Gamer Escape's Dated/Weathered item categories, and a dev forum post on the Weathered
+        // Sledgehammer/Scythe). This alone was ~27% of a random 500-item source-coverage sample,
+        // worth its own message instead of the generic "may be a rare drop" fallback.
+        if (results.Count == 0)
+        {
+            var itemName = item.Name.ToString();
+            if (itemName.StartsWith("Dated ", StringComparison.Ordinal) || itemName.StartsWith("Weathered ", StringComparison.Ordinal))
+            {
+                results.Add(new ItemSourceDetail(
+                    ItemSourceType.Other,
+                    "Legacy 1.0 item — predates patch 1.19. Only players who transferred a character from the original FFXIV 1.0 have this; permanently unobtainable otherwise.",
+                    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
+            }
+            // ponytail: "Aetherial X" gear (untradable, randomly-rolled bonus stat) drops from ARR
+            // dungeon treasure chests or Battlecraft Leve rewards — an RNG loot pool, not any one
+            // fixed dungeon/leve, so no single location to point at (verified via the wiki). Second
+            // most common leftover name pattern after Dated/Weathered in the same audit sample.
+            else if (itemName.StartsWith("Aetherial ", StringComparison.Ordinal))
+            {
+                results.Add(new ItemSourceDetail(
+                    ItemSourceType.Other,
+                    "Aetherial gear — dropped from ARR-era dungeon treasure chests or awarded from Battlecraft Leves. Random loot pool, not tied to one specific dungeon/leve.",
+                    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
+            }
+        }
+
+        // 11. Retired-and-superseded â€” the common "no current source" case turns out to be: gear
+        // whose vendor listing got replaced by an "Augmented X" upgrade of the same item (verified
+        // against the wiki for Ironworks Armguards of Maiming: retired as of patch 5.3, only the
+        // Augmented version is still purchasable). Detectable locally: an item named "Augmented "
+        // + this item's name exists. Worth its own message instead of the generic fallback.
+        if (results.Count == 0)
+        {
+            var augmentedId = FindItemIdByExactName("Augmented " + item.Name.ToString());
+            if (augmentedId is { } augId)
+            {
+                var augName = GetItemName(augId) ?? "its augmented upgrade";
+                results.Add(new ItemSourceDetail(
+                    ItemSourceType.Other,
+                    $"Retired — replaced by {augName}. No longer obtainable itself; the augmented upgrade is still purchasable.",
+                    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                    SourceItemId: augId));
+            }
+        }
+
+        // 12. Generic fallback â€” nothing found, and not a known legacy/retired/superseded item either.
+        // Verified against live game data (not just our own sheets): items that land here
+        // genuinely have no current recipe/vendor/duty-drop entry.
         if (results.Count == 0)
         {
             results.Add(new ItemSourceDetail(
                 ItemSourceType.Other,
-                "No known source found. May be a rare drop or gatherable item.",
+                "No known current source. Often old gear that's been rotated out of its vendor over patches — may still be a rare drop, achievement, or account-bound reward we don't track.",
                 null, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
         }
 
         return results;
+    }
+
+    private uint? FindItemIdByExactName(string name)
+    {
+        if (_itemIdByName == null)
+        {
+            _itemIdByName = new Dictionary<string, uint>();
+            foreach (var i in _gameData.GetExcelSheet<Item>()!)
+            {
+                var n = i.Name.ToString();
+                if (!string.IsNullOrEmpty(n) && !_itemIdByName.ContainsKey(n))
+                    _itemIdByName[n] = i.RowId;
+            }
+        }
+        return _itemIdByName.TryGetValue(name, out var id) ? id : null;
     }
 
     private IEnumerable<ItemSourceDetail> FindGilShopSources(uint itemId)
@@ -1218,6 +1464,46 @@ public sealed class ItemDetailService : IItemDetailService
         }
     }
 
+    // ponytail: FishingSpot.Item[] holds Item RowIds directly (no GatheringItem indirection like
+    // Botanist/Miner nodes) — verified against a known fish (Silverfish, item 4978) locally.
+    // BigFishOnReach/OnEnd/OnRefresh (spearfishing/mooch "!" chains) are skipped: separate
+    // mechanic, out of scope for a first pass.
+    private void BuildFishingCache()
+    {
+        var spotSheet = _gameData.GetExcelSheet<FishingSpot>();
+        if (spotSheet == null)
+            return;
+
+        foreach (var spot in spotSheet)
+        {
+            var tt = spot.TerritoryType.ValueNullable;
+            if (tt == null)
+                continue;
+
+            var mapNode = tt.Value.Map.ValueNullable;
+            if (mapNode == null)
+                continue;
+
+            var map = mapNode.Value;
+            var zoneName = spot.PlaceName.ValueNullable?.Name.ToString() ?? "";
+            var mapX = ToMapCoordinate(spot.X, map.SizeFactor, map.OffsetX);
+            var mapY = ToMapCoordinate(spot.Z, map.SizeFactor, map.OffsetY);
+
+            foreach (var itemRef in spot.Item)
+            {
+                if (itemRef.RowId == 0)
+                    continue;
+
+                if (!_itemToFishingCache.TryGetValue(itemRef.RowId, out var list))
+                {
+                    list = new List<FishingInfo>();
+                    _itemToFishingCache[itemRef.RowId] = list;
+                }
+                list.Add(new FishingInfo((int)spot.GatheringLevel, zoneName, mapX, mapY, tt.Value.RowId, map.RowId));
+            }
+        }
+    }
+
     private void BuildDutyDropCache()
     {
         var dungeonDrops = CsvLoader.LoadResource<DungeonDrop>(
@@ -1298,6 +1584,9 @@ public sealed class ItemDetailService : IItemDetailService
         BuildAchievementCache();
         BuildPvpItemCache();
         BuildMogstationCache();
+        BuildTriadCardNpcCache();
+        BuildCollectSourceCache();
+        BuildMountItemMapCache();
     }
 
     // ponytail: MogstationItems.csv is our own static scrape, not a LuminaSupplemental package
@@ -1325,6 +1614,94 @@ public sealed class ItemDetailService : IItemDetailService
             _mogstationItems[itemId] = parts[2];
         }
     }
+
+    private void BuildTriadCardNpcCache()
+    {
+        var assembly = typeof(ItemDetailService).Assembly;
+        using var stream = assembly.GetManifestResourceStream(
+            "GlamSource.Core.LuminaSupplemental.TripleTriadCardNpcs.csv");
+        if (stream == null)
+            return;
+
+        using var reader = new StreamReader(stream);
+        reader.ReadLine(); // header
+        string? line;
+        while ((line = reader.ReadLine()) != null)
+        {
+            var parts = line.Split(',');
+            if (parts.Length < 5)
+                continue;
+            if (!uint.TryParse(parts[0], out var cardRowId))
+                continue;
+            if (!float.TryParse(parts[3], System.Globalization.CultureInfo.InvariantCulture, out var mapX))
+                continue;
+            if (!float.TryParse(parts[4], System.Globalization.CultureInfo.InvariantCulture, out var mapY))
+                continue;
+
+            if (!_triadCardNpcs.TryGetValue(cardRowId, out var list))
+            {
+                list = new List<TriadCardNpc>();
+                _triadCardNpcs[cardRowId] = list;
+            }
+            list.Add(new TriadCardNpc(parts[1], parts[2], mapX, mapY));
+        }
+    }
+
+    private void BuildCollectSourceCache()
+    {
+        var assembly = typeof(ItemDetailService).Assembly;
+        using var stream = assembly.GetManifestResourceStream(
+            "GlamSource.Core.LuminaSupplemental.CollectSources.csv");
+        if (stream == null)
+            return;
+
+        using var reader = new StreamReader(stream);
+        reader.ReadLine(); // header
+        string? line;
+        while ((line = reader.ReadLine()) != null)
+        {
+            var parts = line.Split(',', 4);
+            if (parts.Length < 4)
+                continue;
+            if (!uint.TryParse(parts[0], out var itemId))
+                continue;
+
+            if (!_collectSources.TryGetValue(itemId, out var list))
+            {
+                list = new List<CollectSource>();
+                _collectSources[itemId] = list;
+            }
+            list.Add(new CollectSource(parts[1], parts[2], parts[3]));
+        }
+    }
+
+    private void BuildMountItemMapCache()
+    {
+        var assembly = typeof(ItemDetailService).Assembly;
+        using var stream = assembly.GetManifestResourceStream(
+            "GlamSource.Core.LuminaSupplemental.MountItemMap.csv");
+        if (stream == null)
+            return;
+
+        using var reader = new StreamReader(stream);
+        reader.ReadLine(); // header
+        string? line;
+        while ((line = reader.ReadLine()) != null)
+        {
+            var parts = line.Split(',', 3);
+            if (parts.Length < 2)
+                continue;
+            if (!uint.TryParse(parts[0], out var mountId))
+                continue;
+            if (!uint.TryParse(parts[1], out var itemId))
+                continue;
+            _mountToItemId[mountId] = itemId;
+        }
+    }
+
+    /// <summary>MountId (as read from Character.Mount.MountId natively) -> its unlock item, or null
+    /// if this mount isn't in the scraped dataset.</summary>
+    public uint? ResolveMountItemId(uint mountId) => _mountToItemId.TryGetValue(mountId, out var id) ? id : null;
 
     private void BuildPvpItemCache()
     {

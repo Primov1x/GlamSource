@@ -6,6 +6,7 @@ using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using GlamSource;
+using GlamSource.Core;
 
 namespace GlamSource.Services;
 
@@ -14,6 +15,8 @@ public sealed class ContextMenuService : IDisposable
     private readonly IContextMenu _contextMenu;
     private readonly IGameGui _gameGui;
     private readonly Action<uint> _onItemClicked;
+    private readonly GameDataService? _gameDataService;
+    private readonly IItemDetailService? _itemDetail;
 
     private static readonly HashSet<string> GameAddonWhitelist = new()
     {
@@ -42,12 +45,15 @@ public sealed class ContextMenuService : IDisposable
         "Tryon",
     };
 
-    public ContextMenuService(IContextMenu contextMenu, IGameGui gameGui, Action<uint> onItemClicked)
+    public ContextMenuService(IContextMenu contextMenu, IGameGui gameGui, Action<uint> onItemClicked,
+        GameDataService? gameDataService = null, IItemDetailService? itemDetail = null)
     {
         _contextMenu = contextMenu;
         _gameGui = gameGui;
         _contextMenu.OnMenuOpened += OnMenuOpened;
         _onItemClicked = onItemClicked;
+        _gameDataService = gameDataService;
+        _itemDetail = itemDetail;
     }
 
     private void OnMenuOpened(IMenuOpenedArgs args)
@@ -56,15 +62,42 @@ public sealed class ContextMenuService : IDisposable
             args.MenuType, args.Target?.GetType().Name ?? "null");
 
         var itemId = ExtractItemId(args);
-        if (itemId is not > 0)
-            return;
+        if (itemId is > 0)
+        {
+            args.AddMenuItem(new MenuItem
+            {
+                Name = "Item Source",
+                PrefixChar = 'G',
+                PrefixColor = 52,
+                OnClicked = _ => _onItemClicked(itemId.Value),
+            });
+        }
+
+        AddMountMenuItemIfApplicable(args);
+    }
+
+    // ponytail: right-click a player who's mounted -> "Check Mount" resolves Character.Mount.MountId
+    // (GameDataService.GetMountId) to its unlock item (ItemDetailService.ResolveMountItemId, from the
+    // FFXIV Collect mounts dataset) and reuses the exact same item-detail callback as "Item Source" —
+    // no separate UI needed, ItemDetailWindow already shows source/set/image for any item id.
+    private void AddMountMenuItemIfApplicable(IMenuOpenedArgs args)
+    {
+        if (_gameDataService == null || _itemDetail == null) return;
+        if (args.MenuType != ContextMenuType.Default) return;
+        if (args.Target is not MenuTargetDefault { TargetObject: { } target }) return;
+
+        var mountId = _gameDataService.GetMountId(target);
+        if (mountId is not > 0) return;
+
+        var mountItemId = _itemDetail.ResolveMountItemId(mountId.Value);
+        if (mountItemId is not > 0) return;
 
         args.AddMenuItem(new MenuItem
         {
-            Name = "Item Source",
+            Name = "Check Mount",
             PrefixChar = 'G',
             PrefixColor = 52,
-            OnClicked = _ => _onItemClicked(itemId.Value),
+            OnClicked = _ => _onItemClicked(mountItemId.Value),
         });
     }
 
@@ -100,7 +133,11 @@ public sealed class ContextMenuService : IDisposable
             "ChatLog" => ExtractChatLogItemId(),
             "ContentsInfoDetail" => ExtractContentsInfoDetailItemId(),
             "ItemSearch" => ExtractItemSearchItemId(),
-            "CharacterInspect" => ExtractHoveredItemId(),
+            // ponytail: ExtractCharacterInspectItemId reads the Examine window's own inventory
+            // container + selected-slot index directly — was written but never actually wired in
+            // (dead code, fell through to the generic HoveredItem fallback instead, which doesn't
+            // reliably fire for the Examine paperdoll's equipped-gear icons).
+            "CharacterInspect" => ExtractCharacterInspectItemId() ?? ExtractHoveredItemId(),
             "MiragePrismPrismBoxCrystallize" => ExtractMiragePrismItemId(),
             _ => ExtractHoveredItemId(),
         };
