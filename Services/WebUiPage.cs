@@ -84,9 +84,14 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
    stays true, so clipping still happens at the viewport border like any 3D product viewer. */
 #preview3d{background:transparent;border:0;margin:0 auto 14px;cursor:grab;display:none;height:640px;aspect-ratio:0.8;object-fit:fill}
 /* character tab layout: slots | model | detail — panel scrolls internally, page never does */
-#charlayout{display:grid;grid-template-columns:minmax(190px,230px) 1fr minmax(280px,360px);gap:14px;align-items:start}
+#charlayout{display:grid;grid-template-columns:minmax(110px,140px) minmax(190px,230px) 1fr minmax(280px,360px);gap:14px;align-items:start}
 #charslots{display:flex;flex-direction:column;gap:6px;max-height:660px;overflow-y:auto}
 #charslots .slot{padding:6px 8px}
+#charrecents{display:flex;flex-direction:column;gap:4px;max-height:660px;overflow-y:auto}
+#charrecents .recent{padding:5px 6px;border-radius:6px;cursor:pointer;font-size:12px;line-height:1.3;background:var(--panel);border:1px solid transparent}
+#charrecents .recent:hover{border-color:var(--border)}
+#charrecents .recent.active{border-color:var(--accent)}
+#charrecents .recent .world{color:var(--muted);font-size:11px}
 #chardetail{max-height:660px;min-height:200px;overflow-y:auto;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:10px}
 #chardetail>.empty{justify-content:center;margin-top:80px}
 #chardetail .header img{width:40px;height:40px}
@@ -127,6 +132,7 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
        Clicking a slot opens the lookup RIGHT THERE (no tab switch, panel scrolls internally, the
        page itself never scrolls). -->
   <div id="charlayout">
+    <div id="charrecents"><div class="empty"><span class="spinner"></span></div></div>
     <div id="charslots"><div class="empty"><span class="spinner"></span></div></div>
     <div>
       <canvas id="preview3d"></canvas>
@@ -166,7 +172,7 @@ function showTab(t){
     $('#view-'+x).style.display=x===t?'':'none';
     $('#tab-'+x).classList.toggle('active',x===t);
   }
-  if(t==='character'){loadSnapshot(true);startPreview3D()}else{stopPreview3D()}
+  if(t==='character'){loadSnapshot(true);loadRecents();startPreview3D()}else{stopPreview3D()}
 }
 
 // minimize to the title bar (Dalamud-style collapse isn't possible for a Browsingway page — the
@@ -509,6 +515,20 @@ async function loadSnapshot(force){
   const head=d.activeRecentName?`<div class="empty">Ansicht: ${esc(d.activeRecentName)}</div>`
     :(slots?'':'<div class="empty">Keine Daten — Charakter noch nicht erfasst.</div>');
   $('#charslots').innerHTML=head+slots;
+}
+
+// same list/click as the native ImGui sidebar (GlamSourceShellWindow.DrawRecentSidebar) — view a
+// stored outfit snapshot of a previously-inspected player, index-addressed.
+async function loadRecents(){
+  const recents=await fetch('/api/recents').then(r=>r.json());
+  const box=$('#charrecents');
+  if(!recents.length){box.innerHTML='<div class="empty">(noch keine)</div>';return}
+  box.innerHTML=recents.map(r=>`<div class="recent${r.active?' active':''}" onclick="activateRecent(${r.index})">${esc(r.name)}${r.world?`<div class="world">${esc(r.world)}</div>`:''}</div>`).join('');
+}
+async function activateRecent(index){
+  await post('/api/action/recent/'+index);
+  await loadRecents();
+  await loadSnapshot(true);
 }
 
 async function showItemPanel(id){

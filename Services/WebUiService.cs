@@ -415,6 +415,25 @@ public sealed class WebUiService : IDisposable
             });
         }
 
+        if (method == "GET" && path == "/api/recents")
+        {
+            // ponytail: web-UI Recents sidebar — mirrors the native ImGui sidebar
+            // (GlamSourceShellWindow.DrawRecentSidebar), same list, index-addressed activation.
+            return Json(_shell.DebugRecentTargets.Select((r, i) => new
+            {
+                index = i,
+                r.Name,
+                r.World,
+                active = r.Name == _shell.DebugActiveRecentName,
+            }));
+        }
+
+        if (method == "POST" && path.StartsWith("/api/action/recent/") && int.TryParse(path["/api/action/recent/".Length..], out var recentIdx))
+        {
+            _framework.RunOnFrameworkThread(() => _shell.ActivateRecent(recentIdx));
+            return Json(new { ok = true });
+        }
+
         if (method == "POST" && path.StartsWith("/api/action/craftlog/") && uint.TryParse(path["/api/action/craftlog/".Length..], out var craftId))
         {
             // HQ ids sit at NQ RowId + 1_000_000; the recipe log only knows the NQ id.

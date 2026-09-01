@@ -93,6 +93,10 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
     public string? DebugActiveRecentName => _activeRecentName;
     public bool DebugIsRecentOverrideActive => _recentOverride != null;
     public bool DebugPinned => _pinned;
+    // ponytail: web-UI Recents sidebar — same read-only-accessor convention as the Debug* family
+    // above, just this one mutates (activates a stored snapshot), matching what the native ImGui
+    // sidebar's own click handler does (see DrawRecentSidebar/ActivateRecent).
+    public IReadOnlyList<RecentTarget> DebugRecentTargets => _configuration.RecentTargets;
     // ponytail: which snapshot source Renderer currently uses; guards provider re-install on state change.
     private enum ProviderKind { None, Recent, Pinned, Target, Self }
     private ProviderKind _lastProviderKind = ProviderKind.None;
@@ -930,16 +934,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
             // ponytail: enforce min-width so zero content-region doesn't zero-out the click area.
             var selW = MathF.Max(ImGui.GetFontSize() * 2.5f, ImGui.GetContentRegionAvail().X - xW - ImGui.GetStyle().ItemSpacing.X);
             if (ImGui.Selectable($"{label}##recent_{i}", false, ImGuiSelectableFlags.None, new Vector2(selW, rowH)))
-            {
-                _recentOverride = BuildSnapshotFromIds(r.ItemIds, r.Stain0s, r.Stain1s);
-                _snapshot = _recentOverride;
-                _pinned = false;
-                _activeRecentName = r.Name;
-                // ponytail: force provider re-install so subsequent Recent clicks push new snapshot
-                // even when dispatch guard sees no state change.
-                var snap = _recentOverride;
-                PreviewWindow?.SetSnapshotProvider(() => snap);
-            }
+                ActivateRecent(i);
             if (ImGui.IsItemHovered())
                 ImGui.SetTooltip("View stored snapshot");
             ImGui.SameLine();
@@ -962,6 +957,24 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
                 _activeRecentName = null;
             }
         }
+    }
+
+    /// <summary>View a stored Recent snapshot — the native sidebar's click handler, extracted so
+    /// the web UI's own Recents sidebar (WebUiService's /api/action/recent/{index}) can trigger the
+    /// exact same thing without duplicating the logic.</summary>
+    public void ActivateRecent(int index)
+    {
+        var recents = _configuration.RecentTargets;
+        if (index < 0 || index >= recents.Count) return;
+        var r = recents[index];
+        _recentOverride = BuildSnapshotFromIds(r.ItemIds, r.Stain0s, r.Stain1s);
+        _snapshot = _recentOverride;
+        _pinned = false;
+        _activeRecentName = r.Name;
+        // ponytail: force provider re-install so subsequent Recent clicks push new snapshot even
+        // when dispatch guard sees no state change.
+        var snap = _recentOverride;
+        PreviewWindow?.SetSnapshotProvider(() => snap);
     }
 
     // ponytail: minimal synthetic snapshot — IDs + stains from Recent; names resolved from Item sheet.
