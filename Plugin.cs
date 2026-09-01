@@ -287,15 +287,20 @@ public class Plugin : IAsyncDalamudPlugin
     private long _bwLookupStartedMs;
     private bool _bwOverlayMissingWarned;
     private const float BwOverlayWidth = 1190f;
-    // titlebar + nav + 660px panels + toolbar + paddings + #recentsFooter (label + single-row
-    // horizontal-scroll chip strip, added after 845 was tuned — "größe muss nochmal anpassen,
-    // weil sich sachen ja verschoben haben": recentsFooter sits outside the scrollable #charslots
-    // column, so it adds real page height instead of scrolling internally)
-    private const float BwOverlayHeight = 925f;
+    // titlebar + nav + 660px panels + toolbar + paddings + #recentsFooter. 925 STILL clipped
+    // ("hab noch scrollränder, bissl größer darf schon sein") — bumped further with extra margin
+    // instead of hunting the exact pixel again.
+    private const float BwOverlayHeight = 990f;
     private const float BwOverlayMinHeight = 42f; // just the titlebar
+    // compact height for the Item-Search tab before any results are showing — "darf gern klein
+    // bleiben bis man sachen sucht": titlebar + nav + search input + margins, no results list yet
+    private const float BwOverlayCompactHeight = 260f;
     // set by the web UI's minimize button (WebUiService /api/action/overlay/minimize) — the page
     // collapses its content AND the actual ImGui window shrinks to the title bar
     public static volatile bool BwOverlayMinimized;
+    // set by the web UI whenever the Item-Search tab has no results/detail showing yet (WebUiService
+    // /api/action/overlay/compact) — full height only once there's actually content to show
+    public static volatile bool BwOverlayCompact;
     public static volatile bool BwPinKilled; // stutter-bisect switch for the per-frame SetWindowSize
     // set by the web UI's lock button (WebUiService /api/action/overlay/lock) — bypasses the 2s
     // pin throttle below for one immediate re-pin. Without this, unlocking let Browsingway's own
@@ -305,6 +310,7 @@ public class Plugin : IAsyncDalamudPlugin
 
     private long _lastBwPinMs;
     private bool _lastBwMinimized;
+    private bool _lastBwCompact;
 
     private void PinBrowsingwayOverlaySize()
     {
@@ -314,10 +320,12 @@ public class Plugin : IAsyncDalamudPlugin
         // actual culprit that day was a sick Browsingway CEF process, cured by toggling
         // Browsingway off/on — documented in doku/character-preview.md).
         var minimizedChanged = BwOverlayMinimized != _lastBwMinimized;
-        var bypassThrottle = minimizedChanged || BwLockJustToggled;
+        var compactChanged = BwOverlayCompact != _lastBwCompact;
+        var bypassThrottle = minimizedChanged || compactChanged || BwLockJustToggled;
         if (!bypassThrottle && Environment.TickCount64 - _lastBwPinMs < 2000) return;
         _lastBwPinMs = Environment.TickCount64;
         _lastBwMinimized = BwOverlayMinimized;
+        _lastBwCompact = BwOverlayCompact;
         BwLockJustToggled = false;
         if (_bwWindowId == null)
         {
@@ -358,7 +366,7 @@ public class Plugin : IAsyncDalamudPlugin
                 return;
             }
         }
-        var h = BwOverlayMinimized ? BwOverlayMinHeight : BwOverlayHeight;
+        var h = BwOverlayMinimized ? BwOverlayMinHeight : BwOverlayCompact ? BwOverlayCompactHeight : BwOverlayHeight;
         Dalamud.Bindings.ImGui.ImGui.SetWindowSize(_bwWindowId, new System.Numerics.Vector2(BwOverlayWidth, h), Dalamud.Bindings.ImGui.ImGuiCond.Always);
     }
     private string _lastRecentKey = "";

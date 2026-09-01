@@ -681,6 +681,15 @@ public sealed class WebUiService : IDisposable
             return Json(new { ok = true, minimized = minimizeOn });
         }
 
+        if (method == "POST" && path == "/api/action/overlay/compact" && bool.TryParse(query["on"], out var compactOn))
+        {
+            // "Item Search darf klein bleiben bis man sachen sucht" — the page itself has no fixed
+            // height, only the Browsingway ImGui window does (Plugin.PinBrowsingwayOverlaySize);
+            // this tells it to use the small pre-results height instead of the full one.
+            Plugin.BwOverlayCompact = compactOn;
+            return Json(new { ok = true, compact = compactOn });
+        }
+
         if (method == "POST" && path == "/api/action/preview3d/weapon" && _configuration.WebUiLive3DPreview
             && bool.TryParse(query["on"], out var weaponOn))
         {

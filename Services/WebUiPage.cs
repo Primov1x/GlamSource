@@ -197,6 +197,7 @@ function showTab(t){
   }
   if(t==='character'){loadSnapshot(true);loadRecents();startPreview3D()}else{stopPreview3D()}
   if(t==='settings')loadSettings();
+  updateOverlayCompactness();
 }
 
 async function loadSettings(){
@@ -479,8 +480,17 @@ $('#q').addEventListener('input',e=>{
     box.innerHTML='<div class="empty"><span class="spinner"></span>Searching…</div>';
     const r=await fetch('/api/search?q='+encodeURIComponent(q)).then(r=>r.json());
     box.innerHTML=r.length?r.map(x=>`<div class="row" onclick="openItem(${x.id})">${img(x.iconId,28)}<span>${esc(x.name)}</span><img class="rowpreview" src="/api/itemimage/${x.id}" loading="lazy" onerror="this.remove()"></div>`).join(''):'<div class="empty">Keine Items gefunden.</div>';
+    updateOverlayCompactness();
   },250);
 });
+
+// "Item Search darf gern klein bleiben bis man sachen sucht": the Browsingway overlay window has a
+// fixed size (Plugin.PinBrowsingwayOverlaySize) since the page itself can't shrink it — tell the
+// plugin to use the small pre-results height while on the Suche tab with nothing shown yet.
+function updateOverlayCompactness(){
+  const compact=currentTab==='lookup'&&!$('#results').innerHTML&&!$('#detail').innerHTML;
+  post('/api/action/overlay/compact?on='+compact);
+}
 
 // openFn: which function re-opens an item from within this panel — 'openItem' (Suche tab, writes
 // to #detail) or 'showItemPanel' (Charakter tab, writes to #chardetail). Set-member chips need to
@@ -512,6 +522,7 @@ function buildItemHtml(d,openFn='openItem'){
 async function openItem(id){
   $('#results').innerHTML='';$('#q').value='';
   $('#detail').innerHTML='<div class="empty"><span class="spinner"></span>Loading…</div>';
+  updateOverlayCompactness();
   const d=await fetch('/api/item/'+id).then(r=>r.ok?r.json():null);
   $('#detail').innerHTML=d?buildItemHtml(d):'<div class="empty">Nicht gefunden.</div>';
 }
@@ -616,6 +627,7 @@ function toggleLock(){
   if(hint)hint.style.display=(!overlayLocked&&$('#preview3d').style.display!=='none')?'flex':'none';
   post('/api/action/overlay/lock?locked='+overlayLocked);
 }
+updateOverlayCompactness(); // initial load starts on the Suche tab, empty
 </script>
 </body>
 </html>
