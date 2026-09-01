@@ -151,28 +151,7 @@ public class Plugin : IAsyncDalamudPlugin
         itemDetailWindow.SetPlugin(this);
         WindowSystem.AddWindow(itemDetailWindow);
 
-        contextMenuService = new ContextMenuService(ContextMenu, _gameGui, itemId =>
-        {
-            // "wenn ich in examine 'item source' klicke, soll es im webgui aufgehen anstatt im
-            // imgui" — opt-in setting; falls back to ImGui if the web UI itself isn't even on
-            // (opening nothing would be worse than the old behavior).
-            if (Configuration.ContextMenuOpensInWebUi && Configuration.WebUiEnabled)
-            {
-                // the web page already switches to Suche + opens the item on its own poll (see
-                // WebUiPage's pendingitem interval) — just make sure the overlay is actually
-                // VISIBLE, since Browsingway's own hidden/minimized state is otherwise entirely
-                // user/hotkey-managed and the push would silently land in a hidden overlay.
-                BwOverlayMinimized = false;
-                CommandManager.ProcessCommand("/bw overlay glamsource hidden off");
-            }
-            else
-            {
-                itemDetailWindow.ShowItem(itemId);
-            }
-            // ponytail: webUiService is constructed further below — fine, this only runs when the
-            // user actually clicks the context menu entry, long after the constructor finishes.
-            webUiService?.PushItemToWeb(itemId);
-        }, gameDataService, itemDetailService);
+        contextMenuService = new ContextMenuService(ContextMenu, _gameGui, itemId => OpenItemDetail(itemId), gameDataService, itemDetailService);
 
         shellWindow = new GlamSourceShellWindow(
             this,
@@ -503,7 +482,33 @@ public class Plugin : IAsyncDalamudPlugin
         var mountItemId = itemDetailService.ResolveMountItemId(mountId.Value);
         if (mountItemId is not > 0) return;
 
-        itemDetailWindow.ShowItem(mountItemId.Value);
-        webUiService?.PushItemToWeb(mountItemId.Value);
+        OpenItemDetail(mountItemId.Value);
+    }
+
+    // ponytail: shared by the context-menu callback ("Check Mount", "Item Source") and
+    // OpenTargetMount (/glamsource mount twin) — was duplicated inline in the context menu
+    // callback only, so OpenTargetMount bypassed ContextMenuOpensInWebUi entirely (live: a mount
+    // opened via examine still popped ImGui despite the web-UI setting being on).
+    private void OpenItemDetail(uint itemId)
+    {
+        // "wenn ich in examine 'item source' klicke, soll es im webgui aufgehen anstatt im
+        // imgui" — opt-in setting; falls back to ImGui if the web UI itself isn't even on
+        // (opening nothing would be worse than the old behavior).
+        if (Configuration.ContextMenuOpensInWebUi && Configuration.WebUiEnabled)
+        {
+            // the web page already switches to Suche + opens the item on its own poll (see
+            // WebUiPage's pendingitem interval) — just make sure the overlay is actually
+            // VISIBLE, since Browsingway's own hidden/minimized state is otherwise entirely
+            // user/hotkey-managed and the push would silently land in a hidden overlay.
+            BwOverlayMinimized = false;
+            CommandManager.ProcessCommand("/bw overlay glamsource hidden off");
+        }
+        else
+        {
+            itemDetailWindow.ShowItem(itemId);
+        }
+        // ponytail: webUiService is constructed further below the fields it's assigned in — fine,
+        // this only runs on an actual click, long after the constructor finishes.
+        webUiService?.PushItemToWeb(itemId);
     }
 }

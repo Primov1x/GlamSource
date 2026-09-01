@@ -1,118 +1,18 @@
 {
   "version": 1,
   "dependencies": {
-    "net10.0-windows7.0": {
-      "DalamudPackager": {
+    "net10.0": {
+      "Microsoft.DotNet.ILCompiler": {
         "type": "Direct",
-        "requested": "[15.0.0, )",
-        "resolved": "15.0.0",
-        "contentHash": "411vwC8/X8Z/sQ2TI6v3SvOn66xFPeOjFn3Zn+h0d3Ox2t1kFm66AhDvmx/qcMwVrR+Hidxj0dadpQ2dgyXMBQ=="
+        "requested": "[10.0.11, )",
+        "resolved": "10.0.11",
+        "contentHash": "yloFUsIQOzspIsn2cDHrbgikKaWHAZspzj0EWxnWJJpFC89IBW64OXgCECsrrnzGWQvy1iLX9r5/R4zBf7Am3g=="
       },
-      "DotNet.ReproducibleBuilds": {
+      "Microsoft.NET.ILLink.Tasks": {
         "type": "Direct",
-        "requested": "[1.2.39, )",
-        "resolved": "1.2.39",
-        "contentHash": "fcFN01tDTIQqDuTwr1jUQK/geofiwjG5DycJQOnC72i1SsLAk1ELe+apBOuZ11UMQG8YKFZG1FgvjZPbqHyatg=="
-      },
-      "Glamourer.Api": {
-        "type": "Direct",
-        "requested": "[2.8.2, )",
-        "resolved": "2.8.2",
-        "contentHash": "+mEzejUhvJLcpTjv4Hk6ap22WiEPyEa9wg1EECFwDJim1B+fKy3l4iWlvjaoEFlfp+nB67BZp8KBiHclsEBQQw=="
-      },
-      "Lumina.Excel": {
-        "type": "Direct",
-        "requested": "[7.4.3, )",
-        "resolved": "7.4.3",
-        "contentHash": "3FXHgq3ihk3yLSriYjM5j+w/114i/rawAbt7+O9LMFHyY0fGVIP+MOpQaLa1CruEOXjwmT9CvLKkDy4h1ESDlA==",
-        "dependencies": {
-          "Lumina": "7.1.0"
-        }
-      },
-      "Newtonsoft.Json": {
-        "type": "Direct",
-        "requested": "[13.0.4, )",
-        "resolved": "13.0.4",
-        "contentHash": "pdgNNMai3zv51W5aq268sujXUyx7SNdE2bj1wZcWjAQrKMFZV260lbqYop1d2GM67JI1huLRwxo9ZqnfF/lC6A=="
-      },
-      "System.Drawing.Common": {
-        "type": "Direct",
-        "requested": "[10.0.0, )",
-        "resolved": "10.0.0",
-        "contentHash": "kohT9ZZlkB5R5ifihCBnPJLdIUQGiTj1ZI6z4LKatr+F4MmIJJu7qQpBkqt9280ivtnSvlTx9qZEY+CpJ0zMkA==",
-        "dependencies": {
-          "Microsoft.Win32.SystemEvents": "10.0.0"
-        }
-      },
-      "TerraFX.Interop.Windows": {
-        "type": "Direct",
-        "requested": "[10.0.26100.5, )",
-        "resolved": "10.0.26100.5",
-        "contentHash": "xtNbqoZGcc8SoC70ixIPve/2XITl7HuoDgIlCAn2719SwhcquC3SaRIVUMhEodQo1CXeAwxzXGXAgTKMBLhX6Q=="
-      },
-      "BCnEncoder.Net": {
-        "type": "Transitive",
-        "resolved": "2.2.1",
-        "contentHash": "tI5+/OQo0kciLqWrViRjpOH+IL3FjexYnoWZajiGV41g/EM9CGbWsxsPzBDmpoxNkrV9uox/EtIhCIi9chBSFw==",
-        "dependencies": {
-          "CommunityToolkit.HighPerformance": "8.4.0"
-        }
-      },
-      "CommunityToolkit.HighPerformance": {
-        "type": "Transitive",
-        "resolved": "8.4.0",
-        "contentHash": "flxspiBs0G/0GMp7IK2J2ijV9bTG6hEwFc/z6ekHqB6nwRJ4Ry2yLdx+TkbCUYFCl4XhABkAwomeKbT6zM2Zlg=="
-      },
-      "CSVFile": {
-        "type": "Transitive",
-        "resolved": "3.2.1",
-        "contentHash": "hXWPP7BGA8DS+UxdDEjAsLPdo6OUiCdaCiprxuRxpTy3nwI9DqwNWxaC5imfyD3kCb9/S2mW35s7f08uaokTUA=="
-      },
-      "CsvHelper": {
-        "type": "Transitive",
-        "resolved": "30.0.1",
-        "contentHash": "rcZtgbWR+As4G3Vpgx0AMNmShGuQLFjkHAPIIflzrfkJCx8/AOd4m96ZRmiU1Wi39qS5UVjV0P8qdgqOo5Cwyg=="
-      },
-      "Lumina": {
-        "type": "Transitive",
-        "resolved": "7.1.0",
-        "contentHash": "7zjreOpMXOhf+m5uTefoLZO6Mt3y68XhK036eDOS5JJ8yuIjAgFteWkzdCRcss8+PH5skMnDMDUZoTJJefQCtg==",
-        "dependencies": {
-          "BCnEncoder.Net": "2.2.1",
-          "Microsoft.Extensions.ObjectPool": "10.0.0"
-        }
-      },
-      "LuminaSupplemental.Excel": {
-        "type": "Transitive",
-        "resolved": "5.1.0",
-        "contentHash": "it0pwHvWlTek2HpZYT0qM4aZr9C7dqWr7YJBI0VFuaftKUEgJMRghBXfcz5F6yjAhY7iBjn7QfJtwxZEw4XPpA==",
-        "dependencies": {
-          "CSVFile": "3.2.1",
-          "CsvHelper": "30.0.1",
-          "Sylvan.Data.Csv": "1.4.3"
-        }
-      },
-      "Microsoft.Extensions.ObjectPool": {
-        "type": "Transitive",
-        "resolved": "10.0.0",
-        "contentHash": "bpeCq0IYmVLACyEUMzFIOQX+zZUElG1t+nu1lSxthe7B+1oNYking7b91305+jNB6iwojp9fqTY9O+Nh7ULQxg=="
-      },
-      "Microsoft.Win32.SystemEvents": {
-        "type": "Transitive",
-        "resolved": "10.0.0",
-        "contentHash": "bYdnhuD0XxcVTrxc8RyBjXo+AXYWJPnda3clhGz2Kakleyun1PyrzYV8RezT7ZYmR9OBSOgvpFQcvHo/K8Y90w=="
-      },
-      "Sylvan.Data.Csv": {
-        "type": "Transitive",
-        "resolved": "1.4.3",
-        "contentHash": "ZUFTqs5doO9aGrR2g0tjASSfxaMUnsxRBXCYFvDRn74XfIc0PUZ0FYRbI3Yu/4W/IFc/DBKH30OOeZ2xGqGyFQ=="
-      },
-      "glamsource.core": {
-        "type": "Project",
-        "dependencies": {
-          "LuminaSupplemental.Excel": "[5.1.0, )",
-          "Newtonsoft.Json": "[13.0.3, )"
-        }
+        "requested": "[10.0.11, )",
+        "resolved": "10.0.11",
+        "contentHash": "IBf7lbovvjGWVWXZX5cJ/cO0WXbId0Zq4BuSeT94mGZuOAP66oMeH9PTBZ9Jpp3Jb6jtK0qm/NyUbPRo1gC/wQ=="
       }
     }
   }

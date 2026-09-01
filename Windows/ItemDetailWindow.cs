@@ -134,7 +134,11 @@ public class ItemDetailWindow : Window, IDisposable
     };
 
     public ItemDetailWindow(IItemDetailService detailService, IItemSourceService sourceService, IUniversalisService universalisService, ITextureProvider? textureProvider = null, IDataManager? data = null, IItemImageService? imageService = null)
-        : base($"Item Detail###ItemDetailWindow", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
+        // AlwaysAutoResize — "bissl enger gestalten": with a fixed size the window kept whatever
+        // height it was last manually dragged to, leaving a big empty gap below short content (live
+        // screenshot: 3 short cards, ~half the window empty below them). Bounded by SizeConstraints
+        // below, same as before.
+        : base($"Item Detail###ItemDetailWindow", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse | ImGuiWindowFlags.AlwaysAutoResize)
     {
         _detailService = detailService;
         _sourceService = sourceService;
