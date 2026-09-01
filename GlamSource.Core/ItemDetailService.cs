@@ -1077,7 +1077,13 @@ public sealed class ItemDetailService : IItemDetailService
         {
             if (!_shopNpcLookup.ContainsKey(rowId))
                 _shopNpcLookup[rowId] = new();
-            _shopNpcLookup[rowId].Add(info);
+            // ponytail: the same NPC/shop binding can resolve here via more than one menu path
+            // (e.g. a direct link AND a PreHandler/TopicSelect wrapper pointing at the same
+            // terminal shop) — without this check the exact same vendor+location+cost row showed
+            // up twice in the item detail UI ("unübersichtlich", confirmed via a real screenshot:
+            // identical "Mesouaidonque, Sinus Ardorum (21.9,21.9)" card duplicated).
+            if (!_shopNpcLookup[rowId].Contains(info))
+                _shopNpcLookup[rowId].Add(info);
         }
         if (!string.IsNullOrEmpty(npcName) && !_shopNpcNameOnly.ContainsKey(rowId))
             _shopNpcNameOnly[rowId] = npcName;

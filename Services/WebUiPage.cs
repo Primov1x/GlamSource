@@ -430,9 +430,17 @@ $('#q').addEventListener('input',e=>{
 
 function buildItemHtml(d){
   let h=`<div class="header">${img(d.iconId,48)}<div><div class="name">${esc(d.name)}</div><div class="meta">Item ID ${d.itemId} · iLvl ${d.itemLevel}${d.isMarketable?' · marketable':''}</div></div></div><div class="cards">`;
+  // ponytail: same shop/vendor sold from several NPC locations used to render as one full repeated
+  // card per location ("unübersichtlich" — a shop with 3 vendor spots meant 3 near-identical cards).
+  // Group by description (+ cost, in case two shops share a name but differ in price) into ONE card
+  // with a multi-row NPC table instead.
+  const groups=new Map();
   for(const s of d.sources??[]){
-    h+=renderSource(s,d.itemId);
+    const key=(s.description??'')+'|'+JSON.stringify(s.costs??[]);
+    if(!groups.has(key))groups.set(key,[]);
+    groups.get(key).push(s);
   }
+  for(const group of groups.values())h+=renderSource(group,d.itemId);
   h+='</div>';
   if(!(d.sources??[]).length)h+='<div class="empty">Keine bekannte Quelle gefunden.</div>';
   return h;
@@ -445,15 +453,19 @@ async function openItem(id){
   $('#detail').innerHTML=d?buildItemHtml(d):'<div class="empty">Nicht gefunden.</div>';
 }
 
-function renderSource(s,itemId){
+// group: one or more sources sharing the same description+cost (see buildItemHtml) — one card,
+// one NPC/location table row per entry instead of a fully repeated card per location.
+function renderSource(group,itemId){
+  const s=group[0];
   const t=(s.type??'').toString();
   const cls=/craft/i.test(t)?'crafted':/vendor|shop/i.test(t)?'vendor':/quest/i.test(t)?'quest':/trial|raid|dungeon/i.test(t)?'duty':'';
   let h=`<div class="card ${cls}"><h3><span class="badge">${typeIcon(cls)} ${esc(t).toUpperCase()}</span> ${esc(s.description??'')}</h3>`;
   if(/craft/i.test(t))h+=`<button class="act" onclick="post('/api/action/craftlog/${itemId}')">Open Crafting Log</button>`;
   if(s.cfcRowId)h+=` <button class="act" onclick="post('/api/action/dutyfinder/${s.cfcRowId}')">Duty Finder</button>`;
-  if(s.npcName){
+  const withNpc=group.filter(g=>g.npcName);
+  if(withNpc.length){
     h+='<table><tr><th>NPC</th><th>Location</th><th></th></tr>';
-    h+=npcRow(s);
+    for(const g of withNpc)h+=npcRow(g);
     h+='</table>';
   }
   for(const key of['materials','costs']){
