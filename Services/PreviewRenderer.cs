@@ -754,7 +754,20 @@ public sealed unsafe class PreviewRenderer : IDisposable
                 // AND actively wrong. Removed.
                 if (weaponMode && _weaponSetupTicksRemaining > 0)
                 {
-                    var srcAddr = _sourceProvider?.Invoke() ?? nint.Zero;
+                    // memory-safety guard, added after a live game crash (native AV C0000005,
+                    // inside the Framework tick) whose timing put this exact code — 15 CONSECUTIVE
+                    // Ticks each firing 2x CharacterSetup.CopyFromCharacter + up to 3x LoadWeapon
+                    // on the clone's native struct — as the prime suspect (untested when path #16
+                    // was written). A C# try/catch CANNOT catch a native access violation — it
+                    // bypasses .NET exception handling entirely — so the only real defense is not
+                    // touching the struct while it's mid-transition. CharacterLoaded is the same
+                    // flag DoInitialize's own auto-freeze already gates on for the same reason.
+                    if (!agent->CharaView.CharacterLoaded)
+                    {
+                        _weaponSetupTicksRemaining = 0;
+                        _log.Warning("[PreviewRenderer] weapon path #16: aborted, CharaView not CharacterLoaded (avoiding native op on a mid-transition clone)");
+                    }
+                    var srcAddr = _weaponSetupTicksRemaining > 0 ? (_sourceProvider?.Invoke() ?? nint.Zero) : nint.Zero;
                     if (srcAddr != nint.Zero)
                     {
                         // #13 alone (CharacterSetup.CopyFromCharacter) DID make a weapon actually

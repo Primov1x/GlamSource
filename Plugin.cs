@@ -413,11 +413,12 @@ public class Plugin : IAsyncDalamudPlugin
                 // disabled last session (leaving its Browsingway overlay disabled too) comes back up
                 // clean on next load instead of staying invisible with no obvious reason why.
                 CommandManager.ProcessCommand("/bw overlay glamsource disabled off");
-                // Freeze the overlay's position AND size as-is ("Fensterwerte festsetzen, nicht
-                // größer/kleiner machen"): Browsingway's Locked flag blocks both. The titlebar
-                // lock button still toggles it off for repositioning — and locked is required for
-                // drag-rotate anyway, so this doubles as the correct default.
-                CommandManager.ProcessCommand("/bw overlay glamsource locked on");
+                // ponytail: was "locked on" by default (needed for drag-rotate, and freezes
+                // position/size) — flipped per request: "bei start/öffnen nicht locked als
+                // standard, damit man verschieben kann". Size still stays pinned regardless (see
+                // PinBrowsingwayOverlaySize, unrelated to this flag); only position becomes
+                // draggable on open now. The titlebar lock button still locks it for drag-rotate.
+                CommandManager.ProcessCommand("/bw overlay glamsource locked off");
                 _bwHideDone = true;
             }
         }

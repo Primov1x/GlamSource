@@ -94,7 +94,7 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 #charlayout{display:grid;grid-template-columns:minmax(190px,230px) 1fr minmax(280px,360px);gap:14px;align-items:start}
 #charslots{display:flex;flex-direction:column;gap:6px;max-height:660px;overflow-y:auto}
 #charslots .slot{padding:6px 8px}
-#chardetail{max-height:660px;min-height:200px;overflow-y:auto;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:10px}
+#chardetail{max-height:660px;min-height:200px;overflow-y:auto;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:10px 16px}
 #chardetail>.empty{justify-content:center;margin-top:80px}
 #chardetail .header img{width:40px;height:40px}
 .tbl{color:var(--gold-dim);font-size:10px;text-transform:uppercase;letter-spacing:1.5px;margin-left:10px}
@@ -125,7 +125,7 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
   <span class="sub">web ui</span>
   <span class="spacer"></span>
   <button id="btn-min" title="Minimieren — nur die Titelleiste bleibt sichtbar" onclick="toggleMinimize()">–</button>
-  <button id="btn-lock" title="Overlay-Position sperren — nötig, um das Modell per Ziehen zu drehen (entsperrt verschiebt Ziehen das ganze Fenster)" onclick="toggleLock()"><svg viewBox="0 0 24 24"><path d="M12 2a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5zm-3 5a3 3 0 0 1 6 0v3H9V7z"/></svg></button>
+  <button id="btn-lock" title="Sperren — Position &amp; Größe fixieren (nötig, um das Modell per Ziehen zu drehen)" onclick="toggleLock()"><svg viewBox="0 0 24 24"><path d="M12 2a5 5 0 0 0-5 5h2a3 3 0 0 1 6 0v3H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5z"/></svg></button>
   <button title="Ausblenden (über das GlamSource-Fenster wieder öffnen)" onclick="post('/api/action/overlay/hide')">×</button>
 </div>
 <div id="app">
@@ -613,9 +613,10 @@ async function showItemPanel(id){
 
 async function post(url){await fetch(url,{method:'POST'})}
 
-// locked is the DEFAULT now (the plugin sets it at startup: position+size frozen, and drag-rotate
-// needs it anyway) — the button just toggles for repositioning. SVG lock, no emoji (no emoji font).
-let overlayLocked=true;
+// UNLOCKED is the default now ("bei start/öffnen nicht locked als standard, damit man verschieben
+// kann") — the plugin sends "locked off" at startup too, this just mirrors that initial state so
+// the button icon/tooltip match on load. SVG lock, no emoji (no emoji font).
+let overlayLocked=false;
 const LOCK_CLOSED='<svg viewBox="0 0 24 24"><path d="M12 2a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5zm-3 5a3 3 0 0 1 6 0v3H9V7z"/></svg>';
 const LOCK_OPEN='<svg viewBox="0 0 24 24"><path d="M12 2a5 5 0 0 0-5 5h2a3 3 0 0 1 6 0v3H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5z"/></svg>';
 function toggleLock(){
