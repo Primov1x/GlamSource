@@ -488,7 +488,18 @@ public sealed unsafe class PreviewRenderer : IDisposable
                 // renders" — the renderer may simply never visit an unlinked child.
                 var bodyPtr = (nint)ch->GameObject.DrawObject;
                 var bodyChild = bodyPtr != 0 ? *(nint*)((byte*)bodyPtr + 0x30) : 0;
-                sb.Append($"clone.dd.weapon{i}({(DrawDataContainer.WeaponSlot)i}): id={dd.ModelId.Id} type={dd.ModelId.Type} weaponObj={weaponObjPtr:X} attachTarget={attachTarget:X} charBody={bodyPtr:X} bodyChildObject={bodyChild:X} weaponSkeleton={weaponSkeleton:X} weaponPos={weaponPos} drawObj={(nint)dd.DrawObject:X} vis={(dd.DrawObject != null ? dd.DrawObject->IsVisible : false)} hidden={dd.IsHidden} state=0x{dd.State:X2} | ");
+                // live-confirmed: bodyChildObject matches NEITHER weapon — walk its sibling chain
+                // (Object.NextSiblingObject @ +0x28) a few hops to see whether either weapon is
+                // linked in further back (a normal accessory occupying the head-of-chain slot) or
+                // genuinely absent from the parent's child list entirely.
+                var chainHops = "";
+                var walker = bodyChild;
+                for (var hop = 0; hop < 6 && walker != 0; hop++)
+                {
+                    chainHops += $"{walker:X}" + (walker == weaponObjPtr ? "(THIS WEAPON)" : "") + ",";
+                    walker = *(nint*)((byte*)walker + 0x28);
+                }
+                sb.Append($"clone.dd.weapon{i}({(DrawDataContainer.WeaponSlot)i}): id={dd.ModelId.Id} type={dd.ModelId.Type} weaponObj={weaponObjPtr:X} attachTarget={attachTarget:X} charBody={bodyPtr:X} bodyChildChain=[{chainHops}] weaponSkeleton={weaponSkeleton:X} weaponPos={weaponPos} drawObj={(nint)dd.DrawObject:X} vis={(dd.DrawObject != null ? dd.DrawObject->IsVisible : false)} hidden={dd.IsHidden} state=0x{dd.State:X2} | ");
             }
             // 4th, never-touched slot: DrawDataContainer._unkWeaponData @ 0x160 — checking whether
             // a residual/duplicate draw object lives here, outside the 3 slots we manage.
