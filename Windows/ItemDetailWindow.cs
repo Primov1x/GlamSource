@@ -316,25 +316,21 @@ public class ItemDetailWindow : Window, IDisposable
         else if (_marketLoading && _marketItemId == detail.ItemId)
             ImGui.TextDisabled("Loading prices...");
 
-        // ponytail: bordered child gives the Questionable-style section panel look without a new helper.
+        // ponytail: a bordered child sized (0,0) fills the PARENT's remaining space, not its own
+        // content — that fights AlwaysAutoResize (which sizes the window FROM content) in a
+        // feedback loop, leaving oversized empty cards ("die karten nicht so riesig"). Drawing
+        // directly in the window instead — its height is then simply the cards' real height, no
+        // separate sizing to reconcile. NoScrollbar was already set; SizeConstraints still caps it.
         SectionHeader("SOURCES");
         ImGui.Spacing();
-        if (ImGui.BeginChild("##sourcesPanel", new Vector2(0, 0), true))
-        {
-            DrawSourceCards(detail);
-            DrawGatheringActionButton(detail);
-        }
-        ImGui.EndChild();
+        DrawSourceCards(detail);
+        DrawGatheringActionButton(detail);
 
         if (_plugin?.Configuration?.ShowCraftingSavings == true && _craftingResult != null)
         {
             SectionHeader("CRAFTING SAVINGS");
             ImGui.Spacing();
-            if (ImGui.BeginChild("##craftingSavingsPanel", new Vector2(0, 0), true))
-            {
-                DrawCraftingSavings();
-            }
-            ImGui.EndChild();
+            DrawCraftingSavings();
         }
     }
 
