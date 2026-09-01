@@ -222,6 +222,7 @@ public class CraftingCostServiceTests
 
         public GameData GameData => null!;
         public uint? ResolveMountItemId(uint mountId) => null;
+        public string? GetEnglishName(uint itemId) => null;
     }
 
     private sealed class FakeUniversalisService : IUniversalisService

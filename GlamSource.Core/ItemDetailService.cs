@@ -57,6 +57,7 @@ public interface IItemDetailService
     ItemDetail? GetDetail(uint itemId);
     GameData GameData { get; }
     uint? ResolveMountItemId(uint mountId);
+    string? GetEnglishName(uint itemId);
 }
 
 public sealed class ItemDetailService : IItemDetailService
@@ -1732,6 +1733,19 @@ public sealed class ItemDetailService : IItemDetailService
     /// <summary>MountId (as read from Character.Mount.MountId natively) -> its unlock item, or null
     /// if this mount isn't in the scraped dataset.</summary>
     public uint? ResolveMountItemId(uint mountId) => _mountToItemId.TryGetValue(mountId, out var id) ? id : null;
+
+    private ExcelSheet<Item>? _englishItemSheet;
+
+    /// <summary>Item name in English regardless of the client's configured language. Needed for
+    /// anything keyed off the item name against an English-only source — the item preview image
+    /// wiki has no localized page titles, so a German/French/JP client name 404'd there ("Freiherrliche
+    /// Jacke" -> no such page; live-confirmed via /api/debug/imageerror).</summary>
+    public string? GetEnglishName(uint itemId)
+    {
+        _englishItemSheet ??= _gameData.GetExcelSheet<Item>(Language.English);
+        var name = _englishItemSheet?.GetRowOrDefault(itemId)?.Name.ToString();
+        return string.IsNullOrEmpty(name) ? null : name;
+    }
 
     private void BuildPvpItemCache()
     {

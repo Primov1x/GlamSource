@@ -196,7 +196,11 @@ public class ItemDetailWindow : Window, IDisposable
         {
             try
             {
-                var bytes = await _imageService.GetPreviewImageBytesAsync(itemId, itemName);
+                // the wiki has no localized page titles — a non-English client name 404s there
+                // (live-confirmed: "Freiherrliche Jacke"). Use the English name regardless of the
+                // caller's (locale-dependent) itemName.
+                var wikiName = _detailService.GetEnglishName(itemId) ?? itemName;
+                var bytes = await _imageService.GetPreviewImageBytesAsync(itemId, wikiName);
                 var tex = bytes != null ? await _textureProvider.CreateFromImageAsync(bytes, $"ItemPreview_{itemId}") : null;
                 _previewTextureCache[itemId] = tex;
             }

@@ -452,7 +452,11 @@ public sealed class WebUiService : IDisposable
             // Route() call already runs on a ThreadPool request thread, not the UI/Framework one.
             var detail = _detail.GetDetail(imgItemId);
             if (detail == null) return ("404 Not Found", "text/plain", Encoding.UTF8.GetBytes("item not found"));
-            var bytes = _imageService.GetPreviewImageBytesAsync(imgItemId, detail.Name).GetAwaiter().GetResult();
+            // the wiki has no localized page titles — a German/French/JP client name 404s there
+            // ("Freiherrliche Jacke", live-confirmed via /api/debug/imageerror). English regardless
+            // of client language.
+            var wikiName = _detail.GetEnglishName(imgItemId) ?? detail.Name;
+            var bytes = _imageService.GetPreviewImageBytesAsync(imgItemId, wikiName).GetAwaiter().GetResult();
             if (bytes == null) return ("404 Not Found", "text/plain", Encoding.UTF8.GetBytes("no preview image"));
             return ("200 OK", "image/jpeg", bytes);
         }
