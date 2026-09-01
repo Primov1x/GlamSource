@@ -14,8 +14,8 @@
     <IsPackable>false</IsPackable>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <NoWarn>$(NoWarn);CA1416</NoWarn>
-    <Version>0.0.0.268</Version>
-    <AssemblyVersion>0.0.0.268</AssemblyVersion>
+    <Version>0.0.0.269</Version>
+    <AssemblyVersion>0.0.0.269</AssemblyVersion>
     <IconUrl>https://raw.githubusercontent.com/Primov1x/GlamSource/main/images/icon.png</IconUrl>
     <InternalsVisibleTo>GlamSource.Mock</InternalsVisibleTo>
   </PropertyGroup>
@@ -25,10 +25,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Glamourer.Api" Version="2.8.2">
-      <PrivateAssets>none</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
     <!-- ponytail: version MUST match Dalamud's own Newtonsoft.Json exactly (13.0.4, see
          reference/Dalamud/Directory.Packages.props) and must NOT be copied to our output —
          Dalamud already loads its own copy, and any mismatched/duplicate copy makes our JObject
@@ -45,8 +41,15 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- ponytail: was PackageReference + this same explicit Reference at once — same double-
+         reference anti-pattern already fixed once for Newtonsoft.Json this session (a HintPath
+         pointing into $(NuGetPackageRoot) that PackageReference itself also has to resolve is
+         redundant, and PackageReference started failing NU1403 — real published nuget.org
+         Glamourer.Api 2.8.2 vs a locally rebuilt one with the same version number, unresolved after
+         a full cache purge). Direct reference straight to the local build's own DLL output instead
+         — no NuGet resolution for this one at all. -->
     <Reference Include="Glamourer.Api">
-      <HintPath>$(NuGetPackageRoot)glamourer.api\2.8.2\lib\net10.0-windows7.0\Glamourer.Api.dll</HintPath>
+      <HintPath>C:\Users\t.fritzen\Projects\Private\Glamourer.Api\bin\Release\Glamourer.Api.dll</HintPath>
     </Reference>
   </ItemGroup>
 

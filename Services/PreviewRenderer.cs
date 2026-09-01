@@ -742,35 +742,34 @@ public sealed unsafe class PreviewRenderer : IDisposable
             var wch = agent->CharaView.GetCharacter();
             if (wch != null)
             {
-                // Weapon path #13 (Brio's ActorSpawnService mechanism): the NATIVE full
-                // character-setup copy builds weapon draw objects through the real setup pipeline —
-                // the UI-level ModelData copy CharaView uses never does. Was ALSO guarded on
+                // Weapon path #16: same #13/#15 double-copy + LoadWeapon, but retried for several
+                // ticks instead of firing once — see _weaponSetupTicksRemaining's doc comment for
+                // the theory (CharaView's puppet has no normal world-actor streaming tick; a single
+                // shot may fire before the weapon resource is actually loaded). Was ALSO guarded on
                 // "mainhand draw object missing" — but the underlying client-object slot the game
                 // engine assigns our clone is REUSED across Release()/Initialize() cycles (and
                 // even plugin reloads: live dalamud.log showed zero "weapon path #13" lines despite
                 // repeated "Waffe" presses this whole session — stale non-null DrawObject from a
-                // much earlier test skipped the block every single time). _weaponSetupPending
-                // already gates this to run once per weapon-mode activation; the DrawObject-null
-                // check was redundant AND actively wrong. Removed.
-                if (weaponMode && _weaponSetupPending)
+                // much earlier test skipped the block every single time). That check was redundant
+                // AND actively wrong. Removed.
+                if (weaponMode && _weaponSetupTicksRemaining > 0)
                 {
                     var srcAddr = _sourceProvider?.Invoke() ?? nint.Zero;
                     if (srcAddr != nint.Zero)
                     {
-                        // Weapon path #15: #13 alone (CharacterSetup.CopyFromCharacter) DID make a
-                        // weapon actually render at least once (254, duplicated but visible). #14
-                        // alone (plain LoadWeapon, Glamourer-matched params) wrote perfectly
-                        // consistent DrawData — real model id, non-null DrawObject, hidden=false —
-                        // and STILL rendered nothing ("nicht zu sehen"). Key realization: vis=False
-                        // read the SAME in both cases, including when #13 visibly worked — that
-                        // flag has never correlated with actual rendering, stop trusting it.
-                        // Working theory: CharacterSetup.CopyFromCharacter is the piece that
-                        // triggers the clone's resource STREAMING for a slot it never drew before
-                        // (our CharaView puppet isn't a normal world object with its own streaming
-                        // ticking); LoadWeapon alone just writes fields into an already-loaded
-                        // pipeline, which a live player character has running but our puppet
-                        // doesn't. Combined: CharacterSetup copy fires the load, then Glamourer's
-                        // exact LoadWeapon params finalize the correct model into that pipeline.
+                        // #13 alone (CharacterSetup.CopyFromCharacter) DID make a weapon actually
+                        // render at least once (254, duplicated but visible). #14 alone (plain
+                        // LoadWeapon, Glamourer-matched params) wrote perfectly consistent DrawData —
+                        // real model id, non-null DrawObject, hidden=false — and STILL rendered
+                        // nothing ("nicht zu sehen"). Key realization: vis=False read the SAME in
+                        // both cases, including when #13 visibly worked — that flag has never
+                        // correlated with actual rendering, stop trusting it.
+                        // Working theory (#15): CharacterSetup.CopyFromCharacter is the piece that
+                        // triggers the clone's resource STREAMING for a slot it never drew before;
+                        // LoadWeapon alone just writes fields into an already-loaded pipeline, which
+                        // a live player character has running but our puppet doesn't. Combined:
+                        // CharacterSetup copy fires the load, then Glamourer's exact LoadWeapon
+                        // params finalize the correct model into that pipeline.
                         var src = (Character*)srcAddr;
                         wch->CharacterSetup.CopyFromCharacter(src, CharacterSetupContainer.CopyFlags.WeaponHiding);
                         wch->CharacterSetup.CopyFromCharacter(wch, CharacterSetupContainer.CopyFlags.None);
@@ -787,12 +786,13 @@ public sealed unsafe class PreviewRenderer : IDisposable
                             if (model.Id != 0)
                                 wch->DrawData.LoadWeapon(systemSlot, model, 1, 0, 1, 0, false);
                         }
-                        _log.Info($"[PreviewRenderer] weapon path #15: CharacterSetup copy + LoadWeapon (Glamourer-matched) applied to clone, main={src->DrawData.Weapon(DrawDataContainer.WeaponSlot.MainHand).ModelId.Id} off={src->DrawData.Weapon(DrawDataContainer.WeaponSlot.OffHand).ModelId.Id}");
-                        // stance, ONE-SHOT only: per-tick forcing (246) made the game re-evaluate
-                        // the weapon attach every frame — duplicate weapon, floating, no anim.
-                        // The thaw window SetWeaponDrawn opened lets the transition play out.
-                        if (_weaponDrawn) wch->Timeline.Flags3 |= 0x40; // bit6 = IsWeaponDrawn
-                        _weaponSetupPending = false;
+                        _weaponSetupTicksRemaining--;
+                        _log.Info($"[PreviewRenderer] weapon path #16: CharacterSetup copy + LoadWeapon applied to clone (ticksRemaining={_weaponSetupTicksRemaining}), main={src->DrawData.Weapon(DrawDataContainer.WeaponSlot.MainHand).ModelId.Id} off={src->DrawData.Weapon(DrawDataContainer.WeaponSlot.OffHand).ModelId.Id}");
+                        // stance, ONE-SHOT only regardless of the copy-retry window: per-tick
+                        // forcing (246) made the game re-evaluate the weapon attach every frame —
+                        // duplicate weapon, floating, no anim. The thaw window SetWeaponDrawn opened
+                        // lets the transition play out.
+                        if (_weaponDrawn && _weaponStancePending) { wch->Timeline.Flags3 |= 0x40; _weaponStancePending = false; } // bit6 = IsWeaponDrawn
                     }
                 }
                 if (weaponMode)
@@ -1145,8 +1145,19 @@ public sealed unsafe class PreviewRenderer : IDisposable
     // SetModelData (weapons ignored), and agent TryOn() opened the real Fitting Room window.
     private bool _weaponLoadPending;
 
-    // weapon path #13: one-shot native CharacterSetup copy onto the clone (Brio spawn mechanism)
-    private bool _weaponSetupPending;
+    // weapon path #13/#15: native CharacterSetup copy onto the clone (Brio spawn mechanism)
+    // ponytail: path #16 — retry for several ticks instead of once. Brio's own reference
+    // (ActorSpawnService.CloneCharacter) does the exact same double-copy, but onto a REAL spawned
+    // world actor (ObjectTable member, own per-frame update/streaming) — CharaView's internal
+    // Character has no such tick. Theory: whatever partial resource streaming DOES happen on the
+    // puppet needs more than one frame to catch up; a single-shot copy may fire before the weapon
+    // resource is actually loaded. 15 ticks matches this codebase's existing "defer N ticks" pattern
+    // (see the post-Release reinit delay). Genuinely untested live — see doku/character-preview.md.
+    private int _weaponSetupTicksRemaining;
+    // stance bit (Timeline.Flags3 |= 0x40) stays one-shot regardless of the copy retry window —
+    // forcing it every tick made the engine re-evaluate the weapon attach every frame (duplicate,
+    // floating, no animation, see path #15's own comment below).
+    private bool _weaponStancePending;
 
     /// <summary>Force weapon draw-object visibility per the clone's actual equipped models.
     /// Live-verified (/api/debug/weaponstate) the force done only BEFORE CharaView.Update() gets
@@ -1208,7 +1219,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
         // mid-emote played the draw animation INSIDE the emote pose — clear the emote back to
         // idle first, the stance change then runs from a clean base
         if (_emoteTimelineId != 0) { _emoteClearPending = true; _emoteTimelineId = 0; _emotePlayPending = false; }
-        if (drawn) _weaponSetupPending = true; // weapon path #13, applied next Tick
+        if (drawn) { _weaponSetupTicksRemaining = 15; _weaponStancePending = true; } // weapon path #16, retried over the next 15 Ticks
         // NOTE: the LoadWeapon-on-clone path and the DoUpdate shutdown are gone — they were
         // compensations built while a per-tick DoUpdate=true bug (fixed in 234) wiped _items every
         // frame. With _items surviving, the weapon is already IN _items slot 0 via the gear seed;
@@ -2162,7 +2173,8 @@ public sealed unsafe class PreviewRenderer : IDisposable
             // immediately ("selbst zurücksetzen nicht": weapons persisted through reset).
             _weaponDrawn = false;
             _weaponOnly = false;
-            _weaponSetupPending = false;
+            _weaponSetupTicksRemaining = 0;
+            _weaponStancePending = false;
         }
     }
 
