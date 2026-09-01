@@ -22,6 +22,13 @@ public sealed class ItemImageService : IItemImageService, IDisposable
     private DateTime _lastRequestTime = DateTime.MinValue;
     private static readonly TimeSpan MinRequestInterval = TimeSpan.FromSeconds(1);
 
+    // ponytail: both catches used to swallow silently — a live report of "keine Bilder" with no
+    // diagnostic anywhere. Most likely cause: the GAME PROCESS itself needs outbound HTTPS to
+    // ffxiv.consolegameswiki.com (this HttpClient runs in-process, not the browser/CEF), which a
+    // firewall/AV can block per-executable while the game's own traffic to SE stays whitelisted.
+    // Exposed via /api/debug/imageerror so a failure is at least checkable after the fact.
+    public string? LastError { get; private set; }
+
     // the wiki's infobox "worn" screenshot is a JPEG named "<Item Name>_Male.jpeg" / "_Female.jpeg"
     // (280px+ wide thumbnail); icons/banners/class-frame decorations are PNGs under 100px and don't
     // match this. Verified against Abes Jacket: real preview is "Abes_Jacket_Male.jpeg" @ 280px,
@@ -63,8 +70,9 @@ public sealed class ItemImageService : IItemImageService, IDisposable
             _cache[itemId] = best;
             return best;
         }
-        catch
+        catch (Exception ex)
         {
+            LastError = $"{DateTime.Now:HH:mm:ss} url-lookup '{itemName}': {ex.Message}";
             _cache[itemId] = null;
             return null;
         }
@@ -83,8 +91,9 @@ public sealed class ItemImageService : IItemImageService, IDisposable
             await RateLimit();
             return await _httpClient.GetByteArrayAsync(url);
         }
-        catch
+        catch (Exception ex)
         {
+            LastError = $"{DateTime.Now:HH:mm:ss} image-fetch '{itemName}': {ex.Message}";
             return null;
         }
     }

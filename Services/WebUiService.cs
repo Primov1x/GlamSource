@@ -796,6 +796,11 @@ public sealed class WebUiService : IDisposable
             return Json(new { dump });
         }
 
+        if (method == "GET" && path == "/api/debug/imageerror")
+        {
+            return Json(new { lastError = _imageService.LastError });
+        }
+
         if (method == "POST" && path == "/api/debug/seed")
         {
             var report = _framework.RunOnFrameworkThread(() => _shell.PreviewWindow?.SeedSelfEquipmentOnceProbe() ?? "no preview window").GetAwaiter().GetResult();
@@ -974,6 +979,7 @@ public sealed class WebUiService : IDisposable
             // the overlay itself. Two separate commands (on/off), not a toggle, so repeated calls
             // from a flaky client can't desync from the real state.
             var locked = query["locked"] == "true";
+            Plugin.BwLockJustToggled = true; // bypass the pin throttle once — see field's doc comment
             _framework.RunOnFrameworkThread(() =>
                 Plugin.CommandManager.ProcessCommand($"/bw overlay glamsource locked {(locked ? "on" : "off")}"));
             return Json(new { ok = true });

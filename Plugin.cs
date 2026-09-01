@@ -287,12 +287,21 @@ public class Plugin : IAsyncDalamudPlugin
     private long _bwLookupStartedMs;
     private bool _bwOverlayMissingWarned;
     private const float BwOverlayWidth = 1190f;
-    private const float BwOverlayHeight = 845f; // titlebar + nav + 660px panels + toolbar + paddings
+    // titlebar + nav + 660px panels + toolbar + paddings + #recentsFooter (label + single-row
+    // horizontal-scroll chip strip, added after 845 was tuned — "größe muss nochmal anpassen,
+    // weil sich sachen ja verschoben haben": recentsFooter sits outside the scrollable #charslots
+    // column, so it adds real page height instead of scrolling internally)
+    private const float BwOverlayHeight = 925f;
     private const float BwOverlayMinHeight = 42f; // just the titlebar
     // set by the web UI's minimize button (WebUiService /api/action/overlay/minimize) — the page
     // collapses its content AND the actual ImGui window shrinks to the title bar
     public static volatile bool BwOverlayMinimized;
     public static volatile bool BwPinKilled; // stutter-bisect switch for the per-frame SetWindowSize
+    // set by the web UI's lock button (WebUiService /api/action/overlay/lock) — bypasses the 2s
+    // pin throttle below for one immediate re-pin. Without this, unlocking let Browsingway's own
+    // persisted ImGui window size flash through for up to 2s before our next scheduled pin call
+    // corrected it ("wenn man das lock wegmacht ... nicht umspringen auf was anderes").
+    public static volatile bool BwLockJustToggled;
 
     private long _lastBwPinMs;
     private bool _lastBwMinimized;
@@ -305,9 +314,11 @@ public class Plugin : IAsyncDalamudPlugin
         // actual culprit that day was a sick Browsingway CEF process, cured by toggling
         // Browsingway off/on — documented in doku/character-preview.md).
         var minimizedChanged = BwOverlayMinimized != _lastBwMinimized;
-        if (!minimizedChanged && Environment.TickCount64 - _lastBwPinMs < 2000) return;
+        var bypassThrottle = minimizedChanged || BwLockJustToggled;
+        if (!bypassThrottle && Environment.TickCount64 - _lastBwPinMs < 2000) return;
         _lastBwPinMs = Environment.TickCount64;
         _lastBwMinimized = BwOverlayMinimized;
+        BwLockJustToggled = false;
         if (_bwWindowId == null)
         {
             if (_bwWindowIdRetryFrames-- % 120 != 0) return; // look up at most every ~2s
