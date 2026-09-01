@@ -762,12 +762,23 @@ public sealed unsafe class PreviewRenderer : IDisposable
                     // bypasses .NET exception handling entirely — so the only real defense is not
                     // touching the struct while it's mid-transition. CharacterLoaded is the same
                     // flag DoInitialize's own auto-freeze already gates on for the same reason.
+                    // live-checked: this fired on essentially every "Waffe" press ("aborted,
+                    // CharaView not CharacterLoaded" 3x in a row) — CharacterLoaded apparently
+                    // takes longer than the 15-tick (~0.25s) retry window to become true after a
+                    // fresh Initialize, so zeroing the whole retry budget on the FIRST not-loaded
+                    // tick made every attempt this session abort permanently (the feature just
+                    // silently stopped working). Skip THIS tick only — don't burn a retry — and
+                    // wait it out under a separate, longer overall cap instead.
                     if (!agent->CharaView.CharacterLoaded)
                     {
-                        _weaponSetupTicksRemaining = 0;
-                        _log.Warning("[PreviewRenderer] weapon path #16: aborted, CharaView not CharacterLoaded (avoiding native op on a mid-transition clone)");
+                        if (--_weaponSetupWaitFrames <= 0)
+                        {
+                            _weaponSetupTicksRemaining = 0;
+                            _log.Warning("[PreviewRenderer] weapon path #16: gave up after 5s, CharaView never reported CharacterLoaded");
+                        }
+                        goto SkipWeaponSetupThisTick;
                     }
-                    var srcAddr = _weaponSetupTicksRemaining > 0 ? (_sourceProvider?.Invoke() ?? nint.Zero) : nint.Zero;
+                    var srcAddr = _sourceProvider?.Invoke() ?? nint.Zero;
                     if (srcAddr != nint.Zero)
                     {
                         // #13 alone (CharacterSetup.CopyFromCharacter) DID make a weapon actually
@@ -807,6 +818,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
                         // lets the transition play out.
                         if (_weaponDrawn && _weaponStancePending) { wch->Timeline.Flags3 |= 0x40; _weaponStancePending = false; } // bit6 = IsWeaponDrawn
                     }
+                    SkipWeaponSetupThisTick: ;
                 }
                 if (weaponMode)
                 {
@@ -1167,6 +1179,9 @@ public sealed unsafe class PreviewRenderer : IDisposable
     // resource is actually loaded. 15 ticks matches this codebase's existing "defer N ticks" pattern
     // (see the post-Release reinit delay). Genuinely untested live — see doku/character-preview.md.
     private int _weaponSetupTicksRemaining;
+    // separate overall cap while waiting for CharacterLoaded — doesn't consume a retry attempt,
+    // just bounds how long we'll wait before giving up entirely (~5s at 60fps)
+    private int _weaponSetupWaitFrames;
     // stance bit (Timeline.Flags3 |= 0x40) stays one-shot regardless of the copy retry window —
     // forcing it every tick made the engine re-evaluate the weapon attach every frame (duplicate,
     // floating, no animation, see path #15's own comment below).
@@ -1232,7 +1247,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
         // mid-emote played the draw animation INSIDE the emote pose — clear the emote back to
         // idle first, the stance change then runs from a clean base
         if (_emoteTimelineId != 0) { _emoteClearPending = true; _emoteTimelineId = 0; _emotePlayPending = false; }
-        if (drawn) { _weaponSetupTicksRemaining = 15; _weaponStancePending = true; } // weapon path #16, retried over the next 15 Ticks
+        if (drawn) { _weaponSetupTicksRemaining = 15; _weaponSetupWaitFrames = 300; _weaponStancePending = true; } // weapon path #16, retried over the next 15 Ticks (once CharaView reports loaded), ~5s overall cap
         // NOTE: the LoadWeapon-on-clone path and the DoUpdate shutdown are gone — they were
         // compensations built while a per-tick DoUpdate=true bug (fixed in 234) wiped _items every
         // frame. With _items surviving, the weapon is already IN _items slot 0 via the gear seed;
@@ -2187,6 +2202,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
             _weaponDrawn = false;
             _weaponOnly = false;
             _weaponSetupTicksRemaining = 0;
+            _weaponSetupWaitFrames = 0;
             _weaponStancePending = false;
         }
     }
