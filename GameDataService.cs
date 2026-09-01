@@ -160,6 +160,15 @@ public unsafe class GameDataService : IGlamourService
         var result = new List<EquipmentSlot>();
         var itemSheet = _dataManager.GetExcelSheet<Item>();
 
+        // "mein aktuelles gear hat die hose nicht gefärbt, obwohl target das hat" — InventoryManager's
+        // EquippedItems.Stains is the ITEM's OWN dye slot (what you manually dyed it); Glamourer (and
+        // similar) can override the VISIBLE stain without ever touching that. GetDrawDataEquipment
+        // (used for targets/others) reads DrawData instead — the actual rendered appearance, always
+        // accurate. Item identity/glamour-link still comes from the raw inventory read below (draw
+        // data has no such concept, it only shows the final visible item); only the stain gets
+        // overridden with the live rendered one when available.
+        var liveStains = GetLiveEquipmentStains();
+
         for (var i = 0; i < container->Size; i++)
         {
             var item = container->Items[i];
@@ -174,8 +183,44 @@ public unsafe class GameDataService : IGlamourService
             string? glamourName = glamourId.HasValue
                 ? ResolveItemName(itemSheet, glamourId.Value) : null;
 
+            var (stain0, stain1) = liveStains.TryGetValue(slotType.Value, out var live) ? live : (item.Stains[0], item.Stains[1]);
+
             // ponytail: 2 stains per slot since API12
-            result.Add(CreateSlot(slotType.Value, itemId, itemName, glamourId, glamourName, item.Stains[0], item.Stains[1]));
+            result.Add(CreateSlot(slotType.Value, itemId, itemName, glamourId, glamourName, stain0, stain1));
+        }
+
+        return result;
+    }
+
+    /// <summary>LocalPlayer's live DrawData equipment stains, keyed by slot — the actually rendered
+    /// dye (Glamourer-accurate), separate from CreateSlot's item-identity resolution above.</summary>
+    private unsafe Dictionary<EquipmentSlotType, (byte, byte)> GetLiveEquipmentStains()
+    {
+        var result = new Dictionary<EquipmentSlotType, (byte, byte)>();
+        if (_objectTable.LocalPlayer is not { } localPlayer) return result;
+        var charPtr = (Character*)localPlayer.Address;
+        if (charPtr == null || charPtr->DrawData.OwnerObject == null) return result;
+
+        for (var i = 0; i < 10; i++)
+        {
+            var slotType = i switch
+            {
+                0 => EquipmentSlotType.Head,
+                1 => EquipmentSlotType.Body,
+                2 => EquipmentSlotType.Hands,
+                3 => EquipmentSlotType.Legs,
+                4 => EquipmentSlotType.Feet,
+                5 => EquipmentSlotType.Earrings,
+                6 => EquipmentSlotType.Necklace,
+                7 => EquipmentSlotType.Bracelets,
+                8 => EquipmentSlotType.RingRight,
+                9 => EquipmentSlotType.RingLeft,
+                _ => (EquipmentSlotType?)null
+            };
+            if (slotType == null) continue;
+            var eqData = charPtr->DrawData.Equipment((DrawDataContainer.EquipmentSlot)i);
+            if (eqData.Id == 0) continue;
+            result[slotType.Value] = (eqData.Stain0, eqData.Stain1);
         }
 
         return result;
