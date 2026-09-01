@@ -161,6 +161,11 @@ public sealed class ItemDetailService : IItemDetailService
     // Name-only fallback for NPCs with no location data
     private readonly Dictionary<uint, string> _shopNpcNameOnly = new();
 
+    // "kriegen wir das immer aktuell?" — live Gamer Escape lookup, replaces the old one-time
+    // MogstationItems.csv scrape for freshness; the CSV stays as a fallback (older items the wiki
+    // itself may have since delisted/renamed, or a transient fetch failure this session).
+    private readonly MogStationLiveService _mogstationLive = new(new HttpClient());
+
     public ItemDetailService(GameData gameData)
     {
         _gameData = gameData ?? throw new ArgumentNullException(nameof(gameData));
@@ -653,8 +658,19 @@ public sealed class ItemDetailService : IItemDetailService
             }
         }
 
-        // 8. Mogstation â€” always shown additively alongside any other detected sources
-        if (_mogstationItems.TryGetValue(itemId, out var shopUrl))
+        // 8. Mogstation â€” always shown additively alongside any other detected sources. Live
+        // lookup first (fresh, real per-item wiki link); static CSV as fallback (older items, or
+        // this session's fetch hasn't completed/succeeded yet — see MogStationLiveService).
+        var englishName = GetEnglishName(itemId) ?? item.Name.ToString();
+        if (_mogstationLive.TryGetShopUrl(englishName, out var liveShopUrl))
+        {
+            results.Add(new ItemSourceDetail(
+                ItemSourceType.MogStation,
+                "Available for purchase on the Mog Station.",
+                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                ShopUrl: liveShopUrl));
+        }
+        else if (_mogstationItems.TryGetValue(itemId, out var shopUrl))
         {
             results.Add(new ItemSourceDetail(
                 ItemSourceType.MogStation,
