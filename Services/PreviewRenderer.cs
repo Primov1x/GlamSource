@@ -851,8 +851,33 @@ public sealed unsafe class PreviewRenderer : IDisposable
                             if (model.Id != 0)
                                 wch->DrawData.LoadWeapon(systemSlot, model, 1, 0, 1, 0, false);
                         }
+                        // Weapon path #17: live-verified via /api/debug/weaponstate — the weapon
+                        // object exists (Weapon* == DrawObject*, Create/Initialize genuinely ran)
+                        // and AttachTarget correctly points at this clone's own body, but the
+                        // body's OWN ChildObject/sibling chain never includes it (walked 6 hops,
+                        // absent both times). clib's Object.cs literally comments "for humans this
+                        // is a weapon" on ChildObject — AttachTarget is a one-way pointer (weapon
+                        // knows its parent), the scene graph's OTHER direction (parent knows this
+                        // child) was simply never linked. A real player's native equip flow does
+                        // this splice as part of the process; our LoadWeapon/CharacterSetup calls
+                        // apparently stop short of it. AddChild() is the engine's own native
+                        // function for exactly this (Object.cs, real member function, not guessed) —
+                        // safer than manual sibling-pointer splicing.
+                        {
+                            var bodyObj = (FFXIVClientStructs.FFXIV.Client.Graphics.Scene.Object*)wch->GameObject.DrawObject;
+                            if (bodyObj != null)
+                            {
+                                for (var i = 0; i < 3; i++)
+                                {
+                                    ref var wd = ref wch->DrawData.Weapon((DrawDataContainer.WeaponSlot)i);
+                                    if (wd.ModelId.Id == 0) continue;
+                                    var weaponObj = *(FFXIVClientStructs.FFXIV.Client.Graphics.Scene.Object**)((byte*)Unsafe.AsPointer(ref wd) + 0x08);
+                                    if (weaponObj != null) bodyObj->AddChild(weaponObj);
+                                }
+                            }
+                        }
                         _weaponSetupTicksRemaining--;
-                        _log.Info($"[PreviewRenderer] weapon path #16: CharacterSetup copy + LoadWeapon applied to clone (ticksRemaining={_weaponSetupTicksRemaining}), main={src->DrawData.Weapon(DrawDataContainer.WeaponSlot.MainHand).ModelId.Id} off={src->DrawData.Weapon(DrawDataContainer.WeaponSlot.OffHand).ModelId.Id}");
+                        _log.Info($"[PreviewRenderer] weapon path #17: CharacterSetup copy + LoadWeapon + AddChild applied to clone (ticksRemaining={_weaponSetupTicksRemaining}), main={src->DrawData.Weapon(DrawDataContainer.WeaponSlot.MainHand).ModelId.Id} off={src->DrawData.Weapon(DrawDataContainer.WeaponSlot.OffHand).ModelId.Id}");
                         // stance, ONE-SHOT only regardless of the copy-retry window: per-tick
                         // forcing (246) made the game re-evaluate the weapon attach every frame —
                         // duplicate weapon, floating, no anim. The thaw window SetWeaponDrawn opened
