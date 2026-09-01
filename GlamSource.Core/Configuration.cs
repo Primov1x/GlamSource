@@ -31,4 +31,8 @@ public class Configuration
     // default: raw COM interop on a live game texture, riskier than the rest of GlamSource. See
     // Services/PreviewRenderer.cs PumpWebCapture and Services/WebUiService.cs StreamPreviewMjpeg.
     public bool WebUiLive3DPreview { get; set; } = false;
+
+    // "wenn ich in examine 'item source' klicke, soll es im webgui aufgehen anstatt im imgui" —
+    // opt-in since it depends on WebUiEnabled+the Browsingway overlay actually being set up.
+    public bool ContextMenuOpensInWebUi { get; set; } = false;
 }

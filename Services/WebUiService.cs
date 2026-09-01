@@ -373,6 +373,7 @@ public sealed class WebUiService : IDisposable
                 _configuration.WebUiAutoOverlay,
                 _configuration.WebUiLive3DPreview,
                 _configuration.MountUpDistance,
+                _configuration.ContextMenuOpensInWebUi,
             });
         }
 
@@ -394,6 +395,13 @@ public sealed class WebUiService : IDisposable
         if (method == "POST" && path == "/api/action/settings/autooverlay" && bool.TryParse(query["value"], out var awo))
         {
             _configuration.WebUiAutoOverlay = awo;
+            _configuration.Save();
+            return Json(new { ok = true });
+        }
+
+        if (method == "POST" && path == "/api/action/settings/contextmenuweb" && bool.TryParse(query["value"], out var cmw))
+        {
+            _configuration.ContextMenuOpensInWebUi = cmw;
             _configuration.Save();
             return Json(new { ok = true });
         }

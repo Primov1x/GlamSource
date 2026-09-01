@@ -153,7 +153,22 @@ public class Plugin : IAsyncDalamudPlugin
 
         contextMenuService = new ContextMenuService(ContextMenu, _gameGui, itemId =>
         {
-            itemDetailWindow.ShowItem(itemId);
+            // "wenn ich in examine 'item source' klicke, soll es im webgui aufgehen anstatt im
+            // imgui" — opt-in setting; falls back to ImGui if the web UI itself isn't even on
+            // (opening nothing would be worse than the old behavior).
+            if (Configuration.ContextMenuOpensInWebUi && Configuration.WebUiEnabled)
+            {
+                // the web page already switches to Suche + opens the item on its own poll (see
+                // WebUiPage's pendingitem interval) — just make sure the overlay is actually
+                // VISIBLE, since Browsingway's own hidden/minimized state is otherwise entirely
+                // user/hotkey-managed and the push would silently land in a hidden overlay.
+                BwOverlayMinimized = false;
+                CommandManager.ProcessCommand("/bw overlay glamsource hidden off");
+            }
+            else
+            {
+                itemDetailWindow.ShowItem(itemId);
+            }
             // ponytail: webUiService is constructed further below — fine, this only runs when the
             // user actually clicks the context menu entry, long after the constructor finishes.
             webUiService?.PushItemToWeb(itemId);
