@@ -501,12 +501,20 @@ public sealed class ItemDetailService : IItemDetailService
                 null, null, null, null, null, null, null, null, null));
         }
 
-        // 6. ItemSupplement (Loot, Gardening, PoD, etc. â€” NOT Desynth/Reduction)
+        // 6. ItemSupplement (Loot, Gardening, PoD, etc. â€” NOT Desynth/Reduction/Coffer)
+        // Coffer excluded here too: it falls into the switch's default branch below and builds
+        // "Coffer: {name}" (ItemSourceType.Other) — the EXACT same text 6b builds properly typed
+        // as ItemSourceType.Coffer from the same underlying data (_itemToCofferMap, built from
+        // this same CSV filtered to Source==Coffer). Two source-type-different cards, identical
+        // wording, for the same coffer — a real duplicate, not the trial/coffer MERGE case above
+        // (that one is two genuinely different descriptions co-occurring; this was one description
+        // rendered twice).
         if (_itemSupplementCache.TryGetValue(itemId, out var supplements))
         {
             var relevant = supplements
                 .Where(s => s.ItemSupplementSource != ItemSupplementSource.Desynth
-                         && s.ItemSupplementSource != ItemSupplementSource.Reduction)
+                         && s.ItemSupplementSource != ItemSupplementSource.Reduction
+                         && s.ItemSupplementSource != ItemSupplementSource.Coffer)
                 .ToList();
             foreach (var supp in relevant)
             {
