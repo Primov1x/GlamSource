@@ -32,6 +32,7 @@ public class Plugin : IAsyncDalamudPlugin
     [PluginService] internal static ICondition Condition { get; private set; } = null!;
     [PluginService] internal static ISigScanner SigScanner { get; private set; } = null!;
     [PluginService] internal static IGameInteropProvider GameInterop { get; private set; } = null!;
+    [PluginService] internal static IChatGui ChatGui { get; private set; } = null!;
 
 
     private readonly IDalamudPluginInterface _pluginInterface;
@@ -283,6 +284,8 @@ public class Plugin : IAsyncDalamudPlugin
     // pin it can be MOVED while unlocked but never resized away from the content.
     private string? _bwWindowId;
     private int _bwWindowIdRetryFrames = 600;
+    private long _bwLookupStartedMs;
+    private bool _bwOverlayMissingWarned;
     private const float BwOverlayWidth = 1190f;
     private const float BwOverlayHeight = 845f; // titlebar + nav + 660px panels + toolbar + paddings
     private const float BwOverlayMinHeight = 42f; // just the titlebar
@@ -322,7 +325,27 @@ public class Plugin : IAsyncDalamudPlugin
                 }
             }
             catch (Exception ex) { _log.Warning($"[Plugin] Browsingway window id lookup failed: {ex.Message}"); }
-            if (_bwWindowId == null) return;
+            if (_bwWindowId == null)
+            {
+                // ponytail: GlamSource never CREATES the Browsingway overlay itself — every
+                // "/bw overlay glamsource ..." call above assumes one named "glamsource" already
+                // exists. That's always been a manual, one-time step in Browsingway's own settings
+                // UI (Dalamud has no chat command to add one — checked Browsingway's source,
+                // Settings.HandleOverlayCommand only edits EXISTING overlays), just never
+                // documented anywhere. Live report: "bei ihr wird kein overlay angelegt" — a fresh
+                // install with no matching overlay retries silently forever. One clear chat
+                // message after 15s of failed lookups, not a silent no-op.
+                if (_bwLookupStartedMs == 0) _bwLookupStartedMs = Environment.TickCount64;
+                else if (!_bwOverlayMissingWarned && Environment.TickCount64 - _bwLookupStartedMs > 15_000)
+                {
+                    _bwOverlayMissingWarned = true;
+                    ChatGui.PrintError(
+                        "[GlamSource] Kein Browsingway-Overlay gefunden. Einmalig manuell einrichten: " +
+                        "Browsingway-Einstellungen öffnen (/bw config) -> Overlay hinzufügen -> " +
+                        "Name \"glamsource\", URL \"http://127.0.0.1:23424/\".");
+                }
+                return;
+            }
         }
         var h = BwOverlayMinimized ? BwOverlayMinHeight : BwOverlayHeight;
         Dalamud.Bindings.ImGui.ImGui.SetWindowSize(_bwWindowId, new System.Numerics.Vector2(BwOverlayWidth, h), Dalamud.Bindings.ImGui.ImGuiCond.Always);
