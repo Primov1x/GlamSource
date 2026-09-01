@@ -526,6 +526,7 @@ async function openItem(id){
   updateOverlayCompactness();
   const d=await fetch('/api/item/'+id).then(r=>r.ok?r.json():null);
   $('#detail').innerHTML=d?buildItemHtml(d):'<div class="empty">Nicht gefunden.</div>';
+  if(d)annotateInventory($('#detail'));
 }
 
 // group: one or more sources sharing the same description+cost (see buildItemHtml) — one card,
@@ -548,11 +549,37 @@ function renderSource(group,itemId){
     if(list&&list.length){
       h+=`<div style="margin-top:8px;color:var(--muted);font-size:12px">${key==='materials'?'Materials':'Cost'}</div>`;
       for(const m of list){
-        h+=`<div class="matrow">${img(m.iconId,22)}<span>${esc(m.name)||(m.itemId===0?'Gil':'#'+m.itemId)} × ${m.count.toLocaleString()}</span></div>`;
+        // data-item + data-need: annotateInventory() fills in have/where AFTER this HTML lands in
+        // the DOM (needs an async /api/inventory fetch per item — can't do that synchronously here).
+        h+=`<div class="matrow" data-item="${m.itemId}" data-need="${m.count}">${img(m.iconId,22)}<span class="matqty">${esc(m.name)||(m.itemId===0?'Gil':'#'+m.itemId)} × ${m.count.toLocaleString()}</span></div>`;
       }
     }
   }
   return h+'</div>';
+}
+
+// "die währung in grün" (ImGui already colors have>=need) + "man sieht welches mat wo liegt" — Web
+// UI had neither. Runs after buildItemHtml's innerHTML lands: fetches ownership per unique item id,
+// colors the qty text like ImGui (green=enough, muted=short), retainer breakdown goes in the title
+// tooltip (same info ImGui shows on hover, no extra UI needed for it).
+async function annotateInventory(container){
+  const rows=[...container.querySelectorAll('.matrow[data-item]')];
+  const ids=[...new Set(rows.map(r=>r.dataset.item).filter(id=>id!=='0'))];
+  const results=await Promise.all(ids.map(id=>fetch('/api/inventory/'+id).then(r=>r.ok?r.json():null).catch(()=>null)));
+  const byId=Object.fromEntries(ids.map((id,i)=>[id,results[i]]));
+  for(const row of rows){
+    const inv=byId[row.dataset.item];
+    if(!inv)continue;
+    const need=parseInt(row.dataset.need,10);
+    const sufficient=inv.total>=need;
+    const span=row.querySelector('.matqty');
+    span.style.color=sufficient?'var(--success)':'var(--muted)';
+    const parts=[];
+    if(inv.bags)parts.push(`Bags: ${inv.bags}`);
+    if(inv.saddlebag)parts.push(`Saddlebag: ${inv.saddlebag}`);
+    for(const r of inv.retainers??[])parts.push(`${r.name}: ${r.count}`);
+    if(parts.length)row.title=parts.join('\n');
+  }
 }
 
 function npcRow(s){
@@ -609,6 +636,7 @@ async function showItemPanel(id){
   box.innerHTML='<div class="empty"><span class="spinner"></span>Loading…</div>';
   const d=await fetch('/api/item/'+id).then(r=>r.ok?r.json():null);
   box.innerHTML=d?buildItemHtml(d,'showItemPanel'):'<div class="empty">Nicht gefunden.</div>';
+  if(d)annotateInventory(box);
 }
 
 async function post(url){await fetch(url,{method:'POST'})}

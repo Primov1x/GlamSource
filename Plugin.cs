@@ -262,6 +262,7 @@ public class Plugin : IAsyncDalamudPlugin
     }
 
     private int _recentScanFrame;
+    private int _retainerCacheFrame;
 
     // ponytail: Browsingway persists its own "Hidden" flag across game restarts — if a prior
     // session left the overlay visible when the game closed, Browsingway shows it again on every
@@ -373,6 +374,13 @@ public class Plugin : IAsyncDalamudPlugin
         // native window closed (web-UI-only usage) it simply never ran. Every tick now, independent
         // of any window's visibility — cheap (a few field reads unless the target actually changed).
         if (Configuration.WebUiLive3DPreview) shellWindow.SyncPreviewForWeb();
+
+        // "man sieht welches mat wo liegt und wie viel" — RetainerManager only ever loads ONE
+        // retainer's inventory at a time (whichever's open at the bell); snapshot it into
+        // RetainerInventoryCache the moment it's open so each retainer's contents stay browsable
+        // for the rest of the session, not just while that specific retainer window is up. Cheap
+        // no-op call when no retainer is open — every ~1s is plenty, this isn't time-critical.
+        if (++_retainerCacheFrame >= 60) { _retainerCacheFrame = 0; RetainerInventoryCache.UpdateFromCurrentRetainer(); }
 
         if (!_bwHideDone)
         {

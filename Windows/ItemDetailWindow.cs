@@ -18,6 +18,7 @@ using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using GlamSource.Core;
+using GlamSource.Services;
 using Lumina.Excel.Sheets;
 
 namespace GlamSource.Windows;
@@ -1301,7 +1302,11 @@ public class ItemDetailWindow : Window, IDisposable
             if (im == null)
                 return 0;
 
-            int total = 0;
+            // RetainerPageN removed from this live scan — RetainerInventoryCache (added below)
+            // already covers the currently-open retainer (Plugin's Framework tick keeps it fresh)
+            // PLUS every other retainer visited this session; scanning here too would double-count
+            // whichever retainer happens to be open right now.
+            int total = RetainerInventoryCache.GetTotal(itemId);
             var containers = new[]
             {
                 InventoryType.Inventory1,
@@ -1310,13 +1315,6 @@ public class ItemDetailWindow : Window, IDisposable
                 InventoryType.Inventory4,
                 InventoryType.Crystals,
                 InventoryType.Currency,
-                InventoryType.RetainerPage1,
-                InventoryType.RetainerPage2,
-                InventoryType.RetainerPage3,
-                InventoryType.RetainerPage4,
-                InventoryType.RetainerPage5,
-                InventoryType.RetainerPage6,
-                InventoryType.RetainerPage7,
                 InventoryType.SaddleBag1,
                 InventoryType.SaddleBag2,
             };
@@ -1367,7 +1365,7 @@ public class ItemDetailWindow : Window, IDisposable
             if (im == null)
                 return breakdown;
 
-            int bags = 0, retainers = 0, saddlebag = 0;
+            int bags = 0, saddlebag = 0;
 
             void Scan(InventoryType type, ref int accumulator)
             {
@@ -1387,19 +1385,16 @@ public class ItemDetailWindow : Window, IDisposable
             Scan(InventoryType.Inventory4, ref bags);
             Scan(InventoryType.Crystals, ref bags);
             Scan(InventoryType.Currency, ref bags);
-            Scan(InventoryType.RetainerPage1, ref retainers);
-            Scan(InventoryType.RetainerPage2, ref retainers);
-            Scan(InventoryType.RetainerPage3, ref retainers);
-            Scan(InventoryType.RetainerPage4, ref retainers);
-            Scan(InventoryType.RetainerPage5, ref retainers);
-            Scan(InventoryType.RetainerPage6, ref retainers);
-            Scan(InventoryType.RetainerPage7, ref retainers);
             Scan(InventoryType.SaddleBag1, ref saddlebag);
             Scan(InventoryType.SaddleBag2, ref saddlebag);
 
             if (bags > 0) breakdown["Bags"] = bags;
-            if (retainers > 0) breakdown["Retainers"] = retainers;
             if (saddlebag > 0) breakdown["Saddlebag"] = saddlebag;
+            // "man sieht welches mat wo liegt" — RetainerInventoryCache snapshots EVERY retainer
+            // visited this session (persists after you close its window), not just whichever one's
+            // currently open — a real per-name breakdown instead of one lumped "Retainers: N".
+            foreach (var (retainerName, count) in RetainerInventoryCache.GetHolders(itemId))
+                breakdown[retainerName] = count;
             return breakdown;
         }
         catch

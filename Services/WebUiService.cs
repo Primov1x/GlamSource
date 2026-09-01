@@ -450,6 +450,22 @@ public sealed class WebUiService : IDisposable
             return detail == null ? Json(new { error = "not found" }, "404 Not Found") : Json(detail);
         }
 
+        if (method == "GET" && path.StartsWith("/api/inventory/") && uint.TryParse(path["/api/inventory/".Length..], out var invItemId))
+        {
+            // "die währung in grün" (ImGui already colors cost rows by have>=need) + "man sieht
+            // welches mat wo liegt" — Web UI had neither: costs/materials always rendered plain,
+            // no ownership data at all. RetainerInventoryCache.GetOwnedBreakdown needs native
+            // InventoryManager reads, framework thread only.
+            var b = _framework.RunOnFrameworkThread(() => RetainerInventoryCache.GetOwnedBreakdown(invItemId)).GetAwaiter().GetResult();
+            return Json(new
+            {
+                total = b.Total,
+                bags = b.Bags,
+                saddlebag = b.Saddlebag,
+                retainers = b.Retainers.Select(r => new { name = r.Name, count = r.Count }),
+            });
+        }
+
         if (method == "GET" && path.StartsWith("/api/itemimage/") && uint.TryParse(path["/api/itemimage/".Length..], out var imgItemId))
         {
             // ponytail: proxies the actual image bytes (not just the URL) so the browser loads it
