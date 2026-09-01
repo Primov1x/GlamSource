@@ -101,6 +101,13 @@ public sealed class ItemDetailService : IItemDetailService
     // ponytail: ItemId â†’ List<CofferItemId> from ItemSupplement source=Coffer
     private readonly Dictionary<uint, List<uint>> _itemToCofferMap = new();
 
+    // reverse of the above: CofferItemId â†’ List<ItemId> it unlocks. Coffer-sourced glamours (e.g.
+    // "Street Attire Coffer") have no Item.ItemSeries — the existing set/setMembers logic only
+    // checks ItemSeries, so these showed no set info at all ("Street Jacket (36831)... welche set
+    // teile es noch gibt" fehlt). Same "which other items belong together" question, different
+    // source: everything the same coffer unlocks IS the set.
+    private Dictionary<uint, List<uint>>? _cofferToItemsMap;
+
     // ponytail: ItemId â†’ List<(FieldOpType, FieldOpCofferType)> from FieldOpCoffer
     private readonly Dictionary<uint, List<(FieldOpType Type, FieldOpCofferType CofferType)>> _itemToFieldOpCofferMap = new();
 
@@ -223,6 +230,29 @@ public sealed class ItemDetailService : IItemDetailService
                 setMembers = members
                     .Where(m => m.id != itemId)
                     .Select(m => new SetMember(m.id, m.name, m.iconId))
+                    .ToList();
+            }
+        }
+
+        // Coffer-unlocked glamours (e.g. "Street Attire Coffer") have no ItemSeries at all — the
+        // coffer's own contents ARE the set. Fallback only when ItemSeries found nothing.
+        if (setName == null && _itemToCofferMap.TryGetValue(itemId, out var cofferIds) && cofferIds.Count > 0
+            && _cofferToItemsMap != null)
+        {
+            var cofferId = cofferIds[0];
+            var cofferName = GetItemName(cofferId);
+            if (!string.IsNullOrEmpty(cofferName) && _cofferToItemsMap.TryGetValue(cofferId, out var siblingIds))
+            {
+                setName = cofferName;
+                setMembers = siblingIds
+                    .Where(id => id != itemId)
+                    .Select(id =>
+                    {
+                        var row = itemSheet.GetRowOrDefault(id);
+                        return row == null ? null : new SetMember(id, row.Value.Name.ToString(), row.Value.Icon);
+                    })
+                    .Where(m => m != null)
+                    .Select(m => m!)
                     .ToList();
             }
         }
@@ -1869,6 +1899,15 @@ public sealed class ItemDetailService : IItemDetailService
             if (!_itemToCofferMap[sup.ItemId].Contains(sup.SourceItemId))
                 _itemToCofferMap[sup.ItemId].Add(sup.SourceItemId);
         }
+
+        _cofferToItemsMap = new Dictionary<uint, List<uint>>();
+        foreach (var (itemId, cofferIds) in _itemToCofferMap)
+            foreach (var cofferId in cofferIds)
+            {
+                if (!_cofferToItemsMap.TryGetValue(cofferId, out var list))
+                    _cofferToItemsMap[cofferId] = list = new();
+                list.Add(itemId);
+            }
     }
 
     private void BuildFieldOpCofferCache()
