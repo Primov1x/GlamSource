@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Linq;
 using System.Net;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -40,6 +41,13 @@ public sealed class ItemImageService : IItemImageService, IDisposable
     public ItemImageService(HttpClient httpClient)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+        // .NET HttpClient sends NO User-Agent by default — Cloudflare-fronted wikis like this one
+        // commonly 403 that (bot-detection heuristic, often IP-reputation-dependent — could work
+        // for one person and fail for another with no other difference). Only header ever needed
+        // to look like a normal browser request; harmless if this wasn't the actual cause.
+        if (!_httpClient.DefaultRequestHeaders.UserAgent.Any())
+            _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
     }
 
     public async Task<string?> GetPreviewImageUrlAsync(uint itemId, string itemName)
