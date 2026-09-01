@@ -268,7 +268,7 @@ einmal deaktivieren + aktivieren** (frische CEF-Prozesse) — danach sofort wied
 Kein GlamSource-Bug; die Kill-Switches (`POST /api/debug/kill?sys=...&on=...`) bleiben für künftige
 Bisects drin.
 
-## Waffen-Anzeige in der Preview — Versuchsprotokoll (Stand 0.0.0.268)
+## Waffen-Anzeige in der Preview — Versuchsprotokoll (Stand 0.0.0.299, 20 Anläufe)
 
 Ziel: eine gezogene/geglamte Waffe im Web-Preview-Klon sichtbar machen. Bisher **nicht
 zuverlässig gelöst**. CharaView (`AgentTryon`, slot 2 = TryOn/GearSetPreview) ist der native
@@ -327,31 +327,97 @@ getragenen Waffe). Das Datenmodell hat die Information — nur das Rendering feh
     Draw-Enable/Disable-Zyklus. **Zurückgerollt** (264) — aktueller Stand: reiner Doppel-Copy ohne
     Draw-Zyklus, Waffe wieder unsichtbar, aber Klon stabil sichtbar.
 
-### Aktueller Stand (265)
+### Fortsetzung (266–298): vom Datenmodell zum Szenegraph
 
-- `ModelData._weaponModelIds` korrekt befüllt (via normalem Pro-Tick-Copy).
-- Pfad #13 (`CharacterSetup.CopyFromCharacter`, doppelt, `WeaponHiding`-Flag beim ersten Call —
-  exakt Brios Muster) läuft einmalig pro Aktivierung, ohne Guard-Blockade.
-- `ApplyWeaponVisibility()`: nativer `HideWeapons()`-Call + Pro-Slot-`IsHidden`-Filter nach
-  Modell-ID, vor UND nach `CharaView.Update()` angewendet.
-- Debug-Endpoint `/api/debug/weaponstate` zeigt alle 3 Waffen-Slots + das 4. Unk-Feld.
-- Ergebnis: Daten korrekt, **Rendering bleibt unzuverlässig** (mal unsichtbar, mal Duplikate, mal
-  Klon-Verschwinden je nach Zusatzmaßnahme).
+Nach 265 ging die Suche weg von "welche Flags/Reihenfolge" hin zu "was fehlt der Waffe strukturell,
+das ein echter Spieler-Charakter automatisch bekommt". Chronologie:
+
+13. **Ktisis' eigene CharaView-Nutzung geprüft** (`Interface/KTK/PreviewNode.cs`) — macht nur
+    `ModelData.CopyFromCharacter`, keine Waffen-Sonderbehandlung. Zeigt vermutlich selbst keine
+    Waffen. Kein Community-Plugin baut eine Waffen-Anzeige auf CharaView auf.
+14. **Glamourers `Interop/WeaponService.cs` recherchiert** (der Kommentar zu Brios Doppel-Copy
+    "needed for some tools like Penumbra/Glamourer" führte dorthin). Fund: Glamourer hookt
+    `DrawDataContainer.LoadWeapon` und ruft das Original mit `redrawOnEquality=1, skipGameObject=1`
+    auf ("controls whether the new weapons are written to the game object or just influence the
+    draw object"). Unser eigener toter "Pfad #5" (Monate alt) rief dieselbe Funktion mit lauter
+    Nullen auf — nie mit Glamourers Werten getestet. **Pfad #14**: reines `LoadWeapon` mit
+    Glamourer-exakten Parametern, KEIN `CharacterSetup`-Copy mehr (267) → Daten perfekt konsistent
+    (echte ID, `DrawObject` non-null, `hidden=false`) — **trotzdem nichts sichtbar** ("nicht zu
+    sehen"). Wichtige Erkenntnis dabei: `vis=False` stand bei 254 (Pfad #13, wo die Waffe sichtbar
+    WAR) genauso — das Flag korreliert nie mit echtem Rendering, seither ignoriert.
+15. **Pfad #15**: `CharacterSetup`-Copy (löst vermutlich das Ressourcen-Streaming aus, das der
+    Klon sonst nie bekommt) UND danach Glamourer-genaues `LoadWeapon` (268) — kombiniert beide
+    Theorien. Baute die Grundlage für alles Folgende.
+16. **Pfad #16** (von einer parallelen Session, "genuinely untested" committed): derselbe
+    Doppel-Copy + `LoadWeapon`, aber über **15 aufeinanderfolgende Ticks wiederholt** statt einmalig
+    — Theorie: der Klon hat keinen normalen Welt-Actor-Tick, das Streaming braucht mehrere Frames.
+    Beim Mergen entdeckt: Build-Fix für eine kaputte `Glamourer.Api`-Referenz war im selben Commit.
+17. **Echter Spielabsturz** (nativer AV, `C0000005`, im Framework-Tick) — zeitlich nah an einem
+    Waffen-Test, aber nicht eindeutig zuzuordnen (ein anderes Plugin war in den letzten Sekunden vor
+    dem Crash ebenfalls aktiv). Trotzdem: Pfad #16 feuert bis zu 15× hintereinander 2×
+    `CharacterSetup.CopyFromCharacter` + 3× `LoadWeapon` auf demselben nativen Objekt — genau das
+    Muster, das dieser Codebase schon einmal einen echten Crash eingebracht hat (siehe
+    `_freezeSkeleton = 0`-Kommentar in `Tick()`). **Sicherheits-Guard ergänzt** (283): prüft
+    `CharaView.CharacterLoaded` vor jedem Zugriff, bricht bei "nicht geladen" ab — dieselbe Flag,
+    die der Auto-Freeze-Mechanismus schon zuverlässig nutzt. Wichtig: ein natives Access Violation
+    lässt sich NICHT per C#-`try/catch` abfangen (umgeht .NET-Exception-Handling komplett) — die
+    einzige echte Verteidigung ist, die Struktur gar nicht erst anzufassen solange sie nicht bereit
+    ist.
+18. **Der Guard hat das Feature komplett kaputt gemacht** (Regression, sofort gefunden): Log zeigte
+    "aborted, CharaView not CharacterLoaded" bei praktisch jedem Versuch — das 15-Tick-Fenster
+    (~0,25s) war kürzer als die Zeit, die `CharacterLoaded` zum Wahrwerden braucht, der Guard hat
+    das GESAMTE Retry-Budget beim ersten nicht-geladenen Tick auf null gesetzt. **Fix** (293):
+    nicht-geladener Tick wird nur übersprungen (kein Budget verbrannt), separates ~5s-Gesamtlimit
+    als echter Notausstieg. Sicherheits-Eigenschaft bleibt, nur die Aufgabe-Schwelle war falsch.
+19. **Tiefe native Struktur-Diagnose** (294–297), Schritt für Schritt per `/api/debug/weaponstate`
+    live verifiziert, nicht geraten:
+    - `DrawObjectData.Weapon*` (Offset 0x08) ist bei uns **non-null** und identisch mit
+      `DrawObject*` (Offset 0x18 über `DrawData`) — `Weapon` erbt von `DrawObject`, dieselbe
+      Adresse. Das Weapon-Szeneobjekt **existiert wirklich**, `Weapon::Create()`/`Initialize()`
+      liefen (widerlegt die erste Theorie "Objekt wird nie erzeugt").
+    - `Weapon.AttachTarget` (Offset 0xA58 relativ zum Weapon-Objekt) zeigt **exakt** auf
+      `ch->GameObject.DrawObject` (den eigenen Klon-Körper) — korrekt verankert (widerlegt die
+      zweite Theorie "falsch angehängt").
+    - Waffen-Weltposition (`Object.Position`, Offset 0x50) ist plausibel körpernah
+      (z. B. `<-0.22, 0.91, -0.33>`) — widerlegt die Nutzer-Theorie "spawnt out of vision"
+      (guter Gedanke, aber die Zahlen sprechen dagegen).
+    - **`Object.ChildObject`** (Offset 0x30, clib-Kommentar wörtlich: *"for humans this is a
+      weapon"*) zeigt beim Körper auf eine **komplett andere** Adresse — weder Haupt- noch
+      Nebenhand-Waffe. Die Sibling-Kette (`NextSiblingObject`, Offset 0x28) wurde 6 Hops weit
+      verfolgt — keine der beiden Waffen taucht irgendwo darin auf. `AttachTarget` ist eine
+      **Einbahnstraßen-Verknüpfung** (Waffe kennt Elternteil), die Gegenrichtung (Elternteil kennt
+      dieses Kind) fehlt komplett.
+20. **Pfad #17**: `Object.AddChild(Object* child)` ist eine echte native Member-Funktion (in
+    `Object.cs` gefunden, nicht geraten) — der Engine-eigene Weg, genau diese Verknüpfung
+    herzustellen. Aufgerufen für jeden befüllten Waffen-Slot direkt nach `LoadWeapon` (298).
+    **Ergebnis**: lief 10× ohne Absturz, Log bestätigt die Aufrufe — aber die Sibling-Kette enthält
+    die Waffe danach immer noch nicht, und sichtbar ist weiterhin nichts. Entweder hat `AddChild`
+    eine Vorbedingung, die nicht erfüllt ist, oder es pflegt intern eine andere Liste als die, die
+    wir lesen.
+
+### Aktueller Stand (298)
+
+- Datenmodell durchgängig korrekt: Modell-ID, `DrawObject`, `AttachTarget`, Weltposition — alles
+  stimmt und ist live verifiziert, nicht angenommen.
+- Waffen-Szeneobjekt existiert nachweislich, ist korrekt am Klon-Körper verankert (Waffe→Körper).
+- Die Rückrichtung (Körper→Waffe, `ChildObject`/Sibling-Kette) fehlt — mit `AddChild()` (der
+  vermutlich richtigen nativen Funktion dafür) korrigiert, ohne sichtbaren Effekt.
+- Kein Absturz seit dem `CharacterLoaded`-Guard (283) + Budget-Fix (293).
 
 ### Nächste Ansatzpunkte (nicht ausprobiert)
 
-- **Inspect-Fenster-Hypothese**: das normale in-game Inspect-Fenster zeigt Waffen anderer Spieler
-  zuverlässig über exakt dieselbe CharaView-Struktur (nur anderer Slot/Agent). Der native Weg dahin
-  wurde nie untersucht — möglich, dass der alte, vor 248 gelöschte Mechanismus (`DoUpdate=true` +
-  Agent-Flags `HideWeapon`/`DrawWeapon` + `_items`-Replay nach `Update()`) näher an der Wahrheit war
-  als Pfad #13, und die damaligen Duplikate/Bugs eher von Pfad #13 selbst kamen (der komplett
-  außerhalb von CharaViews eigener Buchhaltung operiert) als vom Agent-Mechanismus. Nie isoliert
-  gegeneinander getestet.
-- Kein Blick auf Penumbra/Glamourer-Quellcode geworfen (Brios Kommentar "needed for some tools like
-  Penumbra/Glamourer" beim Doppel-Copy deutet auf zusätzliches Wissen dort).
-- Denkbar: das Problem liegt nicht am Waffen-Draw-Object selbst, sondern an der **Camera/Culling**-
-  Seite der CharaView-Textur (Ortho-Kamera-Frustum schneidet den Waffen-Bounding-Volume ab) — nie
-  isoliert getestet (z. B. Zoom/Ortho temporär deaktivieren während Waffen-Test).
+- `AddChild()`s tatsächliche Wirkung verifizieren: liest evtl. eine dritte, noch nicht gefundene
+  Liste, oder braucht einen zusätzlichen Aufruf danach (z. B. `OnAddedToWorld()`, ebenfalls in
+  `Object.cs` gefunden, nie ausprobiert) um die neue Verknüpfung "scharfzuschalten".
+- **Inspect-Fenster-Hypothese** (aus 265, weiterhin offen): das normale in-game Inspect-Fenster
+  zeigt Waffen anderer Spieler zuverlässig über dieselbe CharaView-Struktur. Der native Weg dahin
+  wurde nie isoliert nachgebaut.
+- Camera/Culling-Seite nie isoliert getestet (Ortho-Frustum könnte den Waffen-Bounding-Volume
+  abschneiden, unabhängig vom Szenegraph-Problem).
+- Kein Decompiler/Reverse-Engineering-Werkzeug verfügbar in dieser Umgebung — alle Erkenntnisse
+  stammen aus clib-Quellcode-Kommentaren + Live-Speicher-Dumps, nicht aus echtem Disassemble der
+  Engine-Funktionen selbst. Ein Blick in Ghidra/IDA auf `AddChild`/`Weapon::Initialize` könnte die
+  fehlende Vorbedingung direkt zeigen.
 
 ## Offene Punkte
 
