@@ -55,6 +55,7 @@
     <Compile Remove="GlamSource.Core.Tests\**" />
     <Compile Remove="GlamSource.Core\**" />
     <Compile Remove="GlamSource.Mock\**" />
+    <Compile Remove="tools\**" />
   </ItemGroup>
 
   <ItemGroup>
