@@ -463,6 +463,18 @@ public sealed class WebUiService : IDisposable
             return dd == null ? ("404 Not Found", "text/plain", Encoding.UTF8.GetBytes("duty not found")) : Json(dd);
         }
 
+        // Outfit shopping list (prototype): the shown character's slots -> one best source per item,
+        // merged into stops, summed costs. Reads the shell's snapshot, no game state of its own.
+        if (method == "GET" && path == "/api/shoppinglist")
+        {
+            var itemSheetSl = _detail.GameData.GetExcelSheet<Lumina.Excel.Sheets.Item>();
+            var outfit = _shell.DebugSnapshot
+                .Select(s => (itemId: s.GlamourItemId ?? s.ActualItemId, name: s.GlamourItemName ?? s.ActualItemName ?? "",
+                    iconId: (uint)(itemSheetSl?.GetRowOrDefault(s.GlamourItemId ?? s.ActualItemId)?.Icon ?? 0)))
+                .ToList();
+            return Json(ShoppingListBuilder.Build(outfit, _detail.GetDetail));
+        }
+
         if (method == "GET" && path == "/api/jobs")
             return Json((_search ??= new ItemSearchIndex(_detail.GameData)).Jobs().Select(j => new { j.abbr, j.name }).ToArray());
 

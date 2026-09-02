@@ -197,6 +197,7 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
   </div>
   <div class="row p3dtoolbar" style="margin-top:6px;margin-bottom:10px;flex-wrap:wrap;gap:8px;align-items:center">
     <span class="tbl" data-i18n="view_label"></span>
+    <button onclick="showShoppingList()" data-i18n="shopping_btn" data-i18n-title="shopping_tt"></button>
     <button id="p3dspin" onclick="toggleAutoSpin()" data-i18n="spin" data-i18n-title="spin_tt"></button>
     <button onclick="resetPreview3D()" data-i18n="reset" data-i18n-title="reset_tt"></button>
     <span class="tbl" data-i18n="pose_label"></span>
@@ -262,6 +263,12 @@ const I18N={
   duty_general:{en:'Elsewhere in the duty (chests & mobs)',de:'Unterwegs in der Duty (Truhen & Gegner)'},
   drops:{en:'drops',de:'Drops'},
   duty_coffers:{en:'Treasure chests along the way (Garland Tools)',de:'Truhen unterwegs (Garland Tools)'},
+  shopping_btn:{en:'Shopping list',de:'Einkaufsliste'},
+  shopping_tt:{en:'Everything needed for the shown outfit: best source per piece, grouped by NPC / craft / duty, with what you already own',de:'Alles für das gezeigte Outfit: beste Quelle je Teil, gruppiert nach NPC / Craft / Duty, mit dem, was du schon hast'},
+  shopping_title:{en:'Outfit shopping list',de:'Outfit-Einkaufsliste'},
+  shopping_stops:{en:'stops',de:'Stationen'},
+  shopping_total:{en:'Total cost',de:'Gesamtkosten'},
+  shopping_items:{en:'Pieces here',de:'Teile hier'},
   map:{en:'Map',de:'Karte'},
   search_ph:{en:'Search any item… or paste an item ID',de:'Beliebiges Item suchen… oder Item-ID einfügen'},
   p3dhint:{en:'Overlay is unlocked — lock it top-right, then drag-rotate.',de:'Overlay ist entsperrt — Schloss oben rechts sperren, dann per Ziehen drehen.'},
@@ -889,6 +896,31 @@ async function showItemPanel(id){
 }
 
 async function post(url){await fetch(url,{method:'POST'})}
+
+// Outfit shopping list (prototype, see doku): one best source per shown slot, merged into stops.
+// Rows are .matrow[data-item] so annotateInventory() marks owned pieces green for free.
+const shopRow=(m,openFn)=>`<div class="matrow" data-item="${m.itemId}" data-need="${m.count}"${m.itemId&&openFn?` style="cursor:pointer" onclick="${openFn}(${m.itemId})"`:''}>${img(m.iconId,22)}<span class="matqty">${esc(m.name)||(m.itemId===0?'Gil':'#'+m.itemId)}${m.count>1?` × ${m.count.toLocaleString()}`:''}</span></div>`;
+async function showShoppingList(){
+  const box=$('#chardetail');
+  box.innerHTML=`<div class="empty"><span class="spinner"></span>${t('loading')}</div>`;
+  const d=await fetch('/api/shoppinglist').then(r=>r.ok?r.json():null);
+  if(!d){box.innerHTML=`<div class="empty">${t('not_found')}</div>`;return}
+  let h=`<div class="header"><div><h2 class="name">${t('shopping_title')}</h2><div class="meta">${d.lines.length} ${t('shopping_stops')}</div></div></div>`;
+  if(d.totals.length)h+=`<div class="tbl">${t('shopping_total')}</div>`+d.totals.map(c=>shopRow(c)).join('');
+  h+='<div class="cards">';
+  for(const l of d.lines){
+    const cls=l.kind==='Craft'?'crafted':l.kind==='Vendor'?'vendor':l.kind==='Duty'?'duty':'';
+    h+=`<div class="card ${cls}"><h3><span class="badge">${esc(l.kind).toUpperCase()}</span> ${esc(l.title)}</h3>`;
+    if(l.npcName)h+=`<table><tr><th>NPC</th><th>Location</th><th></th></tr>${npcRow(l)}</table>`;
+    if(l.cfcRowId)h+=`<button class="act" onclick="post('/api/action/dutyfinder/${l.cfcRowId}')">Duty Finder</button>`;
+    h+=`<div style="margin-top:8px;color:var(--muted);font-size:12px">${t('shopping_items')}</div>`+l.items.map(m=>shopRow(m,'showItemPanel')).join('');
+    if(l.costs.length)h+=`<div style="margin-top:8px;color:var(--muted);font-size:12px">Cost</div>`+l.costs.map(c=>shopRow(c)).join('');
+    if(l.materials.length)h+=`<div style="margin-top:8px;color:var(--muted);font-size:12px">Materials</div>`+l.materials.map(c=>shopRow(c,'showItemPanel')).join('');
+    h+='</div>';
+  }
+  box.innerHTML=h+'</div>';
+  annotateInventory(box);
+}
 
 // UNLOCKED is the default now ("bei start/öffnen nicht locked als standard, damit man verschieben
 // kann") — the plugin sends "locked off" at startup too, this just mirrors that initial state so

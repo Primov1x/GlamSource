@@ -1,5 +1,32 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Outfit shopping list — prototype (1.0.1.0)
+
+Why: the honest "why would nobody use this" review after 1.0 put an outfit-level view first — the
+plugin answered slot by slot, click by click, while the real question is "I want that whole look,
+what do I need and where". Prototype, deliberately small:
+
+- `GlamSource.Core/ShoppingListBuilder.cs` (pure, 2 unit tests): for every shown slot pick ONE best
+  source (vendor with location > craft > nameless exchange > duty > quest > gathering > rest), merge
+  items sharing a stop (same NPC = one visit with summed costs, same duty = one run), sum vendor
+  costs per currency across the outfit. Items are `CostEntry(count 1)` so the existing inventory
+  annotation marks owned pieces green (web via `annotateInventory`, ImGui via
+  `RetainerInventoryCache.GetTotal`).
+- Web: "Shopping list" button in the Character tab's View row → renders into the right panel
+  (`#chardetail`): totals, then one card per stop with NPC row + Map button, pieces (click → item
+  detail), cost, materials. `GET /api/shoppinglist` (plugin: `_shell.DebugSnapshot`; mock: the
+  editor outfit).
+- ImGui: "Shopping list" / "Back to preview" toggle in the Character toolbar; the list replaces the
+  center preview while active, same content.
+- Verified in the mock (5 stops for the demo outfit: Trophy Crystal / Cosmocredit / Valentione
+  chocolate / gil vendors + one Mog Station note, totals per currency). **Needs in-game
+  verification**: ImGui toggle + owned/missing colours, Map buttons, real snapshot with mixed
+  crafted/duty pieces.
+- Known prototype gaps (next steps if it earns its keep): no "already owned → skip" filter, no
+  glamour dresser / armoire lookup (only bags/saddlebag/retainers via the existing cache), dyes not
+  included, no same-model alternatives when the best source is unobtainable, "Other" stops are
+  just the source text.
+
 ## Duty Drops tab (0.0.0.312) — current-duty auto-detect + Duty Finder style browse
 
 Was the TODO above this line; built for ImGui and Web UI in the same change.

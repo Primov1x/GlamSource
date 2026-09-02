@@ -72,6 +72,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
     private uint? _currentDuty;
     private IReadOnlyList<DutyInfo>? _duties;
     private DutyDetail? _dutyDetail;
+    private ShoppingList? _shopping; // Character tab: outfit shopping list replaces the preview while set
     private Task<IReadOnlyList<DutyCoffer>>? _cofferTask; // Garland Tools fetch, polled in Draw
     private IReadOnlyList<DutyCoffer>? _dutyCoffers;
     private static readonly string[] FilterSlotKeys = { "", "MainHand", "OffHand", "Head", "Body", "Hands", "Legs", "Feet", "Earrings", "Necklace", "Bracelets", "RingRight", "RingLeft" };
@@ -561,7 +562,8 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         // Center: 3D preview + toprow (weapons) below
         if (ImGui.BeginChild("##char_center", new Vector2(centerW, 0), true))
         {
-            DrawInlinePreview();
+            if (_shopping != null) DrawShoppingList(_shopping);
+            else DrawInlinePreview();
             ImGui.Separator();
             DrawSlotRow(TopRow);
         }
@@ -735,6 +737,16 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         }
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip(_pinned ? Loc.T("Release the pinned snapshot") : Loc.T("Freeze the current snapshot"));
+
+        ImGui.SameLine();
+        if (ImGui.SmallButton(_shopping == null ? Loc.T("Shopping list") : Loc.T("Back to preview")))
+        {
+            _shopping = _shopping != null ? null : ShoppingListBuilder.Build(
+                DebugSnapshot.Select(s => (s.GlamourItemId ?? s.ActualItemId, s.GlamourItemName ?? s.ActualItemName ?? "", GetIconId(s.GlamourItemId ?? s.ActualItemId))),
+                _detailWindow.DetailService.GetDetail);
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip(Loc.T("Everything needed for the shown outfit: best source per piece, grouped by NPC / craft / duty, with what you already own"));
 
         if (_recentOverride != null)
         {
@@ -1314,6 +1326,63 @@ private void ApplyTargetGlamourToSelf()
             _detailWindow.ShowItem(r.ItemId);
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip($"Item ID {r.ItemId} · iLvl {r.ItemLevel} — click for details");
+    }
+
+    // Outfit shopping list (prototype): stops with items (owned = green), costs and materials.
+    private void DrawShoppingList(ShoppingList sl)
+    {
+        UiStyle.SectionHeader($"{Loc.T("Shopping list")} — {sl.Lines.Count} {Loc.T("stops")}");
+        if (sl.Totals.Count > 0)
+        {
+            ImGui.TextDisabled(Loc.T("Total cost:"));
+            foreach (var c in sl.Totals) DrawShoppingEntry(c, false);
+        }
+        foreach (var l in sl.Lines)
+        {
+            UiStyle.SectionHeader($"{l.Kind}: {l.Title}");
+            if (l.NpcName != null && l.MapX != null)
+                ImGui.TextColored(UiStyle.Muted, $"({l.MapX:0.0}, {l.MapY:0.0})");
+            foreach (var it in l.Items) DrawShoppingEntry(it, true);
+            if (l.Costs.Count > 0)
+            {
+                ImGui.TextDisabled(Loc.T("Cost:"));
+                foreach (var c in l.Costs) DrawShoppingEntry(c, false);
+            }
+            if (l.Materials.Count > 0)
+            {
+                ImGui.TextDisabled(Loc.T("Materials:"));
+                foreach (var m in l.Materials) DrawShoppingEntry(m, false);
+            }
+        }
+    }
+
+    private void DrawShoppingEntry(CostEntry e, bool piece)
+    {
+        if (e.ItemId == 0)
+        {
+            ImGui.TextColored(new Vector4(1f, 0.84f, 0f, 1f), $"{e.Count:N0} Gil");
+            return;
+        }
+        var have = e.ItemId > 19 ? GlamSource.Services.RetainerInventoryCache.GetTotal(e.ItemId) : 0;
+        var ok = have >= e.Count;
+        if (e.IconId > 0)
+        {
+            var tex = _textures.GetFromGameIcon(new GameIconLookup(e.IconId)).GetWrapOrEmpty();
+            var edge = ImGui.GetFontSize() * 1.2f;
+            ImGui.Image(tex.Handle, new Vector2(edge, edge));
+            ImGui.SameLine();
+        }
+        ImGui.TextColored(ok ? UiStyle.Success : UiStyle.Muted, piece ? (ok ? Loc.T("owned") : Loc.T("missing")) : $"({have}/{e.Count})");
+        ImGui.SameLine();
+        if (piece)
+        {
+            if (ImGui.Selectable($"{e.Name}##shop_{e.ItemId}"))
+                _detailWindow.ShowItem(e.ItemId);
+        }
+        else
+        {
+            ImGui.TextColored(ok ? UiStyle.Success : UiStyle.Muted, $"{e.Name} x{e.Count:N0}");
+        }
     }
 
     private void SelectDuty(uint cfcId)
