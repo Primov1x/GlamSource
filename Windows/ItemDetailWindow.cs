@@ -294,7 +294,7 @@ public class ItemDetailWindow : Window, IDisposable
         var detail = _detailService.GetDetail(_showingItemId.Value);
         if (detail == null)
         {
-            ImGui.TextDisabled("Item not found.");
+            ImGui.TextDisabled(Loc.T("Item not found."));
             return;
         }
 
@@ -315,21 +315,21 @@ public class ItemDetailWindow : Window, IDisposable
         if (_marketInfo != null && _marketItemId == detail.ItemId)
             DrawMarketPricesCompact(_marketInfo);
         else if (_marketLoading && _marketItemId == detail.ItemId)
-            ImGui.TextDisabled("Loading prices...");
+            ImGui.TextDisabled(Loc.T("Loading prices..."));
 
         // ponytail: a bordered child sized (0,0) fills the PARENT's remaining space, not its own
         // content — that fights AlwaysAutoResize (which sizes the window FROM content) in a
         // feedback loop, leaving oversized empty cards ("die karten nicht so riesig"). Drawing
         // directly in the window instead — its height is then simply the cards' real height, no
         // separate sizing to reconcile. NoScrollbar was already set; SizeConstraints still caps it.
-        SectionHeader("SOURCES");
+        SectionHeader(Loc.T("SOURCES"));
         ImGui.Spacing();
         DrawSourceCards(detail);
         DrawGatheringActionButton(detail);
 
         if (_plugin?.Configuration?.ShowCraftingSavings == true && _craftingResult != null)
         {
-            SectionHeader("CRAFTING SAVINGS");
+            SectionHeader(Loc.T("CRAFTING SAVINGS"));
             ImGui.Spacing();
             DrawCraftingSavings();
         }
@@ -353,9 +353,9 @@ public class ItemDetailWindow : Window, IDisposable
 
         ImGui.BeginGroup();
         ImGui.Text(detail.Name);
-        var metaLine = $"Item ID {detail.ItemId}  \u00b7  iLvl {detail.ItemLevel}";
+        var metaLine = $"{Loc.T("Item ID")} {detail.ItemId}  \u00b7  {Loc.T("iLvl")} {detail.ItemLevel}";
         if (!string.IsNullOrEmpty(detail.SetName))
-            metaLine += $"  \u00b7  Set: {detail.SetName}";
+            metaLine += $"  \u00b7  {Loc.T("Set")}: {detail.SetName}";
         ImGui.TextDisabled(metaLine);
         ImGui.EndGroup();
 
@@ -365,7 +365,7 @@ public class ItemDetailWindow : Window, IDisposable
         // navigation as the [i] info buttons elsewhere in this window (push history, load new item).
         if (detail.SetMembers is { Count: > 0 })
         {
-            ImGui.TextDisabled("Rest of the set:");
+            ImGui.TextDisabled(Loc.T("Rest of the set:"));
             for (var i = 0; i < detail.SetMembers.Count; i++)
             {
                 var member = detail.SetMembers[i];
@@ -387,7 +387,7 @@ public class ItemDetailWindow : Window, IDisposable
 
         if (_history.Count > 0)
         {
-            if (ImGui.SmallButton("← Back"))
+            if (ImGui.SmallButton(Loc.T("← Back")))
             {
                 var previousId = _history.Pop();
                 LoadItemDetail(previousId);
@@ -395,12 +395,12 @@ public class ItemDetailWindow : Window, IDisposable
             ImGui.SameLine();
         }
 
-        if (ImGui.SmallButton("Wiki"))
+        if (ImGui.SmallButton(Loc.T("Wiki")))
         {
             OpenWiki(detail.Name, detail.ItemId);
         }
         ImGui.SameLine();
-        if (detail.IsMarketable && ImGui.SmallButton("Market prices"))
+        if (detail.IsMarketable && ImGui.SmallButton(Loc.T("Market prices")))
         {
             OpenMarketPrices(detail.ItemId);
         }
@@ -415,19 +415,19 @@ public class ItemDetailWindow : Window, IDisposable
         var iconVec = new Vector2(iconEdge, iconEdge);
 
         ImGui.Separator();
-        ImGui.TextColored(new Vector4(0.9f, 0.7f, 0.2f, 1f), $"Slot: {slot.Slot}");
+        ImGui.TextColored(new Vector4(0.9f, 0.7f, 0.2f, 1f), $"{Loc.T("Slot")}: {slot.Slot}");
 
         // Gear row
-        DrawSlotIconRow("Gear", slot.ActualItemId, slot.ActualItemName, iconVec, muted: false);
+        DrawSlotIconRow(Loc.T("Gear"), slot.ActualItemId, slot.ActualItemName, iconVec, muted: false);
 
         // Glamour row
         var glamId = slot.GlamourItemId ?? 0u;
-        var glamName = slot.GlamourItemName ?? "(none)";
+        var glamName = slot.GlamourItemName ?? Loc.T("(none)");
         var glamMuted = !slot.IsGlamoured || glamId == slot.ActualItemId;
-        DrawSlotIconRow("Glam", glamId, glamName, iconVec, muted: glamMuted);
+        DrawSlotIconRow(Loc.T("Glam"), glamId, glamName, iconVec, muted: glamMuted);
 
         // Stain row
-        ImGui.TextDisabled("Stain:");
+        ImGui.TextDisabled(Loc.T("Stain:"));
         ImGui.SameLine();
         DrawSlotStain(slot.Stain0);
 
@@ -458,7 +458,7 @@ public class ItemDetailWindow : Window, IDisposable
     {
         if (stainId == 0 || _data == null)
         {
-            ImGui.TextDisabled("Unbemalt");
+            ImGui.TextDisabled(Loc.T("Undyed"));
             return;
         }
         var sheet = _data.GetExcelSheet<Stain>();
@@ -496,7 +496,7 @@ public class ItemDetailWindow : Window, IDisposable
             4f);
 
         ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + 300f);
-        ImGui.TextDisabled("World:");
+        ImGui.TextDisabled(Loc.T("World:"));
         ImGui.SameLine();
         ImGui.TextColored(new Vector4(1f, 0.84f, 0.25f, 1f),
             $"{FormatNumber(market.WorldMinPrice)} Gil  |  ");
@@ -526,10 +526,10 @@ public class ItemDetailWindow : Window, IDisposable
         {
             ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.4f, 0.4f, 0.4f, 0.5f));
             ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.6f, 0.6f, 0.6f, 1f));
-            ImGui.SmallButton("⛏ Gather (Cooling down...)");
+            ImGui.SmallButton("⛏ " + Loc.T("Gather (Cooling down...)"));
             ImGui.PopStyleColor(2);
         }
-        else if (ImGui.SmallButton("⛏ Gather"))
+        else if (ImGui.SmallButton("⛏ " + Loc.T("Gather")))
         {
             _lastGatherTimestamp = now;
             TriggerGather(detail.ItemId, detail.Name);
@@ -784,7 +784,7 @@ public class ItemDetailWindow : Window, IDisposable
                 if (src.Type == ItemSourceType.Crafted)
                 {
                     ImGui.SameLine();
-                    if (ImGui.SmallButton($"Open Crafting Log##craft_{sourceIdx}"))
+                    if (ImGui.SmallButton($"{Loc.T("Open Crafting Log")}##craft_{sourceIdx}"))
                     {
                         // ponytail: HQ items sit at NQ RowId + 1_000_000; the vanilla recipe log only knows the NQ id.
                         var craftItemId = _showingItemId ?? 0;
@@ -802,7 +802,7 @@ public class ItemDetailWindow : Window, IDisposable
                 if (src.Materials != null && src.Materials.Count > 0)
                 {
                     ImGui.Spacing();
-                    ImGui.TextDisabled("Materials:");
+                    ImGui.TextDisabled(Loc.T("Materials:"));
                     for (int matIdx = 0; matIdx < src.Materials.Count; matIdx++)
                     {
                         DrawMaterialRow(src.Materials[matIdx], sourceIdx, matIdx);
@@ -812,7 +812,7 @@ public class ItemDetailWindow : Window, IDisposable
                 if (src.Costs != null && src.Costs.Count > 0)
                 {
                     ImGui.Spacing();
-                    ImGui.TextDisabled("Cost:");
+                    ImGui.TextDisabled(Loc.T("Cost:"));
                     int costIdx = 0;
                     foreach (var cost in src.Costs)
                     {
@@ -887,7 +887,7 @@ public class ItemDetailWindow : Window, IDisposable
                     }
                 }
                 if (ImGui.IsItemHovered())
-                    ImGui.SetTooltip("Show item details");
+                    ImGui.SetTooltip(Loc.T("Show item details"));
             }
         }
 
@@ -900,19 +900,20 @@ public class ItemDetailWindow : Window, IDisposable
             ImGui.SameLine();
             using (ImRaii.Disabled(hasCooldown))
             {
-                if (ImGui.SmallButton($"Gather##gather_{idPrefix}_{sourceIdx}_{rowIdx}") && !hasCooldown)
+                if (ImGui.SmallButton($"{Loc.T("Gather")}##gather_{idPrefix}_{sourceIdx}_{rowIdx}") && !hasCooldown)
                 {
                     gatherCooldowns[entry.ItemId] = now;
                     TriggerGather(entry.ItemId, entry.Name);
                 }
             }
             if (hasCooldown && ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-                ImGui.SetTooltip("Gathering...");
+                ImGui.SetTooltip(Loc.T("Gathering..."));
         }
     }
 
     private void DrawBadge(string label, Vector4 bgColor)
     {
+        label = Loc.T(label);
         var drawList = ImGui.GetWindowDrawList();
         var pos = ImGui.GetCursorScreenPos();
         var textSize = ImGui.CalcTextSize(label);
@@ -955,7 +956,7 @@ public class ItemDetailWindow : Window, IDisposable
             ImGui.TableNextRow();
             ImGui.TableNextColumn();
             ImGui.AlignTextToFramePadding();
-            ImGui.Text(src.NpcName ?? "Unknown vendor");
+            ImGui.Text(src.NpcName ?? Loc.T("Unknown vendor"));
 
             ImGui.TableNextColumn();
             ImGui.AlignTextToFramePadding();
@@ -965,7 +966,7 @@ public class ItemDetailWindow : Window, IDisposable
             ImGui.TextDisabled(loc);
             if (loc.Length > 0 && ImGui.IsItemHovered())
             {
-                ImGui.SetTooltip("Right-click to copy");
+                ImGui.SetTooltip(Loc.T("Right-click to copy"));
                 if (ImGui.IsMouseClicked(ImGuiMouseButton.Right))
                     ImGui.SetClipboardText($"{src.NpcName} \u2014 {loc}");
             }
@@ -979,7 +980,7 @@ public class ItemDetailWindow : Window, IDisposable
                         TryOpenMap(src.NpcName, src.ZoneName, src.TerritoryTypeId, src.MapId, src.MapX.Value, src.MapY.Value);
                 }
                 if (ImGui.IsItemHovered())
-                    ImGui.SetTooltip("Open map");
+                    ImGui.SetTooltip(Loc.T("Open map"));
             }
         }
         ImGui.EndTable();
@@ -1002,9 +1003,9 @@ public class ItemDetailWindow : Window, IDisposable
             return;
         if (CheckUnlockStatus(src.CfcRowId.Value))
         {
-            IconStatus(FontAwesomeIcon.Check, UiStyle.Success, "Unlocked");
+            IconStatus(FontAwesomeIcon.Check, UiStyle.Success, Loc.T("Unlocked"));
         }
-        if (ImGui.SmallButton($"Duty Finder##duty_{sourceIdx}"))
+        if (ImGui.SmallButton($"{Loc.T("Duty Finder")}##duty_{sourceIdx}"))
         {
             TryOpenDutyFinder(src.CfcRowId.Value);
         }
@@ -1022,15 +1023,15 @@ public class ItemDetailWindow : Window, IDisposable
         var questLocked = questId.HasValue && IsQuestLockedByQuestionable(questId.Value);
         if (questLocked)
         {
-            IconStatus(FontAwesomeIcon.Lock, UiStyle.Warning, "Locked (prerequisites incomplete)");
-            if (ImGui.SmallButton($"Start quest chain##quest_{sourceIdx}"))
+            IconStatus(FontAwesomeIcon.Lock, UiStyle.Warning, Loc.T("Locked (prerequisites incomplete)"));
+            if (ImGui.SmallButton($"{Loc.T("Start quest chain")}##quest_{sourceIdx}"))
             {
                 TryStartWithQuestionable(questId!.Value);
             }
         }
         else if (src.QuestForUnlock.HasValue)
         {
-            IconStatus(FontAwesomeIcon.Check, UiStyle.Success, "Quest unlocked");
+            IconStatus(FontAwesomeIcon.Check, UiStyle.Success, Loc.T("Quest unlocked"));
         }
     }
 
@@ -1038,7 +1039,7 @@ public class ItemDetailWindow : Window, IDisposable
     {
         if (src.Type != ItemSourceType.MogStation || src.ShopUrl == null)
             return;
-        if (ImGui.SmallButton($"Open Mog Station##mogstation_{sourceIdx}"))
+        if (ImGui.SmallButton($"{Loc.T("Open Mog Station")}##mogstation_{sourceIdx}"))
         {
             OpenShopUrl(src.ShopUrl);
         }
@@ -1086,7 +1087,7 @@ public class ItemDetailWindow : Window, IDisposable
             if (!isGilOnly && first.Costs?.Count > 0)
             {
                 ImGui.Spacing();
-                ImGui.TextDisabled("Cost:");
+                ImGui.TextDisabled(Loc.T("Cost:"));
                 for (int costIdx = 0; costIdx < first.Costs.Count; costIdx++)
                 {
                     DrawCostRow(first.Costs[costIdx], groupIdx, costIdx, showInfoButton: false, prefix: "\u2022");
@@ -1115,7 +1116,7 @@ public class ItemDetailWindow : Window, IDisposable
             {
                 shownTypes.Add(s.Type);
                 var style = SourceStyles.GetValueOrDefault(s.Type, (Vector4.One, Vector4.One, "UNKNOWN"));
-                var label = style.Item3;
+                var label = Loc.T(style.Item3);
                 ImGui.TextDisabled($"  {label}: {s.Description}");
                 ImGui.Spacing();
             }
@@ -1388,8 +1389,8 @@ public class ItemDetailWindow : Window, IDisposable
             Scan(InventoryType.SaddleBag1, ref saddlebag);
             Scan(InventoryType.SaddleBag2, ref saddlebag);
 
-            if (bags > 0) breakdown["Bags"] = bags;
-            if (saddlebag > 0) breakdown["Saddlebag"] = saddlebag;
+            if (bags > 0) breakdown[Loc.T("Bags")] = bags;
+            if (saddlebag > 0) breakdown[Loc.T("Saddlebag")] = saddlebag;
             // "man sieht welches mat wo liegt" — RetainerInventoryCache snapshots EVERY retainer
             // visited this session (persists after you close its window), not just whichever one's
             // currently open — a real per-name breakdown instead of one lumped "Retainers: N".
@@ -1429,10 +1430,10 @@ public class ItemDetailWindow : Window, IDisposable
             var jobStr = string.Join(", ", jobs.Any() ? jobs : (object?)levelStr);
             var title = levels.Any() && jobs.Any()
                 ? $"{levelStr} ({string.Join(", ", jobs)})"
-                : (levelStr ?? jobStr ?? "Crafted");
+                : (levelStr ?? jobStr ?? Loc.T("Crafted"));
             ImGui.Text(title);
             ImGui.SameLine();
-            if (ImGui.SmallButton($"Open Crafting Log##craft_{groupIdx}"))
+            if (ImGui.SmallButton($"{Loc.T("Open Crafting Log")}##craft_{groupIdx}"))
             {
                 // ponytail: HQ items sit at NQ RowId + 1_000_000; the vanilla recipe log only knows the NQ id.
                 var craftItemId = _showingItemId ?? 0;
@@ -1449,7 +1450,7 @@ public class ItemDetailWindow : Window, IDisposable
             if (first.Materials != null && first.Materials.Count > 0)
             {
                 ImGui.Spacing();
-                ImGui.TextDisabled("Materials:");
+                ImGui.TextDisabled(Loc.T("Materials:"));
                 for (int matIdx = 0; matIdx < first.Materials.Count; matIdx++)
                 {
                     DrawMaterialRow(first.Materials[matIdx], groupIdx, matIdx, showCheckmark: false, prefix: "\u2022");
@@ -1523,7 +1524,7 @@ public class ItemDetailWindow : Window, IDisposable
             ? new Vector4(0.4f, 1f, 0.4f, 1f)
             : new Vector4(0.8f, 0.8f, 0.8f, 1f);
 
-        ImGui.TextColored(new Vector4(0.9f, 0.7f, 0.2f, 1f), "Materials:");
+        ImGui.TextColored(new Vector4(0.9f, 0.7f, 0.2f, 1f), Loc.T("Materials:"));
         ImGui.Separator();
         foreach (var (name, count, marketPrice) in result.Materials.Select(m => (m.Name, m.Count, m.MarketPrice)))
         {
@@ -1534,18 +1535,18 @@ public class ItemDetailWindow : Window, IDisposable
         ImGui.Spacing();
         if (result.MarketNQPrice.HasValue)
         {
-            ImGui.TextColored(new Vector4(0.9f, 0.7f, 0.2f, 1f), "Comparison:");
+            ImGui.TextColored(new Vector4(0.9f, 0.7f, 0.2f, 1f), Loc.T("Comparison:"));
             ImGui.Separator();
-            ImGui.TextColored(new Vector4(0.8f, 0.8f, 0.8f, 1f), $"  Market (NQ): {FormatNumber(result.MarketNQPrice.Value)} Gil");
-            ImGui.TextColored(new Vector4(0.8f, 0.8f, 0.8f, 1f), $"  Crafted cost: {FormatNumber(result.CraftedCost ?? 0)} Gil");
+            ImGui.TextColored(new Vector4(0.8f, 0.8f, 0.8f, 1f), $"  {Loc.T("Market (NQ):")} {FormatNumber(result.MarketNQPrice.Value)} Gil");
+            ImGui.TextColored(new Vector4(0.8f, 0.8f, 0.8f, 1f), $"  {Loc.T("Crafted cost:")} {FormatNumber(result.CraftedCost ?? 0)} Gil");
             if (saved.HasValue)
             {
-                ImGui.TextColored(savingsColor, $"  Savings: {FormatNumber((uint)Math.Max(0, saved.Value))} Gil");
+                ImGui.TextColored(savingsColor, $"  {Loc.T("Savings:")} {FormatNumber((uint)Math.Max(0, saved.Value))} Gil");
             }
         }
         else
         {
-            ImGui.TextDisabled("  No market price available for comparison.");
+            ImGui.TextDisabled("  " + Loc.T("No market price available for comparison."));
         }
     }
 

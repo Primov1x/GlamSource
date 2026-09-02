@@ -34,10 +34,16 @@ runtime — a browser page can't read the plugin's Dalamud-persisted config dire
   of scope** — only literal chrome strings are translated. This was a deliberate scope cut, not an
   oversight.
 
-**Deferred**: `Windows/ItemDetailWindow.cs` (~40+ more chrome strings — source-type badges, market
-price panel, crafting-cost breakdown, set-member chips) was left out of this pass to keep what
-shipped verified rather than rushed. Same `Loc.T(...)` pattern applies directly when picked back
-up.
+**Also done** (follow-up pass, same session): `Windows/ItemDetailWindow.cs` — all `SourceStyles`
+badge labels (CRAFTED/VENDOR/TRIAL/RAID/DUNGEON/QUEST/etc., wrapped once inside `DrawBadge()` so
+all 4 call sites get it for free), header/meta line, set-member section, Wiki/Market/Back/Gather
+buttons, slot-context row, market price box, materials/cost labels, gathering tooltips, NPC
+row/map tooltips, Duty Finder/quest-chain/Mog-Station rows, crafting-savings comparison block.
+Interpolated prefixes (`"Item ID {id}"`, `"iLvl {n}"`, `"Slot: {name}"`) got their literal word
+translated too, not just skipped — only truly dynamic content (counts, names, IDs themselves)
+stays untranslated. Verified: build clean, 46/46 tests, `GlamSource.Mock` runs without exception.
+Not visually screenshotted (native ImGui window, no screenshot tool for it in this environment) —
+code-reviewed against the already-proven `GlamSourceShellWindow.cs` pattern instead.
 
 Running log of the item-detail/source pipeline (`GlamSource.Core/ItemDetailService.cs`) work
 from this session. Audited via `GlamSource.Mock`'s local test server against real `D:\FF\game`
