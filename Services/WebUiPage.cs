@@ -43,7 +43,7 @@ input[type=search]{width:100%;max-width:420px;background:var(--panel);border:1px
 input[type=search]:focus{border-color:var(--accent)}
 .results{margin-top:10px;display:flex;flex-direction:column;gap:4px;max-width:420px}
 .row{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid transparent;border-radius:8px;padding:6px 10px;cursor:pointer;transition:.12s}
-.row:hover{border-color:var(--accent);background:var(--panel2)}
+.row:hover,.row:focus{border-color:var(--accent);background:var(--panel2);outline:none}
 .row img{width:28px;height:28px;border-radius:4px}
 .row img.rowpreview{width:40px;height:40px;border-radius:6px;margin-left:auto;object-fit:cover}
 .cards{display:flex;flex-direction:column;gap:14px;margin-top:16px}
@@ -65,7 +65,7 @@ button.act{background:var(--panel2);border:1px solid var(--border);color:var(--t
 button.act:hover{border-color:var(--accent);color:var(--accent)}
 .header{display:flex;align-items:center;gap:14px;margin:14px 0}
 .header img{width:48px;height:48px;border-radius:8px}
-.header .name{font-size:18px;font-weight:600}
+.header .name{font-size:18px;font-weight:600;margin:0}
 .header .meta{color:var(--muted);font-size:12px}
 .preview:empty{display:none}
 .preview img{max-width:280px;max-height:280px;border-radius:8px;border:1px solid var(--border);margin-bottom:10px}
@@ -141,6 +141,7 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 <section id="view-lookup">
   <input type="search" id="q" data-i18n-ph="search_ph" autofocus>
   <div class="results" id="results"></div>
+  <div id="resback" class="empty" style="display:none;cursor:pointer" onclick="backToResults()"></div>
   <div id="detail"></div>
 </section>
 
@@ -221,6 +222,8 @@ const I18N={
   searching:{en:'Searching…',de:'Suche läuft…'},
   loading:{en:'Loading…',de:'Lädt…'},
   no_items:{en:'No items found.',de:'Keine Items gefunden.'},
+  back_results:{en:'← Back to results',de:'← Zurück zu den Ergebnissen'},
+  open_item:{en:'Open item',de:'Item öffnen'},
   no_sources:{en:'No known source found.',de:'Keine bekannte Quelle gefunden.'},
   not_found:{en:'Not found.',de:'Nicht gefunden.'},
   viewing:{en:'Viewing',de:'Ansicht'},
@@ -253,7 +256,7 @@ function setLang(l){
   localStorage.setItem('gs_lang',l);
   applyI18n();
   if(currentTab==='settings')loadSettings();
-  if(currentTab==='character')loadRecents();
+  if(currentTab==='character'){loadRecents();loadSnapshot(true)}
 }
 // icons come from the plugin's own /api/icon (game data via Lumina) — xivapi's CDN is frozen
 // and 404s on anything newer than its snapshot
@@ -554,10 +557,30 @@ $('#q').addEventListener('input',e=>{
     if(q.length<1){box.innerHTML='';return}
     box.innerHTML=`<div class="empty"><span class="spinner"></span>${t('searching')}</div>`;
     const r=await fetch('/api/search?q='+encodeURIComponent(q)).then(r=>r.json());
-    box.innerHTML=r.length?r.map(x=>`<div class="row" onclick="openItem(${x.id})">${img(x.iconId,28)}<span>${esc(x.name)}</span><img class="rowpreview" src="/api/itemimage/${x.id}" loading="lazy" onerror="this.remove()"></div>`).join(''):`<div class="empty">${t('no_items')}</div>`;
+    box.style.display='';$('#resback').style.display='none';
+    box.innerHTML=r.length?r.map(x=>`<div class="row" tabindex="0" role="button" onclick="openItem(${x.id})">${img(x.iconId,28)}<span>${esc(x.name)}</span><img class="rowpreview" src="/api/itemimage/${x.id}" loading="lazy" onerror="this.remove()"></div>`).join(''):`<div class="empty">${t('no_items')}</div>`;
     updateOverlayCompactness();
   },250);
 });
+// keyboard: ↓ from the search box into the list, ↑/↓ between rows, Enter opens (Enter in the box = first hit)
+$('#q').addEventListener('keydown',e=>{
+  const first=$('#results .row');
+  if(!first)return;
+  if(e.key==='ArrowDown'){first.focus();e.preventDefault()}
+  else if(e.key==='Enter')first.click();
+});
+$('#results').addEventListener('keydown',e=>{
+  const rows=[...$('#results').querySelectorAll('.row')],i=rows.indexOf(document.activeElement);
+  if(i<0)return;
+  if(e.key==='Enter')rows[i].click();
+  else if(e.key==='ArrowDown'&&i<rows.length-1){rows[i+1].focus();e.preventDefault()}
+  else if(e.key==='ArrowUp'){(i>0?rows[i-1]:$('#q')).focus();e.preventDefault()}
+});
+// "Suchergebnisse verschwinden beim Item-Klick": list is only hidden, the back bar restores it
+function backToResults(){
+  $('#detail').innerHTML='';$('#resback').style.display='none';$('#results').style.display='';
+  updateOverlayCompactness();
+}
 
 // "Item Search darf gern klein bleiben bis man sachen sucht": the Browsingway overlay window has a
 // fixed size (Plugin.PinBrowsingwayOverlaySize) since the page itself can't shrink it — tell the
@@ -571,7 +594,7 @@ function updateOverlayCompactness(){
 // to #detail) or 'showItemPanel' (Charakter tab, writes to #chardetail). Set-member chips need to
 // call back into whichever panel is actually showing, not always the Suche one.
 function buildItemHtml(d,openFn='openItem'){
-  let h=`<div class="header">${img(d.iconId,48)}<div><div class="name">${esc(d.name)}</div><div class="meta">Item ID ${d.itemId} · iLvl ${d.itemLevel}${d.isMarketable?' · marketable':''}${d.setName?` · Set: ${esc(d.setName)}`:''}</div></div></div><div class="preview"><img src="/api/itemimage/${d.itemId}" loading="lazy" onerror="this.parentElement.style.display='none'"></div>`;
+  let h=`<div class="header">${img(d.iconId,48)}<div><h2 class="name">${esc(d.name)}</h2><div class="meta">Item ID ${d.itemId} · iLvl ${d.itemLevel}${d.isMarketable?' · marketable':''}${d.setName?` · Set: ${esc(d.setName)}`:''}</div></div></div><div class="preview"><img src="/api/itemimage/${d.itemId}" loading="lazy" onerror="this.parentElement.style.display='none'"></div>`;
   if((d.setMembers??[]).length){
     h+=`<div class="tbl">Rest of the set</div><div style="display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 14px">`;
     for(const m of d.setMembers)h+=`<div class="row" style="width:auto" onclick="${openFn}(${m.itemId})">${img(m.iconId,24)}<span>${esc(m.name)}</span></div>`;
@@ -588,14 +611,15 @@ function buildItemHtml(d,openFn='openItem'){
     if(!groups.has(key))groups.set(key,[]);
     groups.get(key).push(s);
   }
-  for(const group of groups.values())h+=renderSource(group,d.itemId);
+  for(const group of groups.values())h+=renderSource(group,d.itemId,openFn);
   h+='</div>';
   if(!(d.sources??[]).length)h+=`<div class="empty">${t('no_sources')}</div>`;
   return h;
 }
 
 async function openItem(id){
-  $('#results').innerHTML='';$('#q').value='';
+  const n=$('#results').querySelectorAll('.row').length;
+  if(n){$('#results').style.display='none';$('#resback').style.display='';$('#resback').textContent=`${t('back_results')} (${n})`}
   $('#detail').innerHTML=`<div class="empty"><span class="spinner"></span>${t('loading')}</div>`;
   updateOverlayCompactness();
   const d=await fetch('/api/item/'+id).then(r=>r.ok?r.json():null);
@@ -605,11 +629,13 @@ async function openItem(id){
 
 // group: one or more sources sharing the same description+cost (see buildItemHtml) — one card,
 // one NPC/location table row per entry instead of a fully repeated card per location.
-function renderSource(group,itemId){
+function renderSource(group,itemId,openFn='openItem'){
   const s=group[0];
   const t=(s.type??'').toString();
   const cls=/craft/i.test(t)?'crafted':/vendor|shop/i.test(t)?'vendor':/quest/i.test(t)?'quest':/trial|raid|dungeon/i.test(t)?'duty':'';
   let h=`<div class="card ${cls}"><h3><span class="badge">${typeIcon(cls)} ${esc(t).toUpperCase()}</span> ${esc(s.description??'')}</h3>`;
+  // same jump ImGui's ItemDetailWindow offers: coffer / "Retired — replaced by Augmented X" -> that item
+  if(s.sourceItemId)h+=`<button class="act" onclick="${openFn}(${s.sourceItemId})">${I18N.open_item[lang]}</button> `;
   if(/craft/i.test(t))h+=`<button class="act" onclick="post('/api/action/craftlog/${itemId}')">Open Crafting Log</button>`;
   if(s.cfcRowId)h+=` <button class="act" onclick="post('/api/action/dutyfinder/${s.cfcRowId}')">Duty Finder</button>`;
   const withNpc=group.filter(g=>g.npcName);
@@ -662,10 +688,13 @@ function npcRow(s){
   return`<tr><td>${esc(s.npcName)}</td><td class="muted">${esc(loc)}</td><td>${map}</td></tr>`;
 }
 
-// slot enum names -> in-game style German labels
-const SLOT_DE={MainHand:'Hauptwaffe',OffHand:'Nebenwaffe',Head:'Kopf',Body:'Rumpf',Hands:'Hände',
-  Legs:'Beine',Feet:'Füße',Ears:'Ohrringe',Necklace:'Halskette',Neck:'Halskette',
-  Bracelets:'Armreif',Wrists:'Armreif',RingRight:'Ring (rechts)',RingLeft:'Ring (links)'};
+// EquipmentSlotType names -> in-game style labels per UI language (was German-only, and missed
+// "Earrings" — the enum name — so that one slot showed up untranslated)
+const SLOT_LBL={MainHand:{en:'Main Hand',de:'Hauptwaffe'},OffHand:{en:'Off Hand',de:'Nebenwaffe'},
+  Head:{en:'Head',de:'Kopf'},Body:{en:'Body',de:'Rumpf'},Hands:{en:'Hands',de:'Hände'},
+  Legs:{en:'Legs',de:'Beine'},Feet:{en:'Feet',de:'Füße'},Earrings:{en:'Earrings',de:'Ohrringe'},Ear:{en:'Earrings',de:'Ohrringe'},
+  Necklace:{en:'Necklace',de:'Halskette'},Bracelets:{en:'Bracelets',de:'Armreif'},
+  RingRight:{en:'Ring (right)',de:'Ring (rechts)'},RingLeft:{en:'Ring (left)',de:'Ring (links)'},Waist:{en:'Waist',de:'Gürtel'}};
 
 let lastSnapshotHash=null;
 async function loadSnapshot(force){
@@ -678,7 +707,7 @@ async function loadSnapshot(force){
     const id=s.glamourItemId??s.actualItemId;
     if(!id)return'';
     const name=s.glamourItemName??s.actualItemName??'';
-    const lbl=SLOT_DE[s.slot]??s.slot;
+    const lbl=SLOT_LBL[s.slot]?.[lang]??s.slot;
     // opens the lookup in the RIGHT-SIDE panel — no tab switch, no page scroll
     return`<div class="slot" onclick="showItemPanel(${id})">${img(s.iconId,40)}<div><div class="lbl">${esc(lbl)}</div><div class="nm">${esc(name)}</div></div>${s.isGlamoured?'<span class="glam">Glam</span>':''}</div>`;
   }).join('');

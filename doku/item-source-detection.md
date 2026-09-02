@@ -201,6 +201,19 @@ same kind of native-read work as the mount lookup above, just not built yet.
   get-and-clear), polled every 1500ms by the frontend. Lets any native trigger (mount lookup,
   Examine click) land the item in the web UI's Lookup tab without the user doing anything.
 
+- **Browser walkthrough 2026-09-02 (0.0.0.302)** — findings from clicking through the mock:
+  - Result list no longer vanishes on item click: hidden, restored via a "← Back to results (N)"
+    bar above the detail (`#resback`, `backToResults()`); the query stays in the box.
+  - Keyboard: rows are `tabindex=0` `role=button`; ↓ from the search box into the list, ↑/↓
+    between rows, Enter opens (Enter in the box = first hit).
+  - Character slot labels were German-only (`SLOT_DE`) and missed the actual enum name
+    `Earrings` — now `SLOT_LBL` per UI language, re-rendered on language toggle.
+  - Sources with `sourceItemId` (coffers, "Retired — replaced by Augmented X") get an
+    "Open item" button, same jump ImGui's `ItemDetailWindow` already had.
+  - `/api/itemimage/{id}` miss → 204 instead of 404 (both servers): the `<img onerror>` already
+    hides it, the 404 only produced one console error per result row.
+  - Item name in the detail header is an `<h2>` now (was a div; the source badge was the only heading).
+
 ## Native ImGui window — Set/Triple-Triad/preview-image parity
 
 `ItemDetailWindow.cs` gained the same features as the web UI's item panel: Set-Name + clickable

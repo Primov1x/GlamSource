@@ -481,7 +481,8 @@ public sealed class WebUiService : IDisposable
             // of client language.
             var wikiName = _detail.GetEnglishName(imgItemId) ?? detail.Name;
             var bytes = _imageService.GetPreviewImageBytesAsync(imgItemId, wikiName).GetAwaiter().GetResult();
-            if (bytes == null) return ("404 Not Found", "text/plain", Encoding.UTF8.GetBytes("no preview image"));
+            // 204 not 404: the <img onerror> already hides it, a 404 only spams the browser console (one per row)
+            if (bytes == null) return ("204 No Content", "text/plain", Array.Empty<byte>());
             return ("200 OK", "image/jpeg", bytes);
         }
 
