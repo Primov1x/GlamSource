@@ -46,6 +46,11 @@ input[type=search]:focus{border-color:var(--accent)}
 .row:hover,.row:focus{border-color:var(--accent);background:var(--panel2);outline:none}
 .row img{width:28px;height:28px;border-radius:4px}
 .row img.rowpreview{width:40px;height:40px;border-radius:6px;margin-left:auto;object-fit:cover}
+.row .ilvl{color:var(--muted);font-size:11px;margin-left:6px}
+#filters{display:flex;gap:6px;margin-top:6px;max-width:420px;flex-wrap:wrap}
+#filters select,#filters input{background:var(--panel);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:6px;font-size:12px;outline:none}
+#filters select:focus,#filters input:focus{border-color:var(--accent)}
+#filters input{width:72px}
 .cards{display:flex;flex-direction:column;gap:14px;margin-top:16px}
 .card{background:var(--panel);border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:10px;padding:14px 16px;box-shadow:0 2px 10px rgba(0,0,0,.35)}
 .card h3{display:flex;align-items:center;gap:8px;font-size:14px;margin-bottom:8px}
@@ -140,6 +145,12 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 
 <section id="view-lookup">
   <input type="search" id="q" data-i18n-ph="search_ph" autofocus>
+  <div id="filters">
+    <select id="f-slot"></select>
+    <select id="f-job"></select>
+    <input id="f-min" type="number" min="1" max="999" data-i18n-ph="ilvl_min">
+    <input id="f-max" type="number" min="1" max="999" data-i18n-ph="ilvl_max">
+  </div>
   <div class="results" id="results"></div>
   <div id="resback" class="empty" style="display:none;cursor:pointer" onclick="backToResults()"></div>
   <div id="detail"></div>
@@ -223,6 +234,10 @@ const I18N={
   loading:{en:'Loading…',de:'Lädt…'},
   no_items:{en:'No items found.',de:'Keine Items gefunden.'},
   back_results:{en:'← Back to results',de:'← Zurück zu den Ergebnissen'},
+  f_all_slots:{en:'All slots',de:'Alle Slots'},
+  f_all_jobs:{en:'All jobs',de:'Alle Jobs'},
+  ilvl_min:{en:'iLvl from',de:'iLvl ab'},
+  ilvl_max:{en:'iLvl to',de:'iLvl bis'},
   open_item:{en:'Open item',de:'Item öffnen'},
   no_sources:{en:'No known source found.',de:'Keine bekannte Quelle gefunden.'},
   not_found:{en:'Not found.',de:'Nicht gefunden.'},
@@ -255,6 +270,7 @@ function setLang(l){
   lang=l;
   localStorage.setItem('gs_lang',l);
   applyI18n();
+  fillFilters();
   if(currentTab==='settings')loadSettings();
   if(currentTab==='character'){loadRecents();loadSnapshot(true)}
 }
@@ -546,22 +562,29 @@ function p3dResetView(){p3dRedraw()}
   },{passive:false});
 })();
 
+// query + slot/job/iLvl filters -> /api/search params. A filter alone (no query) browses, e.g.
+// "every Head item for PLD from iLvl 700" — the server sorts filtered hits by iLvl desc.
+function searchParams(){
+  const p=new URLSearchParams({q:$('#q').value.trim()});
+  for(const [id,key] of [['f-slot','slot'],['f-job','job'],['f-min','ilvlmin'],['f-max','ilvlmax']]){const v=$('#'+id).value;if(v)p.set(key,v)}
+  return p;
+}
+async function runSearch(){
+  const p=searchParams(),q=p.get('q'),box=$('#results');
+  const isId=/^\d+$/.test(q); // pure-digit query = item ID lookup, skip the 3-char name minimum
+  const hasFilter=[...p.keys()].length>1;
+  if(!isId&&q.length<3&&!hasFilter){box.innerHTML='';updateOverlayCompactness();return}
+  box.innerHTML=`<div class="empty"><span class="spinner"></span>${t('searching')}</div>`;
+  const r=await fetch('/api/search?'+p).then(r=>r.json());
+  box.style.display='';$('#resback').style.display='none';
+  box.innerHTML=r.length?r.map(x=>`<div class="row" tabindex="0" role="button" onclick="openItem(${x.id})">${img(x.iconId,28)}<span>${esc(x.name)}${x.ilvl?`<span class="ilvl">iLvl ${x.ilvl}</span>`:''}</span><img class="rowpreview" src="/api/itemimage/${x.id}" loading="lazy" onerror="this.remove()"></div>`).join(''):`<div class="empty">${t('no_items')}</div>`;
+  updateOverlayCompactness();
+}
 let deb;
-$('#q').addEventListener('input',e=>{
-  clearTimeout(deb);
-  deb=setTimeout(async()=>{
-    const q=e.target.value.trim();
-    const box=$('#results');
-    const isId=/^\d+$/.test(q); // pure-digit query = item ID lookup, skip the 3-char name minimum
-    if(!isId&&q.length<3){box.innerHTML='';return}
-    if(q.length<1){box.innerHTML='';return}
-    box.innerHTML=`<div class="empty"><span class="spinner"></span>${t('searching')}</div>`;
-    const r=await fetch('/api/search?q='+encodeURIComponent(q)).then(r=>r.json());
-    box.style.display='';$('#resback').style.display='none';
-    box.innerHTML=r.length?r.map(x=>`<div class="row" tabindex="0" role="button" onclick="openItem(${x.id})">${img(x.iconId,28)}<span>${esc(x.name)}</span><img class="rowpreview" src="/api/itemimage/${x.id}" loading="lazy" onerror="this.remove()"></div>`).join(''):`<div class="empty">${t('no_items')}</div>`;
-    updateOverlayCompactness();
-  },250);
-});
+const queueSearch=()=>{clearTimeout(deb);deb=setTimeout(runSearch,250)};
+$('#q').addEventListener('input',queueSearch);
+for(const id of['f-slot','f-job'])$('#'+id).addEventListener('change',queueSearch);
+for(const id of['f-min','f-max'])$('#'+id).addEventListener('input',queueSearch);
 // keyboard: ↓ from the search box into the list, ↑/↓ between rows, Enter opens (Enter in the box = first hit)
 $('#q').addEventListener('keydown',e=>{
   const first=$('#results .row');
@@ -695,6 +718,18 @@ const SLOT_LBL={MainHand:{en:'Main Hand',de:'Hauptwaffe'},OffHand:{en:'Off Hand'
   Legs:{en:'Legs',de:'Beine'},Feet:{en:'Feet',de:'Füße'},Earrings:{en:'Earrings',de:'Ohrringe'},Ear:{en:'Earrings',de:'Ohrringe'},
   Necklace:{en:'Necklace',de:'Halskette'},Bracelets:{en:'Bracelets',de:'Armreif'},
   RingRight:{en:'Ring (right)',de:'Ring (rechts)'},RingLeft:{en:'Ring (left)',de:'Ring (links)'},Waist:{en:'Waist',de:'Gürtel'}};
+
+// search filter dropdowns — slots from SLOT_LBL (minus the Ear alias and the long-gone Waist),
+// jobs from /api/jobs (game's own abbreviations + localized names). Rebuilt on language toggle.
+let jobList=[];
+function fillFilters(){
+  const s=$('#f-slot'),j=$('#f-job'),sv=s.value,jv=j.value;
+  s.innerHTML=`<option value="">${t('f_all_slots')}</option>`+Object.keys(SLOT_LBL).filter(k=>k!=='Ear'&&k!=='Waist').map(k=>`<option value="${k}">${SLOT_LBL[k][lang]}</option>`).join('');
+  j.innerHTML=`<option value="">${t('f_all_jobs')}</option>`+jobList.map(x=>`<option value="${esc(x.abbr)}">${esc(x.abbr)} · ${esc(x.name.replace(/^\w/,c=>c.toUpperCase()))}</option>`).join('');
+  s.value=sv;j.value=jv;
+}
+fillFilters();
+fetch('/api/jobs').then(r=>r.json()).then(l=>{jobList=l;fillFilters()}).catch(()=>{});
 
 let lastSnapshotHash=null;
 async function loadSnapshot(force){

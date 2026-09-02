@@ -62,6 +62,7 @@ public sealed class WebUiService : IDisposable
     private long _lastStreamFrames;
     private double _lastStreamDurationS;
     private double _lastStreamAvgFps;
+    private ItemSearchIndex? _search; // lazy: first /api/search builds the ~40k-row index
     private TcpListener? _listener;
     private TcpListener? _listener6;
     private CancellationTokenSource? _cts;
@@ -436,13 +437,14 @@ public sealed class WebUiService : IDisposable
                 return Json(idResult);
             }
 
-            object result = q.Length < 3
-                ? Array.Empty<object>()
-                : _glamour.SearchItems(q).Take(30)
-                    .Select(r => new { r.id, r.name, iconId = (uint)(itemSheet?.GetRowOrDefault(r.id)?.Icon ?? 0) })
-                    .ToArray();
-            return Json(result);
+            int? Int(string key) => int.TryParse(query[key], out var v) ? v : null;
+            var hits = (_search ??= new ItemSearchIndex(_detail.GameData))
+                .Search(q, query["slot"], query["job"], Int("ilvlmin"), Int("ilvlmax"), 60);
+            return Json(hits.Select(h => new { id = h.Id, name = h.Name, iconId = h.IconId, ilvl = h.ItemLevel }).ToArray());
         }
+
+        if (method == "GET" && path == "/api/jobs")
+            return Json((_search ??= new ItemSearchIndex(_detail.GameData)).Jobs().Select(j => new { j.abbr, j.name }).ToArray());
 
         if (method == "GET" && path.StartsWith("/api/item/") && uint.TryParse(path["/api/item/".Length..], out var itemId))
         {

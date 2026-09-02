@@ -199,7 +199,9 @@ public sealed class ItemDetailService : IItemDetailService
             return null;
         }
         var name = item.Name.ToString()!;
-        var itemLevel = item.LevelEquip;
+        // LevelItem is the item level (iLvl 120 for Ironworks Helm); LevelEquip is the required
+        // character level (50) — the UI labels this "iLvl", so it must be the former.
+        var itemLevel = (ushort)item.LevelItem.RowId;
         var isMarketable = item.ItemSearchCategory.RowId > 0;
         var iconId = item.Icon;
         // ponytail: Item.ItemSeries is the game's own Mog Station bundle grouping (verified: Abes
