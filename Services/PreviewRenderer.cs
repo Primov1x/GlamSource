@@ -885,6 +885,25 @@ public sealed unsafe class PreviewRenderer : IDisposable
                                     if (weaponObj == null) continue;
                                     bodyObj->AddChild(weaponObj);
                                     weaponObj->OnAddedToWorld();
+                                    // Weapon path #20 — user's question: "sicher das es in der Nähe
+                                    // ist? nicht irgendwo im Port wo wir sie nicht sehen?" Object.
+                                    // Position (0x50) we've been reading is the LOCAL transform
+                                    // relative to the parent — plausible locally doesn't mean the
+                                    // engine ever recomputed the WORLD transform after we linked it
+                                    // in late via AddChild. DrawObject has a real vf7
+                                    // UpdateTransforms(bool) + an IsTransformChanged flag
+                                    // (Flags bit1, per clib's NotifyTransformChanged: "the inlined
+                                    // routine called after modifying the transform of a
+                                    // DrawObject") — force both so the world matrix actually
+                                    // recomputes from the newly-attached parent instead of possibly
+                                    // sitting on stale/default data from before Create().
+                                    // IsTransformChanged lives on Object.ObjectFlags (ulong @ 0x38,
+                                    // bit 1) — a DIFFERENT field from DrawObject's own Flags byte
+                                    // (0x88, unrelated). Raw offset write: past sessions repeatedly
+                                    // found the pinned clib build missing newly-referenced named
+                                    // members, safer to not depend on a named property existing.
+                                    *(ulong*)((byte*)weaponObj + 0x38) |= 0x02;
+                                    ((DrawObject*)weaponObj)->UpdateTransforms(true);
                                     _log.Info($"[PreviewRenderer] weapon path #18: slot={i} weaponObj={(nint)weaponObj:X} " +
                                         $"weaponObj->ParentObject={(nint)weaponObj->ParentObject:X} (expect bodyObj={(nint)bodyObj:X}) " +
                                         $"bodyObj->ChildObject={(nint)bodyObj->ChildObject:X} (expect weaponObj)");
