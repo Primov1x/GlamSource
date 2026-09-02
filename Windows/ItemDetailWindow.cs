@@ -802,7 +802,8 @@ public class ItemDetailWindow : Window, IDisposable
                 if (src.Materials != null && src.Materials.Count > 0)
                 {
                     ImGui.Spacing();
-                    ImGui.TextDisabled(Loc.T("Materials:"));
+                    // an "Other" card with materials is an outfit set (ItemDetailService 7f): its rows are pieces
+                    ImGui.TextDisabled(Loc.T(src.Type == ItemSourceType.Other ? "Pieces:" : "Materials:"));
                     for (int matIdx = 0; matIdx < src.Materials.Count; matIdx++)
                     {
                         DrawMaterialRow(src.Materials[matIdx], sourceIdx, matIdx);

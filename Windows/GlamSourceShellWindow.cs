@@ -58,7 +58,13 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
 
     // ---------- Lookup tab state (from MainWindow) ----------
     private string _lookupText = "";
-    private IReadOnlyList<(uint id, string name)>? _lookupResults;
+    private IReadOnlyList<ItemSearchResult>? _lookupResults;
+    // slot / job / iLvl filters — same ItemSearchIndex the web UI uses; a filter alone browses
+    private ItemSearchIndex? _searchIndex;
+    private int _filterSlot, _filterJob;
+    private string _filterIlvlMin = "", _filterIlvlMax = "";
+    private string[]? _jobAbbrs, _jobLabels;
+    private static readonly string[] FilterSlotKeys = { "", "MainHand", "OffHand", "Head", "Body", "Hands", "Legs", "Feet", "Earrings", "Necklace", "Bracelets", "RingRight", "RingLeft" };
 
     // ---------- Character tab state (from CharacterGlamourWindow) ----------
     private string? _lastApplyStatus;
@@ -280,12 +286,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         UiStyle.SectionHeader(Loc.T("Item Lookup"));
         ImGui.SetNextItemWidth(ImGui.GetFontSize() * 22f);
         if (ImGui.InputTextWithHint("##item_lookup", Loc.T("Search any item..."), ref _lookupText, 256))
-        {
-            if (_lookupText.Length >= 3)
-                _lookupResults = _glamour.SearchItems(_lookupText).Take(20).ToList();
-            else
-                _lookupResults = null;
-        }
+            RunLookup();
         if (!string.IsNullOrEmpty(_lookupText))
         {
             ImGui.SameLine();
@@ -294,7 +295,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
                 if (ImGuiComponents.IconButton(FontAwesomeIcon.Times))
                 {
                     _lookupText = "";
-                    _lookupResults = null;
+                    RunLookup();
                 }
             }
             if (ImGui.IsItemHovered())
@@ -306,6 +307,26 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
             }
         }
 
+        // filters (parity with the web UI): slot, job, iLvl range — any of them alone browses,
+        // e.g. "every Head item for PLD from iLvl 700", sorted by iLvl desc
+        var slotLabels = FilterSlotLabels();
+        ImGui.SetNextItemWidth(ImGui.GetFontSize() * 7f);
+        if (ImGui.Combo("##f_slot", ref _filterSlot, slotLabels, slotLabels.Length))
+            RunLookup();
+        ImGui.SameLine();
+        var jobLabels = JobLabels();
+        ImGui.SetNextItemWidth(ImGui.GetFontSize() * 9f);
+        if (ImGui.Combo("##f_job", ref _filterJob, jobLabels, jobLabels.Length))
+            RunLookup();
+        ImGui.SameLine();
+        ImGui.SetNextItemWidth(ImGui.GetFontSize() * 4.5f);
+        if (ImGui.InputTextWithHint("##f_min", Loc.T("iLvl from"), ref _filterIlvlMin, 4))
+            RunLookup();
+        ImGui.SameLine();
+        ImGui.SetNextItemWidth(ImGui.GetFontSize() * 4.5f);
+        if (ImGui.InputTextWithHint("##f_max", Loc.T("iLvl to"), ref _filterIlvlMax, 4))
+            RunLookup();
+
         if (_lookupResults is { Count: > 0 })
         {
             var childSize = new Vector2(ImGui.GetFontSize() * 26f, ImGui.GetFontSize() * 11f);
@@ -313,9 +334,9 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
             {
                 if (card.Opened)
                 {
-                    foreach (var (id, name) in _lookupResults)
+                    foreach (var r in _lookupResults)
                     {
-                        var resultIconId = GetIconId(id);
+                        var resultIconId = GetIconId(r.Id);
                         if (resultIconId > 0)
                         {
                             var tex = _textures.GetFromGameIcon(new GameIconLookup(resultIconId)).GetWrapOrEmpty();
@@ -323,19 +344,24 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
                             ImGui.Image(tex.Handle, new Vector2(edge, edge));
                             ImGui.SameLine();
                         }
-                        if (ImGui.Selectable($"{name}##lookup_{id}"))
+                        if (r.ItemLevel > 0)
                         {
-                            _detailWindow?.ShowItem(id);
+                            ImGui.TextColored(UiStyle.Muted, $"{r.ItemLevel,3}");
+                            ImGui.SameLine();
+                        }
+                        if (ImGui.Selectable($"{r.Name}##lookup_{r.Id}"))
+                        {
+                            _detailWindow?.ShowItem(r.Id);
                             _lookupText = "";
                             _lookupResults = null;
                         }
                         if (ImGui.IsItemHovered())
-                            ImGui.SetTooltip($"Item ID {id} — click for details");
+                            ImGui.SetTooltip($"Item ID {r.Id} · iLvl {r.ItemLevel} — click for details");
                     }
                 }
             }
         }
-        else if (!string.IsNullOrEmpty(_lookupText) && _lookupText.Length < 3)
+        else if (!string.IsNullOrEmpty(_lookupText) && _lookupText.Length < 3 && !HasLookupFilter)
         {
             ImGui.TextColored(UiStyle.Muted, Loc.T("Type 3+ characters to search."));
         }
@@ -1161,6 +1187,51 @@ private void ApplyTargetGlamourToSelf()
         EquipmentSlotType.RingLeft => ApiEquipSlot.LFinger,
         _ => ApiEquipSlot.Unknown,
     };
+
+    private bool HasLookupFilter => _filterSlot > 0 || _filterJob > 0 || _filterIlvlMin.Length > 0 || _filterIlvlMax.Length > 0;
+
+    // ponytail: the first filtered lookup builds the ~40k-row ItemSearchIndex synchronously on the
+    // UI thread (one slow frame); the web UI does the same on its request thread. Fine for now —
+    // move to a Task if anyone notices the hitch.
+    private void RunLookup()
+    {
+        var q = _lookupText.Trim();
+        var isId = uint.TryParse(q, out var directId);
+        if (!isId && q.Length < 3 && !HasLookupFilter) { _lookupResults = null; return; }
+        if (isId)
+        {
+            var row = _data.GetExcelSheet<Lumina.Excel.Sheets.Item>()?.GetRowOrDefault(directId);
+            _lookupResults = row is { } item && item.Name.ToString().Length > 0
+                ? new[] { new ItemSearchResult(directId, item.Name.ToString(), item.Icon, (int)item.LevelItem.RowId) }
+                : Array.Empty<ItemSearchResult>();
+            return;
+        }
+        _searchIndex ??= new ItemSearchIndex(_data.GameData);
+        static int? Ilvl(string text) => int.TryParse(text, out var v) && v > 0 ? v : null;
+        _lookupResults = _searchIndex.Search(q, FilterSlotKeys[_filterSlot], _filterJob > 0 ? _jobAbbrs![_filterJob] : null,
+            Ilvl(_filterIlvlMin), Ilvl(_filterIlvlMax), 40);
+    }
+
+    private string[] FilterSlotLabels()
+    {
+        var labels = new string[FilterSlotKeys.Length];
+        labels[0] = Loc.T("All slots");
+        for (var i = 1; i < labels.Length; i++) labels[i] = FilterSlotKeys[i]; // enum names, like the Character tab shows them
+        return labels;
+    }
+
+    private string[] JobLabels()
+    {
+        if (_jobLabels == null)
+        {
+            _searchIndex ??= new ItemSearchIndex(_data.GameData);
+            var jobs = _searchIndex.Jobs();
+            _jobAbbrs = new[] { "" }.Concat(jobs.Select(j => j.abbr)).ToArray();
+            _jobLabels = new[] { "" }.Concat(jobs.Select(j => $"{j.abbr} · {j.name}")).ToArray();
+        }
+        _jobLabels[0] = Loc.T("All jobs");
+        return _jobLabels;
+    }
 
     private uint GetIconId(uint itemId)
     {

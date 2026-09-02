@@ -122,6 +122,15 @@ Found along the way (all verified against the real sheets via throwaway RawRow d
 | **Name/description patterns** | PvP season kits/chits/trophies (`^Season …`), FRC/CCRC certifications, Tales of Adventure, chocobo registrations, retired/irregular tomestones, Diadem (`Rarity == 7`), Antiquated AF, Manderville/Anima/Resistance relic weapons, Skysteel/Splendorous/Cosmotool relic tools, Novice's tools, "Eureka gear." description, "society quests" description, Triple Triad fallback | see comments 11c–11j in `ItemDetailService` |
 | **iLvl bug** (Nebenbefund) | `ItemDetail.ItemLevel` was `LevelEquip` (required level), UI labels it "iLvl" → `LevelItem.RowId` | Ironworks Helm: 50 → 120 |
 
+**ImGui parity (0.0.0.304):** the Lookup tab got the same slot / job / iLvl filters
+(`GlamSourceShellWindow.DrawLookupTab` → `RunLookup`, shared `ItemSearchIndex`), results show the
+iLvl, pure-digit queries still resolve an item ID directly. `ItemDetailWindow` already rendered
+`Materials` / `Costs` / `SourceItemId` generically, so the new cards (outfit pieces, GC seals,
+trade-in link) needed only the "Pieces:" label. **Needs in-game verification** (the mock harness
+draws its own windows): filter combos render/react, first filtered search's one-frame index-build
+hitch is acceptable, outfit card shows "Pieces:" with clickable rows, GC quartermaster card shows
+the seal cost.
+
 `LuminaSupplemental.Excel` bumped 5.1.0 → 5.1.4 (no code change needed); its duty-drop data still
 ends around item id 48k, so 7.2+ raid gear (Vana'dielian, Praemagitek — 90 items) stays on the
 fallback. Also still open: Ornate Ironworks crafting/gathering gear (97), Augmented Ala Mhigan /
