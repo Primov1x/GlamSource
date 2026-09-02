@@ -903,7 +903,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
                                     // found the pinned clib build missing newly-referenced named
                                     // members, safer to not depend on a named property existing.
                                     *(ulong*)((byte*)weaponObj + 0x38) |= 0x02;
-                                    ((DrawObject*)weaponObj)->UpdateTransforms(true);
+                                    ((FFXIVClientStructs.FFXIV.Client.Graphics.Scene.DrawObject*)weaponObj)->UpdateTransforms(true);
                                     _log.Info($"[PreviewRenderer] weapon path #18: slot={i} weaponObj={(nint)weaponObj:X} " +
                                         $"weaponObj->ParentObject={(nint)weaponObj->ParentObject:X} (expect bodyObj={(nint)bodyObj:X}) " +
                                         $"bodyObj->ChildObject={(nint)bodyObj->ChildObject:X} (expect weaponObj)");
