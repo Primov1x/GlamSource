@@ -863,6 +863,16 @@ public sealed unsafe class PreviewRenderer : IDisposable
                         // apparently stop short of it. AddChild() is the engine's own native
                         // function for exactly this (Object.cs, real member function, not guessed) —
                         // safer than manual sibling-pointer splicing.
+                        // Weapon path #18 — can't be live-tested here (no running game; ClientStructs
+                        // Service<T> resolution hangs outside a real ffxiv_dx11.exe, see GlamSource.Mock
+                        // notes). Two things path #17 never actually checked, per Object.cs's base
+                        // struct: whether AddChild() sets weaponObj->ParentObject (0x18) back to
+                        // bodyObj, AND whether bodyObj->ChildObject (0x30) then reads back the weapon —
+                        // AddChild is supposed to set BOTH ends of the link, not just one. If AddChild
+                        // silently no-ops (unmet precondition) both stay wrong. Also trying
+                        // OnAddedToWorld() — the other untried native call flagged in the doc, in case
+                        // AddChild links the graph but something else needs this to "arm" the object for
+                        // rendering. Logged so a real dalamud.log from a live test tells us which.
                         {
                             var bodyObj = (FFXIVClientStructs.FFXIV.Client.Graphics.Scene.Object*)wch->GameObject.DrawObject;
                             if (bodyObj != null)
@@ -872,7 +882,12 @@ public sealed unsafe class PreviewRenderer : IDisposable
                                     ref var wd = ref wch->DrawData.Weapon((DrawDataContainer.WeaponSlot)i);
                                     if (wd.ModelId.Id == 0) continue;
                                     var weaponObj = *(FFXIVClientStructs.FFXIV.Client.Graphics.Scene.Object**)((byte*)Unsafe.AsPointer(ref wd) + 0x08);
-                                    if (weaponObj != null) bodyObj->AddChild(weaponObj);
+                                    if (weaponObj == null) continue;
+                                    bodyObj->AddChild(weaponObj);
+                                    weaponObj->OnAddedToWorld();
+                                    _log.Info($"[PreviewRenderer] weapon path #18: slot={i} weaponObj={(nint)weaponObj:X} " +
+                                        $"weaponObj->ParentObject={(nint)weaponObj->ParentObject:X} (expect bodyObj={(nint)bodyObj:X}) " +
+                                        $"bodyObj->ChildObject={(nint)bodyObj->ChildObject:X} (expect weaponObj)");
                                 }
                             }
                         }

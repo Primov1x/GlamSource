@@ -404,6 +404,21 @@ das ein echter Spieler-Charakter automatisch bekommt". Chronologie:
   vermutlich richtigen nativen Funktion dafür) korrigiert, ohne sichtbaren Effekt.
 - Kein Absturz seit dem `CharacterLoaded`-Guard (283) + Budget-Fix (293).
 
+### Pfad #18 (eingebaut, nicht live testbar — kein laufendes Spiel verfügbar hier)
+
+Zwei Sachen, die Pfad #17 nie tatsächlich geprüft hat: ob `AddChild()` laut der Basis-`Object`-
+Struct wirklich **beide** Enden der Verknüpfung setzt (`weaponObj->ParentObject` auf `bodyObj`,
+UND `bodyObj->ChildObject` zurück auf die Waffe) — bisher wurde nur angenommen, dass es
+funktioniert, nie nachgeprüft. Falls `AddChild` eine unerfüllte Vorbedingung hat, bleiben beide
+falsch. Zusätzlich `OnAddedToWorld()` (der andere in der Doku vermerkte, nie ausprobierte native
+Call) direkt nach `AddChild` aufgerufen — falls die Verknüpfung zwar sitzt, das Objekt aber noch
+"scharfgeschaltet" werden muss.
+
+Loggt pro Slot: `weaponObj->ParentObject` (erwartet: `bodyObj`) und `bodyObj->ChildObject`
+(erwartet: `weaponObj`) — Log-Zeile `weapon path #18` in `dalamud.log`. Kann hier nicht getestet
+werden (ClientStructs' `Service<T>`-Auflösung hängt außerhalb eines echten `ffxiv_dx11.exe`, siehe
+`GlamSource.Mock`-Notizen) — braucht einen echten Live-Test samt Log-Auszug.
+
 ### Nächste Ansatzpunkte (nicht ausprobiert)
 
 - `AddChild()`s tatsächliche Wirkung verifizieren: liest evtl. eine dritte, noch nicht gefundene
