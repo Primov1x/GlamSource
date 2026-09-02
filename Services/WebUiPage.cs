@@ -670,11 +670,14 @@ function renderSource(group,itemId,openFn='openItem'){
   for(const key of['materials','costs']){
     const list=s[key];
     if(list&&list.length){
-      h+=`<div style="margin-top:8px;color:var(--muted);font-size:12px">${key==='materials'?'Materials':'Cost'}</div>`;
+      // an "Other" card with materials is an outfit set (ItemDetailService 7f) — its rows are pieces
+      h+=`<div style="margin-top:8px;color:var(--muted);font-size:12px">${key==='materials'?(t==='Other'?'Pieces':'Materials'):'Cost'}</div>`;
       for(const m of list){
         // data-item + data-need: annotateInventory() fills in have/where AFTER this HTML lands in
         // the DOM (needs an async /api/inventory fetch per item — can't do that synchronously here).
-        h+=`<div class="matrow" data-item="${m.itemId}" data-need="${m.count}">${img(m.iconId,22)}<span class="matqty">${esc(m.name)||(m.itemId===0?'Gil':'#'+m.itemId)} × ${m.count.toLocaleString()}</span></div>`;
+        // rows with a real item id open that item (piece / material / currency source)
+        const click=m.itemId?` style="cursor:pointer" onclick="${openFn}(${m.itemId})"`:'';
+        h+=`<div class="matrow" data-item="${m.itemId}" data-need="${m.count}"${click}>${img(m.iconId,22)}<span class="matqty">${esc(m.name)||(m.itemId===0?'Gil':'#'+m.itemId)} × ${m.count.toLocaleString()}</span></div>`;
       }
     }
   }

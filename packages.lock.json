@@ -84,8 +84,8 @@
       },
       "LuminaSupplemental.Excel": {
         "type": "Transitive",
-        "resolved": "5.1.0",
-        "contentHash": "it0pwHvWlTek2HpZYT0qM4aZr9C7dqWr7YJBI0VFuaftKUEgJMRghBXfcz5F6yjAhY7iBjn7QfJtwxZEw4XPpA==",
+        "resolved": "5.1.4",
+        "contentHash": "emnlVa7IsrBQZyNsTeQPb6iqtKsTg1Ynm1UDL72QXha0FEKF6WudM6GINlW0VxXvTpe3RL8y/G4E1w53kMV78Q==",
         "dependencies": {
           "CSVFile": "3.2.1",
           "CsvHelper": "30.0.1",
@@ -110,7 +110,7 @@
       "glamsource.core": {
         "type": "Project",
         "dependencies": {
-          "LuminaSupplemental.Excel": "[5.1.0, )",
+          "LuminaSupplemental.Excel": "[5.1.4, )",
           "Newtonsoft.Json": "[13.0.3, )"
         }
       }

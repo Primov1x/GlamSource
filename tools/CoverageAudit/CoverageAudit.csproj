@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Full-sheet source-coverage audit: every named item through ItemDetailService.GetDetail,
+       lists the ones that land on the generic fallback (doku/item-source-detection.md, audit #2).
+       Not part of the .sln — run with `dotnet run -c Release` from this folder, needs the local
+       game install (D:\FF\game) and the Dalamud reference checkout for Lumina. -->
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0-windows</TargetFramework><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\GlamSource.Core\GlamSource.Core.csproj" />
+    <Reference Include="Lumina"><HintPath>..\..\reference\Dalamud\bin\Debug\Lumina.dll</HintPath></Reference>
+    <Reference Include="Lumina.Excel"><HintPath>..\..\reference\Dalamud\bin\Debug\Lumina.Excel.dll</HintPath></Reference>
+  </ItemGroup>
+</Project>

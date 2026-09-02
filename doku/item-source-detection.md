@@ -96,6 +96,38 @@ throwaway debug endpoint in `WebPreviewServer.cs`, removed after each check):
 - Ishgard Restoration / Bozja / Chocobo Racing one-offs — no shared `ItemUICategory` signal (all
   land under generic "Miscellany"/"Other"), each would need individual research for 1-2 items.
 
+## Source-coverage audit #2 — full sheet (2026-09-02, 0.0.0.303)
+
+Not a sample this time: every named item (50,360) through `GetDetail`, counting the ones that end
+on the generic step-12 fallback. Probe lives in `tools/CoverageAudit/` (`dotnet run -c Release`,
+~9 min, writes `nosource.tsv` + a per-UI-category histogram).
+
+**Before: 8,895 items (17.7%) → after: 2,407 (4.8%) — 6,488 items now get a specific answer.**
+
+Found along the way (all verified against the real sheets via throwaway RawRow dumps):
+
+| Fix / detector | Signal | Verified example |
+|---|---|---|
+| **Nameless SpecialShops were skipped** (bug) | `FindSpecialShopSources` did `continue` on an empty shop name — the Eureka gear exchange, Padjali/Empyrean, +1/+2 gear all live in nameless rows | 22238 Anemos Pacifist's Armguards → row 1769824, name "" |
+| **Crash: quest issuer as EObj** | `ENpcResident.GetRow(2011341)` threw `ArgumentOutOfRange` for 20795 Brightlily Seeds → `GetRowOrDefault`, plus a try/catch net around `BuildSources` and `Safe()` around every lazy index (DalaMock's older Lumina throws `MismatchedColumnHash` on some sheets) | 20795 |
+| **Grand Company seal shop** | `GCScripShopItem` (subrow sheet) → parent `GCScripShopCategory.GrandCompany`; seal item ids 20/21/22 | 3588 Serpent Private's Bracers → Twin Adder, 1050 Serpent Seals, rank 3 |
+| **Outfits ("X Attire")** | `MirageStoreSetItem` keyed by the outfit item id lists the pieces → card with a clickable "Pieces" list | 45416 Hidefiend's Costume Attire → 33063–33067 |
+| **FC workshop** | `CompanyCraftSequence.ResultItem`; "Primed X" → base wheel via exact name | 9654 Grade 2 Wheel of Productivity |
+| **Cosmic Exploration** | `WKSItemInfo` membership | 45963 Cosmic Chimera Worm, 50173 Craggy Sunfish |
+| **Spearfishing** | `SpearfishingItem` (item, level, territory) | — |
+| **Island Sanctuary** | `MJIItemPouch` + Isleworks/Islekeep's/Island prefixes | 37553 Island Branch |
+| **Hidden gathering yields** | in `GatheringItem` but no `GatheringPointBase` references it | 6688 Timeworn Leather Map |
+| **Fish log fallback** | `FishParameter.IsInLog` without a `FishingSpot` (ocean / Diadem / event) | — |
+| **Trade-in only** | item appears only as a COST in SpecialShop entries → "handed over at X to receive Y" with a link to Y | 21393 Ryumyaku Bracelet → Dai-ryumyaku; 38211 Irregular Tomestone |
+| **Name/description patterns** | PvP season kits/chits/trophies (`^Season …`), FRC/CCRC certifications, Tales of Adventure, chocobo registrations, retired/irregular tomestones, Diadem (`Rarity == 7`), Antiquated AF, Manderville/Anima/Resistance relic weapons, Skysteel/Splendorous/Cosmotool relic tools, Novice's tools, "Eureka gear." description, "society quests" description, Triple Triad fallback | see comments 11c–11j in `ItemDetailService` |
+| **iLvl bug** (Nebenbefund) | `ItemDetail.ItemLevel` was `LevelEquip` (required level), UI labels it "iLvl" → `LevelItem.RowId` | Ironworks Helm: 50 → 120 |
+
+`LuminaSupplemental.Excel` bumped 5.1.0 → 5.1.4 (no code change needed); its duty-drop data still
+ends around item id 48k, so 7.2+ raid gear (Vana'dielian, Praemagitek — 90 items) stays on the
+fallback. Also still open: Ornate Ironworks crafting/gathering gear (97), Augmented Ala Mhigan /
+Dragonsung (68), Mistic/Mistwake 7.x sets (110), beast-tribe coffer keys (27), old Skybuilders'
+fish (Ishgard Restoration Diadem) — no local sheet signal found for any of them.
+
 ## Item Set grouping (Mog Station bundles)
 
 `Item.ItemSeries` is the game's own bundle grouping — verified against the real Mog Station store

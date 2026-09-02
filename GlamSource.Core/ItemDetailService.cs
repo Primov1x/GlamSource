@@ -265,7 +265,13 @@ public sealed class ItemDetailService : IItemDetailService
             }
         }
 
-        var sources = BuildSources(itemId, item);
+        IReadOnlyList<ItemSourceDetail> sources;
+        try { sources = BuildSources(itemId, item); }
+        catch (Exception e)
+        {
+            // one bad row id in any of the ~40 lookups below must not take the whole window down
+            sources = new[] { Note(ItemSourceType.Other, $"Source detection failed for this item ({e.GetType().Name} at {e.StackTrace?.Split(Environment.NewLine).FirstOrDefault()?.Trim()}). Please report the item ID.") };
+        }
         var detail = new ItemDetail(itemId, name, itemLevel, isMarketable, iconId, sources, setName, setMembers);
 
         _cache[itemId] = detail;
@@ -420,7 +426,8 @@ public sealed class ItemDetailService : IItemDetailService
                             var issuerStart = quest.IssuerStart;
                             if (issuerStart.RowId > 0)
                             {
-                                var resident = _gameData.GetExcelSheet<ENpcResident>()?.GetRow(issuerStart.RowId);
+                                // GetRowOrDefault: the issuer can be an EObj id (2011341 for Brightlily Seeds) — GetRow threw
+                                var resident = _gameData.GetExcelSheet<ENpcResident>()?.GetRowOrDefault(issuerStart.RowId);
                                 questNpcName = resident?.Singular.ToString();
                             }
 
@@ -660,6 +667,120 @@ public sealed class ItemDetailService : IItemDetailService
             }
         }
 
+        // 7e. Grand Company seal shop — GCScripShopItem is a subrow sheet whose parent row is a
+        // GCScripShopCategory carrying the GC. Verified: 3588 Serpent Private's Bracers → category 12
+        // (GC 2 Twin Adder), 1050 seals, rank 3. ~330 Storm/Serpent/Flame arms + gear + bardings
+        // used to land on the generic fallback.
+        if (!results.Any(s => s.Type == ItemSourceType.Vendor) && GcSealShop.TryGetValue(itemId, out var gcEntries))
+        {
+            foreach (var g in gcEntries)
+            {
+                var sealItemId = g.gc switch { 1 => 20u, 2 => 21u, 3 => 22u, _ => 0u }; // Storm / Serpent / Flame Seal
+                var costs = sealItemId == 0 ? null
+                    : new List<CostEntry> { new(sealItemId, GetItemName(sealItemId) ?? "Company Seals", g.seals, GetItemIconId(sealItemId)) };
+                results.Add(new ItemSourceDetail(
+                    ItemSourceType.Vendor,
+                    $"Grand Company Quartermaster: {g.gcName} (rank {g.rank})",
+                    "Quartermaster", null, null, null, null, null,
+                    costs, null, null, null, null, null, null, null, null));
+            }
+        }
+
+        var enName = GetEnglishName(itemId) ?? item.Name.ToString();
+
+        // 7f. Outfit "Attire" items (ItemUICategory "Outfits") — MirageStoreSetItem, keyed by the
+        // outfit's own item id, lists its pieces (verified: 45416 Hidefiend's Costume Attire →
+        // 33063–33067, the five costume pieces). 1077 of these had no source at all.
+        if (results.Count == 0 && OutfitPieces.TryGetValue(itemId, out var pieces) && pieces.Count > 0)
+        {
+            results.Add(Note(ItemSourceType.Other,
+                "Outfit — a glamour set made up of the pieces below. The outfit itself isn't sold or dropped; each piece has its own source.",
+                pieces.Select(x => new CostEntry(x.itemId, x.name, 1, x.icon)).ToList(),
+                pieces[0].itemId));
+        }
+
+        // 7g. Free Company workshop — CompanyCraftSequence.ResultItem (verified: sequence 7 → 9654
+        // Grade 2 Wheel of Productivity). Airship/submersible parts, FC wheels, workshop furniture.
+        if (results.Count == 0 && WorkshopResults.Contains(itemId))
+        {
+            results.Add(Note(ItemSourceType.Other, "Company Workshop — crafted as a Free Company workshop project (Company Crafting Log), not by a single crafter."));
+        }
+        else if (results.Count == 0 && enName.StartsWith("Primed ", StringComparison.Ordinal)
+                 && FindItemIdByExactName(enName["Primed ".Length..]) is { } baseWheel)
+        {
+            results.Add(Note(ItemSourceType.Other, "Company Workshop — primed from its base wheel in the Free Company workshop.", sourceItemId: baseWheel));
+        }
+
+        // 7h. Cosmic Exploration — WKSItemInfo lists every item that exists on the Sinus Ardorum
+        // site (fish, tackle, cosmotools, materials). ~360 audit leftovers.
+        if (results.Count == 0 && CosmicItems.Contains(itemId))
+        {
+            results.Add(Note(ItemSourceType.Other, "Cosmic Exploration (Sinus Ardorum) — obtained on the Cosmic Exploration site through its missions, gathering or fishing."));
+        }
+
+        // 7i. Spearfishing — SpearfishingItem carries item, level and territory directly
+        // (FishingSpot only covers rod fishing).
+        if (!results.Any(s => s.Type == ItemSourceType.Gathering) && Spearfishing.TryGetValue(itemId, out var spearSpots))
+        {
+            foreach (var sp in spearSpots)
+            {
+                var zoneSuffix = string.IsNullOrEmpty(sp.zone) ? "" : $" ({sp.zone})";
+                results.Add(new ItemSourceDetail(ItemSourceType.Gathering, $"Spearfishing Lv.{sp.level}{zoneSuffix}",
+                    null, null, null, null, sp.territory == 0 ? null : sp.territory, null,
+                    null, null, null, null, null, null, null, null, null));
+            }
+        }
+
+        // 7j. Island Sanctuary — MJIItemPouch (gathered island materials) plus the Isleworks /
+        // Islekeep's / Island-prefixed produce, none of which ever leaves the island.
+        if (results.Count == 0 && (IslandPouch.Contains(itemId)
+            || Regex.IsMatch(enName, @"^(Isleworks |Islekeep's |Islander's |Island |Islewort|Isleberry|Islefish|Isleshroom)")))
+        {
+            results.Add(Note(ItemSourceType.Other, "Island Sanctuary — gathered, grown or crafted on your island (Isleworks); island items can't be taken off the island."));
+        }
+
+        // 7k. Hidden gathering yields — in GatheringItem but referenced by no GatheringPointBase
+        // node (verified: 6688 Timeworn Leather Map, GatheringItem 10121, zero node references).
+        if (!results.Any(s => s.Type == ItemSourceType.Gathering) && GatheringItemLevels.TryGetValue(itemId, out var hiddenLevel))
+        {
+            results.Add(Note(ItemSourceType.Gathering, $"Gathering Lv.{hiddenLevel} — random/hidden yield at Miner or Botanist nodes of that level (Timeworn maps and the like), not tied to one specific node."));
+        }
+
+        // 7l. Fish that are in the fishing log (FishParameter) but whose spot isn't in FishingSpot:
+        // ocean fishing, the Diadem, event spots. Say what it is instead of shrugging.
+        if (results.Count == 0 && FishLog.Contains(itemId))
+        {
+            results.Add(Note(ItemSourceType.Gathering, "Fish — listed in the fishing log, but its spot isn't in the game's FishingSpot table (ocean fishing, the Diadem, or an event/special spot)."));
+        }
+
+        // 7m. Trade-in-only items — the item appears as a COST in a SpecialShop entry, never as
+        // something received. Verified: 9633 Antiquated Chaos Flanchard is the cost at "Artifact
+        // Gear Repair (DRK)" → Chaos Flanchard; 21393 Ryumyaku Bracelet at "Ryumyaku Gear
+        // Augmentation (DoM)" → Dai-ryumyaku; 38211 Irregular Tomestone at "Past Irregular
+        // Tomestone Exchange". The shop tells the player what it's FOR, the patterns below say
+        // where it came from.
+        if (results.Count == 0)
+        {
+            if (enName.StartsWith("Antiquated ", StringComparison.Ordinal))
+                results.Add(Note(ItemSourceType.Quest, "Artifact gear — awarded by that job's level-cap job quests, not sold anywhere."));
+            else if (enName.StartsWith("Irregular Tomestone of ", StringComparison.Ordinal))
+                results.Add(Note(ItemSourceType.Other, "Moogle Treasure Trove event currency — earned from the event's selected duties while it ran; retired afterward."));
+            else if (Regex.IsMatch(enName, @"^(Manderville|Amazing Manderville|Majestic Manderville|Mandervillous) "))
+                results.Add(Note(ItemSourceType.Quest, "Manderville relic weapon step — obtained by progressing the Endwalker relic quest line (Hildibrand / House Manderville), never sold."));
+            else if (Regex.IsMatch(enName, @"^(Animated|Awoken|Hyperconductive|Sharpened) "))
+                results.Add(Note(ItemSourceType.Quest, "Anima relic weapon step — obtained by progressing the Heavensward relic quest line (Ardashir, Azys Lla), never sold."));
+            // the game's own item text: "Eureka gear." (Anemos/Pagos/Pyros/Hydatos weapons and armor)
+            else if (((_englishItemSheet ??= _gameData.GetExcelSheet<Item>(Language.English))?.GetRowOrDefault(itemId)?.Description.ToString() ?? "").StartsWith("Eureka gear", StringComparison.Ordinal))
+                results.Add(Note(ItemSourceType.Other, "Eureka (The Forbidden Land) — Eureka-only gear, exchanged with Gerolt / the Expedition Artisan inside Eureka; not obtainable outside it."));
+        }
+        if (results.Count == 0 && TradeInUses.TryGetValue(itemId, out var tradeIns))
+        {
+            foreach (var t in tradeIns.Take(3))
+                results.Add(Note(ItemSourceType.Other,
+                    $"Trade-in only — handed over at \"{t.shop}\" to receive {t.receiveName}; the item itself isn't sold there.",
+                    sourceItemId: t.receiveId));
+        }
+
         // 8. Mogstation â€” always shown additively alongside any other detected sources. Live
         // lookup first (fresh, real per-item wiki link); static CSV as fallback (older items, or
         // this session's fetch hasn't completed/succeeded yet — see MogStationLiveService).
@@ -809,6 +930,58 @@ public sealed class ItemDetailService : IItemDetailService
             results.Add(merged);
         }
 
+        // 11c. Diadem (Heavensward exploratory missions) — the only rarity-7 (random-stat green)
+        // gear left after the Aetherial name check above: Mistfall/Deepmist/Mistbreak/Sunstreak/
+        // Sunburst sets + Coven weapons, 293 items in the audit, all Diadem 3.1–3.55 loot.
+        if (results.Count == 0 && item.Rarity == 7)
+        {
+            results.Add(Note(ItemSourceType.Other, "Diadem (Heavensward exploratory missions, patches 3.1–3.55) random-stat loot — the original Diadem was retired with the 5.1 rework, so this is no longer obtainable."));
+        }
+
+        if (results.Count == 0)
+        {
+            var uiCat = item.ItemUICategory.IsValid ? item.ItemUICategory.Value.Name.ToString() : "";
+            // 11d. PvP season rank rewards (Feast / Crystalline Conflict): "Season Four Lone Wolf
+            // Voucher B", "Season Sixteen Silver Framer's Kit", "Season One Final Conflict Chit"...
+            // 357 items; the item text itself says "Documentation of noteworthy accomplishments for
+            // Season Four of the Feast".
+            if (Regex.IsMatch(enName, @"^Season [A-Za-z-]+ .*(Wolf|Conflict|Framer's Kit|Trophy|Voucher|Chit)"))
+                results.Add(Note(ItemSourceType.Other, "PvP season reward — handed out at the end of that Feast / Crystalline Conflict season for the rank reached; not obtainable after the season ended."));
+            else if (Regex.IsMatch(enName, @"^(FRC|CCRC) \d{4} .*Certification$"))
+                results.Add(Note(ItemSourceType.Other, "PvP tournament reward — given to placers of that year's Feast / Crystalline Conflict regional championship."));
+            // 11e. Tales of Adventure — job/retainer level boosts, online store only
+            else if (enName.StartsWith("Tales of Adventure:", StringComparison.Ordinal))
+                results.Add(Note(ItemSourceType.MogStation, "Mog Station — Tales of Adventure (job/retainer level boost), purchased from the online store."));
+            // 11f. Racing chocobo registrations — produced by breeding / retiring at the Chocobo Square
+            else if (Regex.IsMatch(enName, @"^(Retired|Fledgling) Chocobo Registration"))
+                results.Add(Note(ItemSourceType.Other, "Chocobo Racing (Gold Saucer) — a racing chocobo's registration, created by breeding or retiring a chocobo at the Chocobo Square; never sold."));
+            // 11g. Retired tomestones
+            else if (enName.StartsWith("Allagan Tomestone of ", StringComparison.Ordinal))
+                results.Add(Note(ItemSourceType.Other, "Retired Allagan tomestone — no longer earned from any duty; each expansion rotates the older tomestone types out."));
+            // 11h. Crafter/gatherer relic tool steps — three quest lines, all recognisable by the
+            // step names on a *Primary/Secondary Tool item (327 tool items in the audit).
+            else if (uiCat.EndsWith(" Tool", StringComparison.Ordinal) && Regex.IsMatch(enName, @"^(Skysteel|Dragonsung|Augmented Dragonsung|Skysung|Skybuilders'|Resplendent) "))
+                results.Add(Note(ItemSourceType.Quest, "Skysteel relic tool step — obtained by progressing the Shadowbringers crafter/gatherer relic tool quests (Denys, Foundation); never sold."));
+            else if (uiCat.EndsWith(" Tool", StringComparison.Ordinal) && Regex.IsMatch(enName, @"^(Splendorous|Augmented Splendorous|Crystalline|Chora-Zoi's Crystalline|Brilliant|Vrandtic Visionary's|Lodestar) "))
+                results.Add(Note(ItemSourceType.Quest, "Splendorous relic tool step — obtained by progressing the Endwalker crafter/gatherer relic tool quests (Studium, Old Sharlayan); never sold."));
+            else if (uiCat.EndsWith(" Tool", StringComparison.Ordinal) && Regex.IsMatch(enName, @"^(Cosmic|Stellar|Lunar) "))
+                results.Add(Note(ItemSourceType.Quest, "Cosmotool relic step — earned and upgraded through Cosmic Exploration (Sinus Ardorum) missions; never sold."));
+            else if (uiCat.EndsWith(" Tool", StringComparison.Ordinal) && enName.StartsWith("Novice's ", StringComparison.Ordinal))
+                results.Add(Note(ItemSourceType.Quest, "Starter tool — handed out when unlocking the class at its guild; never sold."));
+            else if (Regex.IsMatch(enName, @"^(Obsolete )?Resplendent .*(Material|Component) [A-Z]$"))
+                results.Add(Note(ItemSourceType.Quest, "Resplendent tool quest item — made and handed in during the final Skysteel relic tool quests; \"Obsolete\" ones are leftovers from an earlier version of that quest."));
+            // Save the Queen relic weapons, final "Blade's" step
+            else if (enName.StartsWith("Blade's ", StringComparison.Ordinal) && (uiCat.EndsWith(" Arm", StringComparison.Ordinal) || uiCat == "Shield" || uiCat.EndsWith("Grimoire", StringComparison.Ordinal)))
+                results.Add(Note(ItemSourceType.Quest, "Resistance relic weapon step — obtained by progressing the Shadowbringers Save the Queen relic quest line (Bozja); never sold."));
+            // 11i. Triple Triad cards missing from the bundled NPC table (newer cards)
+            else if (uiCat == "Triple Triad Card")
+                results.Add(Note(ItemSourceType.Other, "Triple Triad card — not in the bundled NPC/drop table (newer card). Typical sources: Triple Triad NPC wins, Gold Saucer card packs, tournaments, or duty drops."));
+            // 11j. Beast-tribe society quest items — the item text itself says so
+            // ("※Only for use in Ixal society quests.")
+            else if ((_englishItemSheet ??= _gameData.GetExcelSheet<Item>(Language.English))?.GetRowOrDefault(itemId)?.Description.ToString().Contains("society quests", StringComparison.Ordinal) == true)
+                results.Add(Note(ItemSourceType.Other, "Tribal (beast tribe) society quest item — handed out and used within those quests, never sold or dropped."));
+        }
+
         // 12. Generic fallback â€” nothing found, and not a known legacy/retired/superseded item either.
         // Verified against live game data (not just our own sheets): items that land here
         // genuinely have no current recipe/vendor/duty-drop entry.
@@ -821,6 +994,128 @@ public sealed class ItemDetailService : IItemDetailService
         }
 
         return results;
+    }
+
+    private static ItemSourceDetail Note(ItemSourceType type, string description, IReadOnlyList<CostEntry>? materials = null, uint? sourceItemId = null)
+        => new(type, description, null, null, null, null, null, null, null, materials, null, null, null, null, null, null, null, SourceItemId: sourceItemId);
+
+    // ---- lazy per-sheet indexes for the 7e–7l detectors (built on first use, a few ms each) ----
+    // Sheet column-hash mismatches (DalaMock ships an older Lumina.Excel than the game) must not
+    // kill every lookup — a detector with no index simply never matches.
+    private static T Safe<T>(Func<T> build, T empty)
+    {
+        try { return build(); }
+        catch (Exception) { return empty; }
+    }
+
+    private Dictionary<uint, List<(uint gc, string gcName, uint seals, uint rank)>>? _gcSealShop;
+    private Dictionary<uint, List<(uint gc, string gcName, uint seals, uint rank)>> GcSealShop => _gcSealShop ??= Safe(BuildGcSealShop, new());
+    private Dictionary<uint, List<(uint gc, string gcName, uint seals, uint rank)>> BuildGcSealShop()
+    {
+        var map = new Dictionary<uint, List<(uint, string, uint, uint)>>();
+        var cats = _gameData.GetExcelSheet<GCScripShopCategory>();
+        var gcs = _gameData.GetExcelSheet<GrandCompany>();
+        var sheet = _gameData.GetSubrowExcelSheet<GCScripShopItem>();
+        if (cats == null || sheet == null) return map;
+        foreach (var rows in sheet)
+        {
+            foreach (var r in rows)
+            {
+                if (r.Item.RowId == 0) continue;
+                var gcId = cats.GetRowOrDefault(r.RowId)?.GrandCompany.RowId ?? 0;
+                var gcName = gcs?.GetRowOrDefault(gcId)?.Name.ToString() ?? "Grand Company";
+                if (!map.TryGetValue(r.Item.RowId, out var list)) map[r.Item.RowId] = list = new();
+                list.Add((gcId, gcName, r.CostGCSeals, r.RequiredGrandCompanyRank.RowId));
+            }
+        }
+        return map;
+    }
+
+    private Dictionary<uint, List<(uint itemId, string name, uint icon)>>? _outfitPieces;
+    private Dictionary<uint, List<(uint itemId, string name, uint icon)>> OutfitPieces => _outfitPieces ??= Safe(BuildOutfitPieces, new());
+    private Dictionary<uint, List<(uint itemId, string name, uint icon)>> BuildOutfitPieces()
+    {
+        var map = new Dictionary<uint, List<(uint, string, uint)>>();
+        var sheet = _gameData.GetExcelSheet<MirageStoreSetItem>();
+        if (sheet == null) return map;
+        foreach (var row in sheet)
+        {
+            var refs = new[] { row.MainHand, row.OffHand, row.Head, row.Body, row.Hands, row.Legs, row.Feet, row.Earrings, row.Necklace, row.Bracelets, row.Ring };
+            var list = new List<(uint, string, uint)>();
+            foreach (var r in refs)
+                if (r.RowId != 0) list.Add((r.RowId, GetItemName(r.RowId) ?? $"#{r.RowId}", GetItemIconId(r.RowId)));
+            if (list.Count > 0) map[row.RowId] = list;
+        }
+        return map;
+    }
+
+    private HashSet<uint>? _workshopResults;
+    private HashSet<uint> WorkshopResults => _workshopResults ??=
+        Safe(() => (_gameData.GetExcelSheet<CompanyCraftSequence>()?.Select(c => c.ResultItem.RowId).Where(id => id != 0) ?? Enumerable.Empty<uint>()).ToHashSet(), new());
+
+    private HashSet<uint>? _cosmicItems;
+    private HashSet<uint> CosmicItems => _cosmicItems ??=
+        Safe(() => (_gameData.GetExcelSheet<WKSItemInfo>()?.Select(w => w.Item.RowId).Where(id => id != 0) ?? Enumerable.Empty<uint>()).ToHashSet(), new());
+
+    private Dictionary<uint, List<(int level, string zone, uint territory)>>? _spearfishing;
+    private Dictionary<uint, List<(int level, string zone, uint territory)>> Spearfishing => _spearfishing ??= Safe(BuildSpearfishing, new());
+    private Dictionary<uint, List<(int level, string zone, uint territory)>> BuildSpearfishing()
+    {
+        var map = new Dictionary<uint, List<(int, string, uint)>>();
+        foreach (var sp in _gameData.GetExcelSheet<SpearfishingItem>() ?? Enumerable.Empty<SpearfishingItem>())
+        {
+            if (sp.Item.RowId == 0) continue;
+            var zone = sp.TerritoryType.ValueNullable?.PlaceName.ValueNullable?.Name.ToString() ?? "";
+            if (!map.TryGetValue(sp.Item.RowId, out var list)) map[sp.Item.RowId] = list = new();
+            list.Add(((int)sp.GatheringItemLevel.RowId, zone, sp.TerritoryType.RowId));
+        }
+        return map;
+    }
+
+    private HashSet<uint>? _islandPouch;
+    private HashSet<uint> IslandPouch => _islandPouch ??=
+        Safe(() => (_gameData.GetExcelSheet<MJIItemPouch>()?.Select(m => m.Item.RowId).Where(id => id != 0) ?? Enumerable.Empty<uint>()).ToHashSet(), new());
+
+    private Dictionary<uint, int>? _gatheringItemLevels;
+    private Dictionary<uint, int> GatheringItemLevels => _gatheringItemLevels ??= Safe(BuildGatheringItemLevels, new());
+    private Dictionary<uint, int> BuildGatheringItemLevels()
+    {
+        var map = new Dictionary<uint, int>();
+        foreach (var g in _gameData.GetExcelSheet<GatheringItem>() ?? Enumerable.Empty<GatheringItem>())
+            if (g.Item.RowId != 0 && !map.ContainsKey(g.Item.RowId)) map[g.Item.RowId] = (int)g.GatheringItemLevel.RowId;
+        return map;
+    }
+
+    private HashSet<uint>? _fishLog;
+    private HashSet<uint> FishLog => _fishLog ??=
+        Safe(() => (_gameData.GetExcelSheet<FishParameter>()?.Where(f => f.IsInLog).Select(f => f.Item.RowId).Where(id => id != 0) ?? Enumerable.Empty<uint>()).ToHashSet(), new());
+
+    private Dictionary<uint, List<(string shop, uint receiveId, string receiveName)>>? _tradeInUses;
+    private Dictionary<uint, List<(string shop, uint receiveId, string receiveName)>> TradeInUses => _tradeInUses ??= Safe(BuildTradeInUses, new());
+    private Dictionary<uint, List<(string shop, uint receiveId, string receiveName)>> BuildTradeInUses()
+    {
+        var map = new Dictionary<uint, List<(string, uint, string)>>();
+        foreach (var shop in _gameData.GetExcelSheet<SpecialShop>() ?? Enumerable.Empty<SpecialShop>())
+        {
+            var shopName = shop.Name.ToString();
+            if (string.IsNullOrEmpty(shopName)) shopName = "Item Exchange";
+            foreach (var entry in shop.Item)
+            {
+                // no FirstOrDefault on the struct itself: a default ReceiveItems struct has no page
+                // behind it and its .Item accessor NREs — project to the id first
+                var recvId = entry.ReceiveItems.Where(r => r.Item.RowId != 0).Select(r => r.Item.RowId).FirstOrDefault();
+                if (recvId == 0) continue;
+                foreach (var cost in entry.ItemCosts)
+                {
+                    var costId = cost.ItemCost.RowId;
+                    if (costId == 0 || costId == 1) continue; // 1 = Gil
+                    if (!map.TryGetValue(costId, out var list)) map[costId] = list = new();
+                    if (list.Count < 3 && !list.Any(x => x.Item2 == recvId))
+                        list.Add((shopName, recvId, GetItemName(recvId) ?? $"#{recvId}"));
+                }
+            }
+        }
+        return map;
     }
 
     private uint? FindItemIdByExactName(string name)
@@ -961,9 +1256,10 @@ public sealed class ItemDetailService : IItemDetailService
             if (!seenShopIds.Add(shopId))
                 continue;
 
+            // Empty-name shops are real: the Eureka gear exchange (Anemos/Elemental/Pyros/Hydatos),
+            // Antiquated AF, Ryumyaku... all live in nameless SpecialShop rows. Skipping them sent
+            // ~1000 gear/arms to the generic fallback (full-sheet audit 2026-09-02).
             var shopName = shop.Name.ToString();
-            if (string.IsNullOrEmpty(shopName))
-                continue;
 
             foreach (var itemStruct in shop.Item)
             {
@@ -1001,7 +1297,7 @@ public sealed class ItemDetailService : IItemDetailService
                         var exchangeType = ClassifyExchangeShop(shopName);
                         var displayDesc = exchangeType != null
                             ? $"{exchangeType} Exchange: {shopName}"
-                            : $"Shop: {shopName}";
+                            : string.IsNullOrEmpty(shopName) ? "Item Exchange" : $"Shop: {shopName}";
 
                         var npcInfos = _shopNpcLookup.GetValueOrDefault(shopId);
                         if (npcInfos == null && _shopNpcNameOnly.TryGetValue(shopId, out var nameOnly))
@@ -2019,9 +2315,10 @@ public sealed class ItemDetailService : IItemDetailService
 
         foreach (var shop in specialShops)
         {
+            // Empty-name shops are real: the Eureka gear exchange (Anemos/Elemental/Pyros/Hydatos),
+            // Antiquated AF, Ryumyaku... all live in nameless SpecialShop rows. Skipping them sent
+            // ~1000 gear/arms to the generic fallback (full-sheet audit 2026-09-02).
             var shopName = shop.Name.ToString();
-            if (string.IsNullOrEmpty(shopName))
-                continue;
 
             foreach (var itemStruct in shop.Item)
             {
