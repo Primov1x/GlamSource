@@ -92,6 +92,13 @@ public sealed unsafe class PreviewRenderer : IDisposable
     private bool _freezePose;
     private nint _freezeSkeleton; // Render.Skeleton* of the CharaView clone, refreshed each Tick while frozen, 0 = don't touch
     private hkQsTransformf[][]? _frozenModel; // per partial skeleton, per bone, model space
+    // "waffe bewegt sich weil model von mir das unsichtbar ist sich bewegt" — the weapon has its
+    // OWN skeleton, separate from the body's (confirmed live via /api/debug/weaponstate's
+    // weaponSkeleton field), so freezing the body never stopped it. Same pattern, two more slots
+    // (main+off — a System/crafter-tool weapon has no separate skeleton to freeze, only
+    // main/off ever populate these).
+    private nint _freezeWeaponSkeletonMain, _freezeWeaponSkeletonOff;
+    private hkQsTransformf[][]? _frozenWeaponModelMain, _frozenWeaponModelOff;
     // Freeze is the DEFAULT (user request, once v4 verified live): a static shot is the whole point
     // of the preview, and frozen + idle throttle costs near zero. Deferred a second past init so
     // the snapshot catches a settled idle pose, not a mid-load/T-pose frame.
@@ -108,6 +115,10 @@ public sealed unsafe class PreviewRenderer : IDisposable
             _freezePose = false;
             _freezeSkeleton = 0;
             _frozenModel = null;
+            _freezeWeaponSkeletonMain = 0;
+            _freezeWeaponSkeletonOff = 0;
+            _frozenWeaponModelMain = null;
+            _frozenWeaponModelOff = null;
             _autoFreezeCountdown = 0; // explicit unfreeze also cancels a pending freeze-by-default
             _updateBonePhysicsHook?.Disable();
             return;
@@ -128,6 +139,8 @@ public sealed unsafe class PreviewRenderer : IDisposable
             }
         }
         _frozenModel = null; // fresh snapshot on (re-)freeze
+        _frozenWeaponModelMain = null;
+        _frozenWeaponModelOff = null;
         _freezeDetourErrors = 0; // explicit re-freeze = user gets a fresh set of strikes
         _freezePose = true;
         _updateBonePhysicsHook.Enable();
@@ -154,7 +167,13 @@ public sealed unsafe class PreviewRenderer : IDisposable
             if (_freezePose && skeletonPtr != 0 && !_freezeAppliedThisFrame)
             {
                 _freezeAppliedThisFrame = true;
-                ApplyOrCaptureFrozenPose((Skeleton*)skeletonPtr);
+                ApplyOrCaptureFrozenPose((Skeleton*)skeletonPtr, ref _frozenModel);
+                // weapon has its OWN skeleton, separate from the body's — freezing the body alone
+                // never stopped it moving ("waffe bewegt sich weil model von mir das unsichtbar
+                // ist sich bewegt"). Same detour call, same once-per-frame gate, just two more
+                // skeletons when a weapon mode is active.
+                if (_freezeWeaponSkeletonMain != 0) ApplyOrCaptureFrozenPose((Skeleton*)_freezeWeaponSkeletonMain, ref _frozenWeaponModelMain);
+                if (_freezeWeaponSkeletonOff != 0) ApplyOrCaptureFrozenPose((Skeleton*)_freezeWeaponSkeletonOff, ref _frozenWeaponModelOff);
             }
         }
         catch (Exception ex)
@@ -170,15 +189,15 @@ public sealed unsafe class PreviewRenderer : IDisposable
         return result;
     }
 
-    private void ApplyOrCaptureFrozenPose(Skeleton* skeleton)
+    private void ApplyOrCaptureFrozenPose(Skeleton* skeleton, ref hkQsTransformf[][]? frozenModelField)
     {
         if (skeleton == null || skeleton->PartialSkeletonCount == 0) return;
         var partialCount = skeleton->PartialSkeletonCount;
 
-        // local copy — SetFreezePose(false) nulls _frozenModel from the framework thread while
+        // local copy — SetFreezePose(false) nulls the field from the framework thread while
         // this runs on the render thread; using the field directly NRE'd live ("freeze detour:
         // Object reference not set"). The local either sees the whole array or triggers capture.
-        var frozenModel = _frozenModel;
+        var frozenModel = frozenModelField;
 
         // (re-)capture: first frozen frame, or skeleton shape changed under us (e.g. gear swap)
         var capture = frozenModel == null || frozenModel.Length != partialCount;
@@ -201,7 +220,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
                 frozen[p] = new hkQsTransformf[n];
                 for (var i = 0; i < n; i++) frozen[p][i] = pose->ModelPose[i];
             }
-            _frozenModel = frozen;
+            frozenModelField = frozen;
             return; // this frame renders the just-captured pose anyway
         }
 
@@ -594,7 +613,7 @@ public sealed unsafe class PreviewRenderer : IDisposable
     /// <summary>Per-frame update/render. Must be called on Framework thread.</summary>
     public void Tick()
     {
-        if (_killTick) { _freezeSkeleton = 0; return; } // bisect switch
+        if (_killTick) { _freezeSkeleton = 0; _freezeWeaponSkeletonMain = 0; _freezeWeaponSkeletonOff = 0; return; } // bisect switch
         _freezeAppliedThisFrame = false; // re-arm the once-per-frame freeze gate (see the detour)
         // Freeze-pointer hygiene, learned from a REAL crash (AccessViolation in
         // ApplyOrCaptureFrozenPose inside the detour, live crash dump): the pointer was only
@@ -603,7 +622,11 @@ public sealed unsafe class PreviewRenderer : IDisposable
         // the old skeleton gets freed) left the detour stomping freed memory. Clear it FIRST,
         // every Tick; only a frame that actually reaches a valid render re-arms it. A one-frame
         // freeze gap is invisible (the pose is static anyway); a stale pointer is a crash.
+        // Same hygiene for the weapon skeletons — they die/get recreated even more often than the
+        // body's (every weapon-mode toggle rebuilds them via path #21's CharacterSetup copy).
         _freezeSkeleton = 0;
+        _freezeWeaponSkeletonMain = 0;
+        _freezeWeaponSkeletonOff = 0;
         if (!_initialized)
         {
             // ponytail: deferred warmup — Initialize(0) queued a source; resolve a real
@@ -978,6 +1001,19 @@ public sealed unsafe class PreviewRenderer : IDisposable
             _freezeSkeleton = freezeDrawObject != null
                 ? (nint)((FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase*)freezeDrawObject)->Skeleton
                 : 0;
+            // "waffe bewegt sich weil model von mir das unsichtbar ist sich bewegt" — the weapon
+            // has its own separate skeleton (confirmed live), freezing the body alone never
+            // stopped it. Same raw-offset reads already verified via /api/debug/weaponstate:
+            // Weapon* @ DrawObjectData+0x08, its own Skeleton* @ CharacterBase+0xA0.
+            if (weaponMode)
+            {
+                var mh = ch->DrawData.Weapon(DrawDataContainer.WeaponSlot.MainHand);
+                var mhObj = mh.DrawObject != null ? *(nint*)((byte*)Unsafe.AsPointer(ref mh) + 0x08) : 0;
+                _freezeWeaponSkeletonMain = mhObj != 0 ? *(nint*)((byte*)mhObj + 0xA0) : 0;
+                var oh = ch->DrawData.Weapon(DrawDataContainer.WeaponSlot.OffHand);
+                var ohObj = oh.DrawObject != null ? *(nint*)((byte*)Unsafe.AsPointer(ref oh) + 0x08) : 0;
+                _freezeWeaponSkeletonOff = ohObj != 0 ? *(nint*)((byte*)ohObj + 0xA0) : 0;
+            }
         }
         agent->CharaView.Render(_counter++);
     }
@@ -2185,6 +2221,10 @@ public sealed unsafe class PreviewRenderer : IDisposable
         // the clone (and its skeleton) is about to die — stop the freeze detour touching it
         _freezeSkeleton = 0;
         _frozenModel = null;
+        _freezeWeaponSkeletonMain = 0;
+        _freezeWeaponSkeletonOff = 0;
+        _frozenWeaponModelMain = null;
+        _frozenWeaponModelOff = null;
         _orthoLiftApplied = false; // fresh camera after reinit needs the nudge again
         if (!_initialized) { _log.Info("[PreviewRenderer] Release() no-op, not initialized"); return; }
         try
