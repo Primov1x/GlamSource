@@ -878,11 +878,16 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         }
 
 
-        if (ImGui.Checkbox(Loc.T("Show Weapon/Tool"), ref _weaponDrawn))
+        // ponytail: deaktiviert nach 20 gescheiterten Anläufen (doku/character-preview.md) —
+        // CharaView zeigt Waffen strukturell nicht zuverlässig; Mechanik bleibt im Code für eine
+        // spätere GPose-basierte Neuauflage, nur die Bedienung ist gesperrt.
+        using (ImRaii.Disabled())
         {
-            var drawn = _weaponDrawn;
-            _framework.RunOnFrameworkThread(() => renderer.SetWeaponDrawn(drawn));
+            var dummy = _weaponDrawn;
+            ImGui.Checkbox(Loc.T("Show Weapon/Tool"), ref dummy);
         }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Vorübergehend deaktiviert — siehe doku/character-preview.md");
         ImGui.SameLine();
         ImGuiComponents.HelpMarker(Loc.T("Drag: rotate · Right-drag: orbit · Wheel: zoom to cursor"));
 
