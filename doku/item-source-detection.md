@@ -1,28 +1,43 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
-## TODO — Localization (DE/EN, client-language-driven)
+## Localization (DE/EN, manual toggle) — chrome done, ItemDetailWindow deferred
 
-Not started, no time slot yet found.
+**Scope, confirmed correct**: item/data names (item names, source descriptions built from
+`Item.Name`, NPC/zone names, etc.) are **already localized for free** — Dalamud's `IDataManager`
+loads Lumina Excel sheets in the client's own game language, no code of ours involved (confirmed:
+nowhere in this repo do we pass a `ClientLanguage` to `GetExcelSheet<T>()`). Only the **UI chrome**
+— our own hardcoded labels/tooltips/section headers/button text — needed a translation table.
 
-**Scope is narrower than it first looks**: item/data names (item names, source descriptions built
-from `Item.Name`, NPC/zone names, etc.) are **already localized for free** — Dalamud's
-`IDataManager` loads Lumina Excel sheets in the client's own game language, no code of ours
-involved (confirmed: nowhere in this repo do we pass a `ClientLanguage` to `GetExcelSheet<T>()`,
-it's just the default). Only the **UI chrome** — our own hardcoded labels/tooltips/section
-headers/button text, not game data — actually needs a translation table.
+**Trigger decided**: manual toggle, not automatic from `ClientLanguage`/`UiLanguage` — per explicit
+user spec ("buttons zum umschalten"). Persisted per surface: `Configuration.Language` (`"en"`/`"de"`)
+on the ImGui side, `localStorage['gs_lang']` on the web UI side (separate processes, no shared
+runtime — a browser page can't read the plugin's Dalamud-persisted config directly).
 
-- **ImGui** (`Windows/GlamSourceShellWindow.cs`, `Windows/ItemDetailWindow.cs`) — ~40+ hardcoded
-  chrome strings.
-- **Web UI** (`Services/WebUiPage.cs`) — ~50+ chrome strings baked into the HTML/JS template.
-- Trigger: still needs deciding — `IDataManager.Language` (mirrors whatever already localizes item
-  names, so chrome would match data automatically) vs. `IDalamudPluginInterface.UiLanguage`
-  (Dalamud's own UI language setting, can differ from the game's, e.g. JP game client + German
-  Dalamud UI) — pick one, don't wire both.
-- Needs a translation-table structure (dictionary keyed by string id, or resx) picked before
-  starting — retrofitting one after strings are already extracted means doing the extraction
-  twice.
-- **UI placement (user spec)**: DE/EN toggle buttons go in the top bar, next to the
-  minimize/window-chrome row — not buried in the Settings tab.
+**Done:**
+- `GlamSource.Core/Loc.cs` — chrome-only translation table for ImGui, keyed by the English string
+  itself (no id bikeshedding, always a readable fallback). `Loc.T(en)` reads `Loc.Language`, synced
+  from `Configuration.Language` every `Draw()`.
+- `Windows/GlamSourceShellWindow.cs` — every literal (non-interpolated) chrome string wrapped in
+  `Loc.T(...)`: tab labels, section headers, toolbar buttons/tooltips, equipment table headers,
+  Settings tab, Recent sidebar. DE/EN toggle button top-right of the window (closest ImGui gets to
+  "next to minimize" — the actual collapse button belongs to Dalamud's own title bar, plugins can't
+  add to it).
+- `Services/WebUiPage.cs` — separate JS `I18N` object (own runtime, own scope decision, see the
+  file's own comment) covering titlebar tooltips, nav tabs, search placeholder, character-tab
+  hints/labels, 3D-preview toolbar, Settings tab, and static empty/loading-state strings scattered
+  through JS template literals. `data-i18n`/`data-i18n-title`/`data-i18n-ph` attributes for
+  markup-side text, `t(key)` calls for JS-generated text. Toggle buttons (EN/DE) in the title bar
+  next to the minimize/lock/hide buttons, as specced. Verified live in `GlamSource.Mock`: Lookup,
+  Character, and Settings tabs all round-trip EN↔DE correctly, including the dynamically
+  re-rendered Settings body.
+- Dynamic/interpolated strings (item IDs, slot enum names, result counts) are **intentionally out
+  of scope** — only literal chrome strings are translated. This was a deliberate scope cut, not an
+  oversight.
+
+**Deferred**: `Windows/ItemDetailWindow.cs` (~40+ more chrome strings — source-type badges, market
+price panel, crafting-cost breakdown, set-member chips) was left out of this pass to keep what
+shipped verified rather than rushed. Same `Loc.T(...)` pattern applies directly when picked back
+up.
 
 Running log of the item-detail/source pipeline (`GlamSource.Core/ItemDetailService.cs`) work
 from this session. Audited via `GlamSource.Mock`'s local test server against real `D:\FF\game`

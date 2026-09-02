@@ -28,6 +28,7 @@ body{background:transparent;color:var(--text);font:14px/1.5 "Segoe UI",system-ui
 #titlebar .spacer{flex:1}
 #titlebar button{background:none;border:1px solid var(--border);color:var(--muted);width:22px;height:22px;border-radius:4px;cursor:pointer;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center}
 #titlebar button:hover{border-color:var(--gold);color:var(--gold)}
+#titlebar button.active{border-color:var(--gold);color:var(--gold);background:rgba(200,167,94,.12)}
 #titlebar button svg{width:12px;height:12px;fill:currentColor}
 /* FIXED standard size ("Standard-Größe festsetzen"): the content is a hard pixel layout —
    resizing the Browsingway overlay only reveals/clips transparent padding, the UI itself never
@@ -124,19 +125,21 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
   <span class="brand">GlamSource</span>
   <span class="sub">web ui</span>
   <span class="spacer"></span>
-  <button id="btn-min" title="Minimieren — nur die Titelleiste bleibt sichtbar" onclick="toggleMinimize()">–</button>
-  <button id="btn-lock" title="Sperren — Position &amp; Größe fixieren (nötig, um das Modell per Ziehen zu drehen)" onclick="toggleLock()"><svg viewBox="0 0 24 24"><path d="M12 2a5 5 0 0 0-5 5h2a3 3 0 0 1 6 0v3H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5z"/></svg></button>
-  <button title="Ausblenden (über das GlamSource-Fenster wieder öffnen)" onclick="post('/api/action/overlay/hide')">×</button>
+  <button id="btn-lang-en" onclick="setLang('en')" style="width:auto;padding:0 6px;font-size:11px">EN</button>
+  <button id="btn-lang-de" onclick="setLang('de')" style="width:auto;padding:0 6px;font-size:11px">DE</button>
+  <button id="btn-min" data-i18n-title="min" onclick="toggleMinimize()">–</button>
+  <button id="btn-lock" data-i18n-title="lock" onclick="toggleLock()"><svg viewBox="0 0 24 24"><path d="M12 2a5 5 0 0 0-5 5h2a3 3 0 0 1 6 0v3H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5z"/></svg></button>
+  <button data-i18n-title="hide" onclick="post('/api/action/overlay/hide')">×</button>
 </div>
 <div id="app">
 <nav>
-  <button id="tab-lookup" class="active" onclick="showTab('lookup')">Item Search</button>
-  <button id="tab-character" onclick="showTab('character')">Charakter</button>
-  <button id="tab-settings" onclick="showTab('settings')">Settings</button>
+  <button id="tab-lookup" class="active" data-i18n="tab_lookup" onclick="showTab('lookup')"></button>
+  <button id="tab-character" data-i18n="tab_character" onclick="showTab('character')"></button>
+  <button id="tab-settings" data-i18n="tab_settings" onclick="showTab('settings')"></button>
 </nav>
 
 <section id="view-lookup">
-  <input type="search" id="q" placeholder="Search any item… or paste an item ID" autofocus>
+  <input type="search" id="q" data-i18n-ph="search_ph" autofocus>
   <div class="results" id="results"></div>
   <div id="detail"></div>
 </section>
@@ -149,23 +152,23 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
     <div id="charslots"><div class="empty"><span class="spinner"></span></div></div>
     <div>
       <canvas id="preview3d"></canvas>
-      <div class="empty" id="p3dhint" style="display:none;font-size:12px">Overlay ist entsperrt — Schloss oben rechts sperren, dann per Ziehen drehen.</div>
+      <div class="empty" id="p3dhint" data-i18n="p3dhint" style="display:none;font-size:12px"></div>
     </div>
-    <div id="chardetail"><div class="empty">Slot anklicken für Herkunft &amp; Quellen</div></div>
+    <div id="chardetail"><div class="empty" data-i18n="chardetail_hint"></div></div>
   </div>
   <div id="recentsFooter">
-    <div class="label">Zuletzt angesehen</div>
+    <div class="label" data-i18n="recent_label"></div>
     <div id="charrecents"><div class="empty"><span class="spinner"></span></div></div>
   </div>
   <div class="row p3dtoolbar" style="margin-top:6px;margin-bottom:10px;flex-wrap:wrap;gap:8px;align-items:center">
-    <span class="tbl">Ansicht</span>
-    <button id="p3dspin" onclick="toggleAutoSpin()" title="Dreht das Model automatisch — Ziehen oder Zurücksetzen stoppt">Drehen</button>
-    <button onclick="resetPreview3D()" title="Kompletter Neuaufbau — falls das Bild feststeckt oder was Falsches zeigt">Zurücksetzen</button>
-    <span class="tbl">Pose</span>
-    <button id="p3dweapon" onclick="toggleWeapon()" title="Waffe ziehen (Standard: aus) — für geglamte Waffen; setzt ein aktives Emote zurück">Waffe</button>
-    <button id="p3dweapononly" onclick="toggleWeaponOnly()" title="Waffen-Studio: Waffe gezogen, alle andere Ausrüstung ausgeblendet">Nur Waffe</button>
-    <select id="p3demote" onchange="setEmote(this.value)" title="Statische Emote-Pose (rein clientseitig — auch nicht freigeschaltete funktionieren); steckt die Waffe weg"><option value="0">Emote: Idle</option></select>
-    <a href="#" onclick="loadPreview3DDebug();return false" style="font-size:12px" title="fps, Fehler, Frame-Größe">Debug</a>
+    <span class="tbl" data-i18n="view_label"></span>
+    <button id="p3dspin" onclick="toggleAutoSpin()" data-i18n="spin" data-i18n-title="spin_tt"></button>
+    <button onclick="resetPreview3D()" data-i18n="reset" data-i18n-title="reset_tt"></button>
+    <span class="tbl" data-i18n="pose_label"></span>
+    <button id="p3dweapon" onclick="toggleWeapon()" data-i18n="weapon" data-i18n-title="weapon_tt"></button>
+    <button id="p3dweapononly" onclick="toggleWeaponOnly()" data-i18n="weapon_only" data-i18n-title="weapon_only_tt"></button>
+    <select id="p3demote" onchange="setEmote(this.value)" data-i18n-title="emote_tt"><option value="0" data-i18n="emote_idle"></option></select>
+    <a href="#" onclick="loadPreview3DDebug();return false" style="font-size:12px" data-i18n="debug" data-i18n-title="debug_tt"></a>
   </div>
   <pre id="p3ddebug" style="display:none;font-size:11px;background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:8px;margin-top:6px;white-space:pre-wrap"></pre>
 </section>
@@ -181,6 +184,77 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 </div>
 <script>
 const $=s=>document.querySelector(s);
+
+// ponytail: chrome-only i18n — same scope decision as the ImGui side's Loc.cs (see
+// doku/item-source-detection.md). Item/game data stays whatever language the game data came in;
+// only our own static labels/tooltips/buttons are covered. Keyed by short id (not the English
+// text itself, unlike Loc.cs — this dict also has to double as JS template-string lookups where
+// a readable-string key would be unwieldy).
+const I18N={
+  min:{en:'Minimize — only the title bar stays visible',de:'Minimieren — nur die Titelleiste bleibt sichtbar'},
+  lock:{en:'Lock — fix position & size (needed to drag-rotate the model)',de:'Sperren — Position & Größe fixieren (nötig, um das Modell per Ziehen zu drehen)'},
+  unlock:{en:'Unlock — move/resize the overlay',de:'Entsperren — Overlay verschieben/skalieren'},
+  hide:{en:'Hide (reopen from the GlamSource window)',de:'Ausblenden (über das GlamSource-Fenster wieder öffnen)'},
+  tab_lookup:{en:'Item Search',de:'Item-Suche'},
+  tab_character:{en:'Character',de:'Charakter'},
+  tab_settings:{en:'Settings',de:'Einstellungen'},
+  search_ph:{en:'Search any item… or paste an item ID',de:'Beliebiges Item suchen… oder Item-ID einfügen'},
+  p3dhint:{en:'Overlay is unlocked — lock it top-right, then drag-rotate.',de:'Overlay ist entsperrt — Schloss oben rechts sperren, dann per Ziehen drehen.'},
+  chardetail_hint:{en:'Click a slot for source & details',de:'Slot anklicken für Herkunft & Quellen'},
+  recent_label:{en:'Recently viewed',de:'Zuletzt angesehen'},
+  view_label:{en:'View',de:'Ansicht'},
+  spin:{en:'Rotate',de:'Drehen'},
+  spin_tt:{en:'Auto-rotates the model — dragging or Reset stops it',de:'Dreht das Model automatisch — Ziehen oder Zurücksetzen stoppt'},
+  spin_stop:{en:'⏹️ Stop rotating',de:'⏹️ Drehen stoppen'},
+  spin_start:{en:'🎠 Auto-rotate',de:'🎠 Auto-Drehen'},
+  reset:{en:'Reset',de:'Zurücksetzen'},
+  reset_tt:{en:'Full rebuild — if the image gets stuck or shows the wrong thing',de:'Kompletter Neuaufbau — falls das Bild feststeckt oder was Falsches zeigt'},
+  pose_label:{en:'Pose',de:'Pose'},
+  weapon:{en:'Weapon',de:'Waffe'},
+  weapon_tt:{en:'Draw weapon (default: off) — for glamoured weapons; clears an active emote',de:'Waffe ziehen (Standard: aus) — für geglamte Waffen; setzt ein aktives Emote zurück'},
+  weapon_only:{en:'Weapon Only',de:'Nur Waffe'},
+  weapon_only_tt:{en:'Weapon studio: weapon drawn, all other gear hidden',de:'Waffen-Studio: Waffe gezogen, alle andere Ausrüstung ausgeblendet'},
+  emote_idle:{en:'Emote: Idle',de:'Emote: Idle'},
+  emote_tt:{en:'Static emote pose (client-side only — even locked ones work); sheathes the weapon',de:'Statische Emote-Pose (rein clientseitig — auch nicht freigeschaltete funktionieren); steckt die Waffe weg'},
+  debug:{en:'Debug',de:'Debug'},
+  debug_tt:{en:'fps, errors, frame size',de:'fps, Fehler, Frame-Größe'},
+  searching:{en:'Searching…',de:'Suche läuft…'},
+  loading:{en:'Loading…',de:'Lädt…'},
+  no_items:{en:'No items found.',de:'Keine Items gefunden.'},
+  no_sources:{en:'No known source found.',de:'Keine bekannte Quelle gefunden.'},
+  not_found:{en:'Not found.',de:'Nicht gefunden.'},
+  viewing:{en:'Viewing',de:'Ansicht'},
+  no_char_data:{en:'No data — character not seen yet.',de:'Keine Daten — Charakter noch nicht erfasst.'},
+  none_yet:{en:'(none yet)',de:'(noch keine)'},
+  remove_recent:{en:'Remove from Recent',de:'Aus Verlauf entfernen'},
+  set_craft:{en:'Show Crafting Savings',de:'Handwerks-Ersparnis anzeigen'},
+  set_craft_d:{en:'Compare market price vs. crafting cost',de:'Marktpreis vs. Herstellungskosten vergleichen'},
+  set_debug:{en:'Debug API',de:'Debug-API'},
+  set_debug_d:{en:'Read-only HTTP API on localhost:23423',de:'Nur-Lese-HTTP-API auf localhost:23423'},
+  set_overlay:{en:'Auto-Overlay',de:'Auto-Overlay'},
+  set_overlay_d:{en:'Browsingway overlay shows/hides with this window',de:'Browsingway-Overlay zeigt/versteckt sich mit diesem Fenster'},
+  set_cmweb:{en:'Item Source in Web UI',de:'Item-Quelle im Web-UI'},
+  set_cmweb_d:{en:'Examine right-click "Item Source" opens here instead of the ImGui window',de:'Examine-Rechtsklick "Item Source" öffnet hier statt im ImGui-Fenster'},
+  set_3d:{en:'3D Preview (experimental)',de:'3D-Vorschau (experimentell)'},
+  set_3d_d:{en:'Riskier GPU readback path — disable if you see crashes',de:'Riskanterer GPU-Readback-Pfad — bei Abstürzen deaktivieren'},
+  set_mountdist:{en:'Mount-up distance',de:'Aufsitz-Distanz'},
+};
+let lang=localStorage.getItem('gs_lang')||'en';
+const t=k=>(I18N[k]||{})[lang]??I18N[k]?.en??k;
+function applyI18n(){
+  document.querySelectorAll('[data-i18n]').forEach(el=>el.textContent=t(el.dataset.i18n));
+  document.querySelectorAll('[data-i18n-title]').forEach(el=>el.title=t(el.dataset.i18nTitle));
+  document.querySelectorAll('[data-i18n-ph]').forEach(el=>el.placeholder=t(el.dataset.i18nPh));
+  $('#btn-lang-en')?.classList.toggle('active',lang==='en');
+  $('#btn-lang-de')?.classList.toggle('active',lang==='de');
+}
+function setLang(l){
+  lang=l;
+  localStorage.setItem('gs_lang',l);
+  applyI18n();
+  if(currentTab==='settings')loadSettings();
+  if(currentTab==='character')loadRecents();
+}
 // icons come from the plugin's own /api/icon (game data via Lumina) — xivapi's CDN is frozen
 // and 404s on anything newer than its snapshot
 const icon=id=>id?`/api/icon/${id}`:'';
@@ -203,12 +277,12 @@ function showTab(t){
 async function loadSettings(){
   const s=await fetch('/api/settings').then(r=>r.json());
   $('#settingsBody').innerHTML=`
-    <div class="row" style="cursor:default"><label style="display:flex;align-items:center;gap:8px;width:100%"><input type="checkbox" id="set-craft" ${s.showCraftingSavings?'checked':''} onchange="saveSetting('showcraftingsavings',this.checked)"> Show Crafting Savings<span style="margin-left:auto;color:var(--muted);font-size:12px">Compare market price vs. crafting cost</span></label></div>
-    <div class="row" style="cursor:default"><label style="display:flex;align-items:center;gap:8px;width:100%"><input type="checkbox" id="set-debug" ${s.debugApiEnabled?'checked':''} onchange="saveSetting('debugapi',this.checked)"> Debug API<span style="margin-left:auto;color:var(--muted);font-size:12px">Read-only HTTP API on localhost:23423</span></label></div>
-    <div class="row" style="cursor:default"><label style="display:flex;align-items:center;gap:8px;width:100%"><input type="checkbox" id="set-overlay" ${s.webUiAutoOverlay?'checked':''} onchange="saveSetting('autooverlay',this.checked)"> Auto-Overlay<span style="margin-left:auto;color:var(--muted);font-size:12px">Browsingway overlay shows/hides with this window</span></label></div>
-    <div class="row" style="cursor:default"><label style="display:flex;align-items:center;gap:8px;width:100%"><input type="checkbox" id="set-cmweb" ${s.contextMenuOpensInWebUi?'checked':''} onchange="saveSetting('contextmenuweb',this.checked)"> Item-Quelle im Web-UI<span style="margin-left:auto;color:var(--muted);font-size:12px">Examine-Rechtsklick "Item Source" öffnet hier statt im ImGui-Fenster</span></label></div>
-    <div class="row" style="cursor:default"><label style="display:flex;align-items:center;gap:8px;width:100%"><input type="checkbox" id="set-3d" ${s.webUiLive3DPreview?'checked':''} onchange="saveSetting('live3dpreview',this.checked)"> 3D Preview (experimental)<span style="margin-left:auto;color:var(--muted);font-size:12px">Riskier GPU readback path — disable if you see crashes</span></label></div>
-    <div class="row" style="cursor:default"><label style="display:flex;align-items:center;gap:8px;width:100%">Mount-up distance<input type="range" min="0" max="100" value="${s.mountUpDistance}" style="flex:1" oninput="$('#set-mountdist-val').textContent=this.value+'m'" onchange="saveSetting('mountupdistance',this.value)"><span id="set-mountdist-val" style="color:var(--muted);font-size:12px;min-width:36px">${Math.round(s.mountUpDistance)}m</span></label></div>
+    <div class="row" style="cursor:default"><label style="display:flex;align-items:center;gap:8px;width:100%"><input type="checkbox" id="set-craft" ${s.showCraftingSavings?'checked':''} onchange="saveSetting('showcraftingsavings',this.checked)"> ${t('set_craft')}<span style="margin-left:auto;color:var(--muted);font-size:12px">${t('set_craft_d')}</span></label></div>
+    <div class="row" style="cursor:default"><label style="display:flex;align-items:center;gap:8px;width:100%"><input type="checkbox" id="set-debug" ${s.debugApiEnabled?'checked':''} onchange="saveSetting('debugapi',this.checked)"> ${t('set_debug')}<span style="margin-left:auto;color:var(--muted);font-size:12px">${t('set_debug_d')}</span></label></div>
+    <div class="row" style="cursor:default"><label style="display:flex;align-items:center;gap:8px;width:100%"><input type="checkbox" id="set-overlay" ${s.webUiAutoOverlay?'checked':''} onchange="saveSetting('autooverlay',this.checked)"> ${t('set_overlay')}<span style="margin-left:auto;color:var(--muted);font-size:12px">${t('set_overlay_d')}</span></label></div>
+    <div class="row" style="cursor:default"><label style="display:flex;align-items:center;gap:8px;width:100%"><input type="checkbox" id="set-cmweb" ${s.contextMenuOpensInWebUi?'checked':''} onchange="saveSetting('contextmenuweb',this.checked)"> ${t('set_cmweb')}<span style="margin-left:auto;color:var(--muted);font-size:12px">${t('set_cmweb_d')}</span></label></div>
+    <div class="row" style="cursor:default"><label style="display:flex;align-items:center;gap:8px;width:100%"><input type="checkbox" id="set-3d" ${s.webUiLive3DPreview?'checked':''} onchange="saveSetting('live3dpreview',this.checked)"> ${t('set_3d')}<span style="margin-left:auto;color:var(--muted);font-size:12px">${t('set_3d_d')}</span></label></div>
+    <div class="row" style="cursor:default"><label style="display:flex;align-items:center;gap:8px;width:100%">${t('set_mountdist')}<input type="range" min="0" max="100" value="${s.mountUpDistance}" style="flex:1" oninput="$('#set-mountdist-val').textContent=this.value+'m'" onchange="saveSetting('mountupdistance',this.value)"><span id="set-mountdist-val" style="color:var(--muted);font-size:12px;min-width:36px">${Math.round(s.mountUpDistance)}m</span></label></div>
   `;
 }
 async function saveSetting(key,value){
@@ -292,7 +366,7 @@ function startAutoSpin(){
   stopAutoSpin();
   const btn=$('#p3dspin');
   btn.classList.add('active');
-  btn.textContent='⏹️ Drehen stoppen';
+  btn.textContent=t('spin_stop');
   p3dSpinTimer=setInterval(()=>post('/api/action/preview3d/rotate?dx=3&dy=0'),50);
 }
 async function toggleWeapon(){
@@ -317,7 +391,7 @@ function stopAutoSpin(){
   const btn=$('#p3dspin');
   if(!btn)return;
   btn.classList.remove('active');
-  btn.textContent='🎠 Auto-Drehen';
+  btn.textContent=t('spin_start');
 }
 
 function findBytes(hay,needle,from){
@@ -389,7 +463,7 @@ async function resetPreview3D(){
 async function loadPreview3DDebug(){
   const pre=$('#p3ddebug');
   pre.style.display='block';
-  pre.textContent='Loading…';
+  pre.textContent=t('loading');
   try{ pre.textContent=JSON.stringify(await fetch('/api/preview3d/debug').then(r=>r.json()),null,2) }
   catch(e){ pre.textContent='Fehler: '+e }
 }
@@ -478,9 +552,9 @@ $('#q').addEventListener('input',e=>{
     const isId=/^\d+$/.test(q); // pure-digit query = item ID lookup, skip the 3-char name minimum
     if(!isId&&q.length<3){box.innerHTML='';return}
     if(q.length<1){box.innerHTML='';return}
-    box.innerHTML='<div class="empty"><span class="spinner"></span>Searching…</div>';
+    box.innerHTML=`<div class="empty"><span class="spinner"></span>${t('searching')}</div>`;
     const r=await fetch('/api/search?q='+encodeURIComponent(q)).then(r=>r.json());
-    box.innerHTML=r.length?r.map(x=>`<div class="row" onclick="openItem(${x.id})">${img(x.iconId,28)}<span>${esc(x.name)}</span><img class="rowpreview" src="/api/itemimage/${x.id}" loading="lazy" onerror="this.remove()"></div>`).join(''):'<div class="empty">Keine Items gefunden.</div>';
+    box.innerHTML=r.length?r.map(x=>`<div class="row" onclick="openItem(${x.id})">${img(x.iconId,28)}<span>${esc(x.name)}</span><img class="rowpreview" src="/api/itemimage/${x.id}" loading="lazy" onerror="this.remove()"></div>`).join(''):`<div class="empty">${t('no_items')}</div>`;
     updateOverlayCompactness();
   },250);
 });
@@ -516,16 +590,16 @@ function buildItemHtml(d,openFn='openItem'){
   }
   for(const group of groups.values())h+=renderSource(group,d.itemId);
   h+='</div>';
-  if(!(d.sources??[]).length)h+='<div class="empty">Keine bekannte Quelle gefunden.</div>';
+  if(!(d.sources??[]).length)h+=`<div class="empty">${t('no_sources')}</div>`;
   return h;
 }
 
 async function openItem(id){
   $('#results').innerHTML='';$('#q').value='';
-  $('#detail').innerHTML='<div class="empty"><span class="spinner"></span>Loading…</div>';
+  $('#detail').innerHTML=`<div class="empty"><span class="spinner"></span>${t('loading')}</div>`;
   updateOverlayCompactness();
   const d=await fetch('/api/item/'+id).then(r=>r.ok?r.json():null);
-  $('#detail').innerHTML=d?buildItemHtml(d):'<div class="empty">Nicht gefunden.</div>';
+  $('#detail').innerHTML=d?buildItemHtml(d):`<div class="empty">${t('not_found')}</div>`;
   if(d)annotateInventory($('#detail'));
 }
 
@@ -608,8 +682,8 @@ async function loadSnapshot(force){
     // opens the lookup in the RIGHT-SIDE panel — no tab switch, no page scroll
     return`<div class="slot" onclick="showItemPanel(${id})">${img(s.iconId,40)}<div><div class="lbl">${esc(lbl)}</div><div class="nm">${esc(name)}</div></div>${s.isGlamoured?'<span class="glam">Glam</span>':''}</div>`;
   }).join('');
-  const head=d.activeRecentName?`<div class="empty">Ansicht: ${esc(d.activeRecentName)}</div>`
-    :(slots?'':'<div class="empty">Keine Daten — Charakter noch nicht erfasst.</div>');
+  const head=d.activeRecentName?`<div class="empty">${t('viewing')}: ${esc(d.activeRecentName)}</div>`
+    :(slots?'':`<div class="empty">${t('no_char_data')}</div>`);
   $('#charslots').innerHTML=head+slots;
 }
 
@@ -618,8 +692,8 @@ async function loadSnapshot(force){
 async function loadRecents(){
   const recents=await fetch('/api/recents').then(r=>r.json());
   const box=$('#charrecents');
-  if(!recents.length){box.innerHTML='<div class="empty">(noch keine)</div>';return}
-  box.innerHTML=recents.map(r=>`<div class="recent${r.active?' active':''}" onclick="activateRecent(${r.index})">${esc(r.name)}${r.world?`<span class="world">${esc(r.world)}</span>`:''}<span class="del" title="Remove from Recent" onclick="event.stopPropagation();removeRecent(${r.index})">×</span></div>`).join('');
+  if(!recents.length){box.innerHTML=`<div class="empty">${t('none_yet')}</div>`;return}
+  box.innerHTML=recents.map(r=>`<div class="recent${r.active?' active':''}" onclick="activateRecent(${r.index})">${esc(r.name)}${r.world?`<span class="world">${esc(r.world)}</span>`:''}<span class="del" title="${t('remove_recent')}" onclick="event.stopPropagation();removeRecent(${r.index})">×</span></div>`).join('');
 }
 async function activateRecent(index){
   await post('/api/action/recent/'+index);
@@ -633,9 +707,9 @@ async function removeRecent(index){
 
 async function showItemPanel(id){
   const box=$('#chardetail');
-  box.innerHTML='<div class="empty"><span class="spinner"></span>Loading…</div>';
+  box.innerHTML=`<div class="empty"><span class="spinner"></span>${t('loading')}</div>`;
   const d=await fetch('/api/item/'+id).then(r=>r.ok?r.json():null);
-  box.innerHTML=d?buildItemHtml(d,'showItemPanel'):'<div class="empty">Nicht gefunden.</div>';
+  box.innerHTML=d?buildItemHtml(d,'showItemPanel'):`<div class="empty">${t('not_found')}</div>`;
   if(d)annotateInventory(box);
 }
 
@@ -650,13 +724,12 @@ const LOCK_OPEN='<svg viewBox="0 0 24 24"><path d="M12 2a5 5 0 0 0-5 5h2a3 3 0 0
 function toggleLock(){
   overlayLocked=!overlayLocked;
   $('#btn-lock').innerHTML=overlayLocked?LOCK_CLOSED:LOCK_OPEN;
-  $('#btn-lock').title=overlayLocked
-    ?'Entsperren — Overlay verschieben/skalieren'
-    :'Sperren — Position & Größe fixieren (nötig, um das Modell per Ziehen zu drehen)';
+  $('#btn-lock').title=overlayLocked?t('unlock'):t('lock');
   const hint=$('#p3dhint');
   if(hint)hint.style.display=(!overlayLocked&&$('#preview3d').style.display!=='none')?'flex':'none';
   post('/api/action/overlay/lock?locked='+overlayLocked);
 }
+applyI18n();
 updateOverlayCompactness(); // initial load starts on the Suche tab, empty
 </script>
 </body>

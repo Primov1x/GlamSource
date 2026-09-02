@@ -5,6 +5,11 @@ public class Configuration
 {
     public int Version { get; set; } = 0;
 
+    // "en" or "de" — UI chrome only (labels/tooltips/buttons), not item/game data, which is
+    // already localized for free via Dalamud's IDataManager loading Lumina sheets in the
+    // client's own game language. See doku/item-source-detection.md's Localization TODO.
+    public string Language { get; set; } = "en";
+
     public bool IsConfigWindowMovable { get; set; } = true;
     public bool ShowCraftingSavings { get; set; } = false;
 
