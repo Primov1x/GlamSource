@@ -177,11 +177,12 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
     <button id="p3dspin" onclick="toggleAutoSpin()" data-i18n="spin" data-i18n-title="spin_tt"></button>
     <button onclick="resetPreview3D()" data-i18n="reset" data-i18n-title="reset_tt"></button>
     <span class="tbl" data-i18n="pose_label"></span>
-    <!-- ponytail: deaktiviert nach 20 gescheiterten Anläufen (siehe doku/character-preview.md) —
-         CharaView zeigt Waffen strukturell nicht zuverlässig; Buttons/Mechanik bleiben im Code für
-         eine spätere GPose-basierte Neuauflage, nur die Bedienung ist gesperrt. -->
+    <!-- ponytail: "Waffe" (am Körper gezogen) bleibt deaktiviert — nach 20 Anläufen (siehe
+         doku/character-preview.md) nie zuverlässig sichtbar. "Nur Waffe" nutzt seit Pfad #21
+         wieder den ursprünglichen, minimalen 254er-Mechanismus (der einzige, der je etwas
+         gezeigt hat) — Versuch mit reduziertem Ballast reaktiviert. -->
     <button id="p3dweapon" disabled title="Vorübergehend deaktiviert — siehe doku/character-preview.md" data-i18n="weapon"></button>
-    <button id="p3dweapononly" disabled title="Vorübergehend deaktiviert — siehe doku/character-preview.md" data-i18n="weapon_only"></button>
+    <button id="p3dweapononly" onclick="toggleWeaponOnly()" data-i18n="weapon_only" data-i18n-title="weapon_only_tt"></button>
     <select id="p3demote" onchange="setEmote(this.value)" data-i18n-title="emote_tt"><option value="0" data-i18n="emote_idle"></option></select>
     <a href="#" onclick="loadPreview3DDebug();return false" style="font-size:12px" data-i18n="debug" data-i18n-title="debug_tt"></a>
   </div>

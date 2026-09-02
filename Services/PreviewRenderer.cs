@@ -822,108 +822,22 @@ public sealed unsafe class PreviewRenderer : IDisposable
                     var srcAddr = _sourceProvider?.Invoke() ?? nint.Zero;
                     if (srcAddr != nint.Zero)
                     {
-                        // #13 alone (CharacterSetup.CopyFromCharacter) DID make a weapon actually
-                        // render at least once (254, duplicated but visible). #14 alone (plain
-                        // LoadWeapon, Glamourer-matched params) wrote perfectly consistent DrawData —
-                        // real model id, non-null DrawObject, hidden=false — and STILL rendered
-                        // nothing ("nicht zu sehen"). Key realization: vis=False read the SAME in
-                        // both cases, including when #13 visibly worked — that flag has never
-                        // correlated with actual rendering, stop trusting it.
-                        // Working theory (#15): CharacterSetup.CopyFromCharacter is the piece that
-                        // triggers the clone's resource STREAMING for a slot it never drew before;
-                        // LoadWeapon alone just writes fields into an already-loaded pipeline, which
-                        // a live player character has running but our puppet doesn't. Combined:
-                        // CharacterSetup copy fires the load, then Glamourer's exact LoadWeapon
-                        // params finalize the correct model into that pipeline.
+                        // Weapon path #21 — "waffe only anzeigen, das ging ja mal, müsste man nur
+                        // positionieren". Reverted back to path #13's ORIGINAL, minimal recipe
+                        // (confirmed via git history at the 254 commit): just the double
+                        // CharacterSetup.CopyFromCharacter, nothing else. That was the one and only
+                        // time a weapon ever actually rendered (254, duplicated but visible).
+                        // Everything added after it — Glamourer-matched LoadWeapon (#14/#15/#16),
+                        // scene-graph AddChild/OnAddedToWorld (#17/#18), forced UpdateTransforms
+                        // (#20) — never made it render again and only added risk/complexity. Back
+                        // to basics; kept only the CharacterLoaded safety gate (cheap, doesn't hurt)
+                        // and the per-model-id visibility filter (ApplyWeaponVisibility below,
+                        // prevents the "3 waffen"/duplicate bug we diagnosed since 254).
                         var src = (Character*)srcAddr;
                         wch->CharacterSetup.CopyFromCharacter(src, CharacterSetupContainer.CopyFlags.WeaponHiding);
                         wch->CharacterSetup.CopyFromCharacter(wch, CharacterSetupContainer.CopyFlags.None);
-                        for (var i = 0; i < 2; i++) // MainHand, OffHand — System/crafter handled below
-                        {
-                            var slot = (DrawDataContainer.WeaponSlot)i;
-                            var model = src->DrawData.Weapon(slot).ModelId;
-                            wch->DrawData.LoadWeapon(slot, model, 1, 0, 1, 0, false);
-                        }
-                        // crafter's second tool lives in System (=2; pinned clib doesn't name it)
-                        {
-                            var systemSlot = (DrawDataContainer.WeaponSlot)2;
-                            var model = src->DrawData.Weapon(systemSlot).ModelId;
-                            if (model.Id != 0)
-                                wch->DrawData.LoadWeapon(systemSlot, model, 1, 0, 1, 0, false);
-                        }
-                        // Weapon path #17: live-verified via /api/debug/weaponstate — the weapon
-                        // object exists (Weapon* == DrawObject*, Create/Initialize genuinely ran)
-                        // and AttachTarget correctly points at this clone's own body, but the
-                        // body's OWN ChildObject/sibling chain never includes it (walked 6 hops,
-                        // absent both times). clib's Object.cs literally comments "for humans this
-                        // is a weapon" on ChildObject — AttachTarget is a one-way pointer (weapon
-                        // knows its parent), the scene graph's OTHER direction (parent knows this
-                        // child) was simply never linked. A real player's native equip flow does
-                        // this splice as part of the process; our LoadWeapon/CharacterSetup calls
-                        // apparently stop short of it. AddChild() is the engine's own native
-                        // function for exactly this (Object.cs, real member function, not guessed) —
-                        // safer than manual sibling-pointer splicing.
-                        // Weapon path #18 — can't be live-tested here (no running game; ClientStructs
-                        // Service<T> resolution hangs outside a real ffxiv_dx11.exe, see GlamSource.Mock
-                        // notes). Two things path #17 never actually checked, per Object.cs's base
-                        // struct: whether AddChild() sets weaponObj->ParentObject (0x18) back to
-                        // bodyObj, AND whether bodyObj->ChildObject (0x30) then reads back the weapon —
-                        // AddChild is supposed to set BOTH ends of the link, not just one. If AddChild
-                        // silently no-ops (unmet precondition) both stay wrong. Also trying
-                        // OnAddedToWorld() — the other untried native call flagged in the doc, in case
-                        // AddChild links the graph but something else needs this to "arm" the object for
-                        // rendering. Logged so a real dalamud.log from a live test tells us which.
-                        {
-                            var bodyObj = (FFXIVClientStructs.FFXIV.Client.Graphics.Scene.Object*)wch->GameObject.DrawObject;
-                            if (bodyObj != null)
-                            {
-                                for (var i = 0; i < 3; i++)
-                                {
-                                    ref var wd = ref wch->DrawData.Weapon((DrawDataContainer.WeaponSlot)i);
-                                    if (wd.ModelId.Id == 0) continue;
-                                    var weaponObj = *(FFXIVClientStructs.FFXIV.Client.Graphics.Scene.Object**)((byte*)Unsafe.AsPointer(ref wd) + 0x08);
-                                    if (weaponObj == null) continue;
-                                    bodyObj->AddChild(weaponObj);
-                                    weaponObj->OnAddedToWorld();
-                                    // Weapon path #20 — user's question: "sicher das es in der Nähe
-                                    // ist? nicht irgendwo im Port wo wir sie nicht sehen?" Object.
-                                    // Position (0x50) we've been reading is the LOCAL transform
-                                    // relative to the parent — plausible locally doesn't mean the
-                                    // engine ever recomputed the WORLD transform after we linked it
-                                    // in late via AddChild. DrawObject has a real vf7
-                                    // UpdateTransforms(bool) + an IsTransformChanged flag
-                                    // (Flags bit1, per clib's NotifyTransformChanged: "the inlined
-                                    // routine called after modifying the transform of a
-                                    // DrawObject") — force both so the world matrix actually
-                                    // recomputes from the newly-attached parent instead of possibly
-                                    // sitting on stale/default data from before Create().
-                                    // IsTransformChanged lives on Object.ObjectFlags (ulong @ 0x38,
-                                    // bit 1) — a DIFFERENT field from DrawObject's own Flags byte
-                                    // (0x88, unrelated). Raw offset write: past sessions repeatedly
-                                    // found the pinned clib build missing newly-referenced named
-                                    // members, safer to not depend on a named property existing.
-                                    *(ulong*)((byte*)weaponObj + 0x38) |= 0x02;
-                                    ((FFXIVClientStructs.FFXIV.Client.Graphics.Scene.DrawObject*)weaponObj)->UpdateTransforms(true);
-                                    _log.Info($"[PreviewRenderer] weapon path #18: slot={i} weaponObj={(nint)weaponObj:X} " +
-                                        $"weaponObj->ParentObject={(nint)weaponObj->ParentObject:X} (expect bodyObj={(nint)bodyObj:X}) " +
-                                        $"bodyObj->ChildObject={(nint)bodyObj->ChildObject:X} (expect weaponObj)");
-                                }
-                            }
-                        }
-                        // Weapon path #19 — live root cause found via path #18's own diagnostic
-                        // log: bodyObj->ChildObject stayed at the SAME address across all 15 retry
-                        // ticks despite 15 distinct AddChild() calls — because CharacterSetup.
-                        // CopyFromCharacter creates a BRAND NEW weapon Object every single tick
-                        // (confirmed: 15 ticks produced 15 different weaponObj addresses). The
-                        // 15-tick retry was meant to wait out slow resource streaming, but instead
-                        // it destroys and recreates the weapon object every ~15ms — the 3D model
-                        // resource never gets a chance to finish loading before being discarded.
-                        // The CharacterLoaded gate above already ensures the CLONE itself is ready
-                        // before we ever reach this code — retrying the WEAPON setup on top of that
-                        // was solving a problem that didn't exist and creating a worse one. Now:
-                        // run the whole setup exactly ONCE per activation, not up to 15 times.
-                        _weaponSetupTicksRemaining = 0;
-                        _log.Info($"[PreviewRenderer] weapon path #19: CharacterSetup copy + LoadWeapon + AddChild applied to clone ONCE (no more recreate-every-tick), main={src->DrawData.Weapon(DrawDataContainer.WeaponSlot.MainHand).ModelId.Id} off={src->DrawData.Weapon(DrawDataContainer.WeaponSlot.OffHand).ModelId.Id}");
+                        _weaponSetupTicksRemaining = 0; // one-shot, not retried
+                        _log.Info($"[PreviewRenderer] weapon path #21: CharacterSetup double-copy ONLY (254-style) applied to clone, main={src->DrawData.Weapon(DrawDataContainer.WeaponSlot.MainHand).ModelId.Id} off={src->DrawData.Weapon(DrawDataContainer.WeaponSlot.OffHand).ModelId.Id}");
                         // stance, ONE-SHOT only regardless of the copy-retry window: per-tick
                         // forcing (246) made the game re-evaluate the weapon attach every frame —
                         // duplicate weapon, floating, no anim. The thaw window SetWeaponDrawn opened
