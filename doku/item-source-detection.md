@@ -21,6 +21,8 @@ headers/button text, not game data — actually needs a translation table.
 - Needs a translation-table structure (dictionary keyed by string id, or resx) picked before
   starting — retrofitting one after strings are already extracted means doing the extraction
   twice.
+- **UI placement (user spec)**: DE/EN toggle buttons go in the top bar, next to the
+  minimize/window-chrome row — not buried in the Settings tab.
 
 Running log of the item-detail/source pipeline (`GlamSource.Core/ItemDetailService.cs`) work
 from this session. Audited via `GlamSource.Mock`'s local test server against real `D:\FF\game`
