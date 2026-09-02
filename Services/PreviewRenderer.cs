@@ -891,8 +891,20 @@ public sealed unsafe class PreviewRenderer : IDisposable
                                 }
                             }
                         }
-                        _weaponSetupTicksRemaining--;
-                        _log.Info($"[PreviewRenderer] weapon path #17: CharacterSetup copy + LoadWeapon + AddChild applied to clone (ticksRemaining={_weaponSetupTicksRemaining}), main={src->DrawData.Weapon(DrawDataContainer.WeaponSlot.MainHand).ModelId.Id} off={src->DrawData.Weapon(DrawDataContainer.WeaponSlot.OffHand).ModelId.Id}");
+                        // Weapon path #19 — live root cause found via path #18's own diagnostic
+                        // log: bodyObj->ChildObject stayed at the SAME address across all 15 retry
+                        // ticks despite 15 distinct AddChild() calls — because CharacterSetup.
+                        // CopyFromCharacter creates a BRAND NEW weapon Object every single tick
+                        // (confirmed: 15 ticks produced 15 different weaponObj addresses). The
+                        // 15-tick retry was meant to wait out slow resource streaming, but instead
+                        // it destroys and recreates the weapon object every ~15ms — the 3D model
+                        // resource never gets a chance to finish loading before being discarded.
+                        // The CharacterLoaded gate above already ensures the CLONE itself is ready
+                        // before we ever reach this code — retrying the WEAPON setup on top of that
+                        // was solving a problem that didn't exist and creating a worse one. Now:
+                        // run the whole setup exactly ONCE per activation, not up to 15 times.
+                        _weaponSetupTicksRemaining = 0;
+                        _log.Info($"[PreviewRenderer] weapon path #19: CharacterSetup copy + LoadWeapon + AddChild applied to clone ONCE (no more recreate-every-tick), main={src->DrawData.Weapon(DrawDataContainer.WeaponSlot.MainHand).ModelId.Id} off={src->DrawData.Weapon(DrawDataContainer.WeaponSlot.OffHand).ModelId.Id}");
                         // stance, ONE-SHOT only regardless of the copy-retry window: per-tick
                         // forcing (246) made the game re-evaluate the weapon attach every frame —
                         // duplicate weapon, floating, no anim. The thaw window SetWeaponDrawn opened
@@ -1328,7 +1340,11 @@ public sealed unsafe class PreviewRenderer : IDisposable
         // mid-emote played the draw animation INSIDE the emote pose — clear the emote back to
         // idle first, the stance change then runs from a clean base
         if (_emoteTimelineId != 0) { _emoteClearPending = true; _emoteTimelineId = 0; _emotePlayPending = false; }
-        if (drawn) { _weaponSetupTicksRemaining = 15; _weaponSetupWaitFrames = 300; _weaponStancePending = true; } // weapon path #16, retried over the next 15 Ticks (once CharaView reports loaded), ~5s overall cap
+        // path #19: run once (not 15x — see the setup site's comment, repeat-CharacterSetup was
+        // recreating the weapon object every tick before its resource ever finished loading).
+        // _weaponSetupTicksRemaining just means "setup still pending"; _weaponSetupWaitFrames
+        // bounds how long we'll wait for CharacterLoaded before giving up (~5s at 60fps).
+        if (drawn) { _weaponSetupTicksRemaining = 1; _weaponSetupWaitFrames = 300; _weaponStancePending = true; }
         // NOTE: the LoadWeapon-on-clone path and the DoUpdate shutdown are gone — they were
         // compensations built while a per-tick DoUpdate=true bug (fixed in 234) wiped _items every
         // frame. With _items surviving, the weapon is already IN _items slot 0 via the gear seed;
