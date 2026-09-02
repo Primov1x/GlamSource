@@ -695,9 +695,9 @@ public sealed class WebUiService : IDisposable
             return Json(new { ok = true, timelineId = emoteTimelineId });
         }
 
-        // ponytail: reaktiviert (Pfad #21, minimaler 254er-Mechanismus) — "das ging ja mal,
-        // müsste man nur positionieren". "Waffe" (am Körper) bleibt unten deaktiviert.
-        if (method == "POST" && path == "/api/action/preview3d/weapononly" && _configuration.WebUiLive3DPreview
+        // ponytail: deaktiviert (final, nach 21 Anläufen) — siehe doku/character-preview.md.
+        // "false &&" kurzschließt ohne den Rest zu löschen, für eine spätere GPose-Neuauflage.
+        if (false && method == "POST" && path == "/api/action/preview3d/weapononly" && _configuration.WebUiLive3DPreview
             && bool.TryParse(query["on"], out var weaponOnlyOn))
         {
             _shell.PreviewWindow?.Renderer.NotifyInteraction();

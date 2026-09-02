@@ -1,5 +1,27 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## TODO — New tab: current-duty drop list
+
+Not started, idea only. Request: a new tab showing what drops in the dungeon/duty you're currently
+inside (or pick one from a list, similar to how the in-game Duty Finder lets you browse
+dungeons/trials/raids). Two use cases in one tab:
+
+- **Auto-detect**: while actually inside a duty (`ITerritoryIntel`/`IClientState.TerritoryType` or
+  `ContentFinderCondition` lookup via the current territory), show that duty's drop table directly —
+  no manual picking needed.
+- **Browse**: a searchable/filterable list of all known dungeons/trials/raids (the `ContentFinderCondition`
+  sheet already covers this, same sheet `_itemToDutyMap`/`GetDutyType` already read for the reverse
+  direction — item → which duty drops it) to pick one and see its drops even when not currently
+  inside it.
+
+Data-wise this is largely the REVERSE of what `_itemToDutyMap` (`BuildDutyDropCache`, built from
+`InstanceContentTextData`/loot-table sources already parsed for item detail pages) already indexes
+— that map goes item → duty; this tab needs duty → items, i.e. inverting the same dictionary once
+built (`Dictionary<uint duty, List<uint> items>` alongside the existing `Dictionary<uint item,
+List<uint> duties>`), no new game-data source needed. Build for both ImGui and Web UI from the
+start, not one first (standing project convention).
+
+
 ## Localization (DE/EN, manual toggle) — chrome done, ItemDetailWindow deferred
 
 **Scope, confirmed correct**: item/data names (item names, source descriptions built from

@@ -268,7 +268,7 @@ einmal deaktivieren + aktivieren** (frische CEF-Prozesse) — danach sofort wied
 Kein GlamSource-Bug; die Kill-Switches (`POST /api/debug/kill?sys=...&on=...`) bleiben für künftige
 Bisects drin.
 
-## Waffen-Anzeige in der Preview — Versuchsprotokoll (Stand 0.0.0.299, 20 Anläufe)
+## Waffen-Anzeige in der Preview — Versuchsprotokoll (final geparkt, Stand 0.0.0.311, 21 Anläufe)
 
 Ziel: eine gezogene/geglamte Waffe im Web-Preview-Klon sichtbar machen. Bisher **nicht
 zuverlässig gelöst**. CharaView (`AgentTryon`, slot 2 = TryOn/GearSetPreview) ist der native
@@ -433,6 +433,70 @@ werden (ClientStructs' `Service<T>`-Auflösung hängt außerhalb eines echten `f
   stammen aus clib-Quellcode-Kommentaren + Live-Speicher-Dumps, nicht aus echtem Disassemble der
   Engine-Funktionen selbst. Ein Blick in Ghidra/IDA auf `AddChild`/`Weapon::Initialize` könnte die
   fehlende Vorbedingung direkt zeigen.
+
+### Fortsetzung (299–310): Root-Cause-Fund, letzter Anlauf, final geparkt
+
+21. **Pfad #18 live getestet** (299–304, von einer parallelen Session gebaut, hier zum ersten Mal
+    tatsächlich ausgeführt). Log bestätigte live: `weaponObj->ParentObject` wurde korrekt gesetzt,
+    aber `bodyObj->ChildObject` blieb über **alle 15 Retry-Ticks identisch** — trotz 15
+    unterschiedlicher `AddChild()`-Aufrufe. Des Rätsels Lösung: `weaponObj` selbst hatte bei jedem
+    der 15 Ticks eine **andere Adresse** — `CharacterSetup.CopyFromCharacter` baut bei jedem Aufruf
+    ein komplett neues Waffen-Objekt. Der 15-Tick-Retry (gedacht, um langsames Ressourcen-Laden
+    abzuwarten, nach dem `CharacterLoaded`-Crash-Guard aus 283/293 eingebaut) hat die Waffe
+    stattdessen alle ~15ms zerstört und neu erschaffen — das 3D-Modell bekam nie die Zeit, fertig zu
+    laden, bevor es schon wieder verworfen wurde. **Root Cause gefunden, nicht geraten.**
+22. **Pfad #19** (305): läuft jetzt nur noch **einmal** pro Aktivierung — der `CharacterLoaded`-Check
+    sorgt schon dafür, dass der Klon bereit ist, der Retry löste ein Problem, das nicht existierte,
+    und schuf ein neues.
+23. Nutzer-Frage "sicher das es in der Nähe ist? nicht irgendwo im Port wo wir sie nicht sehen?" —
+    wichtiger Denkanstoß: die gelesene `Object.Position` ist **lokal** relativ zum Elternteil, nicht
+    zwingend die tatsächliche Welt-Transform. **Pfad #20** (306–307): `IsTransformChanged`-Flag
+    (`Object.ObjectFlags` Bit 1, Offset 0x38 — nicht zu verwechseln mit `DrawObject.Flags` bei 0x88)
+    gesetzt + `DrawObject.UpdateTransforms(true)` erzwungen, direkt nach `AddChild()`. Kein
+    sichtbarer Effekt.
+24. **Pfad #21** (309): Nutzer-Idee — "waffe only anzeigen, das ging ja mal, müsste man nur
+    positionieren". Über Git-History (nicht Erinnerung!) den exakten Code des 254er-Commits
+    rausgeholt: nur der rohe `CharacterSetup`-Doppel-Copy, **ohne** `LoadWeapon`, `AddChild`,
+    `UpdateTransforms`. Das war der einzige je erfolgreiche Mechanismus. **Ergebnis: Waffe war
+    tatsächlich sichtbar** ("perfekt") — erster echter Erfolg nach 20 Fehlschlägen.
+25. Zwei neue Probleme direkt danach: Waffe **bewegte sich**, weil sie ein **eigenes Skelett** hat
+    (schon früh in dieser Session dokumentiert) — unser Freeze-Hook packte bisher nur das
+    Körper-Skelett. **Fix** (310): `ApplyOrCaptureFrozenPose` umgebaut, nimmt den
+    Snapshot-Speicher jetzt per `ref`-Parameter — derselbe Mechanismus läuft jetzt zusätzlich für
+    bis zu zwei Waffen-Skelette (Haupt-/Nebenhand), mit derselben Absturz-Hygiene wie beim Körper
+    (Zeiger jeden Tick zuerst löschen). Keine Rückmeldung mehr dazu bekommen, ob das die Bewegung
+    behoben hätte — parallel dazu:
+26. **Duplikate kamen zurück** ("nun wieder doppelte waffen") — vermutlich derselbe Orphan-Mechanismus
+    wie beim ursprünglichen 254er-Fund (übersteht Plugin-Reload, nur vollständiger Spielneustart
+    hilft), diesmal beim erneuten Aktivieren von Pfad #21 wieder aufgesammelt aus einem früheren
+    Testlauf. **Keine Effekte** (Glow/Partikel) auch bei sichtbarer Waffe — Verdacht: die setzen über
+    ein echtes Zieh-**Animationsereignis** an, das unser direktes Umlegen von `Timeline.Flags3` Bit 6
+    (statt einer echten Animation) nie auslöst — nie isoliert verifiziert.
+
+**Endstand: final geparkt** (Nutzer-Entscheidung, nach 21 Anläufen). Buttons in ImGui und Web-UI
+deaktiviert, Backend-Endpunkte per `false &&` kurzgeschlossen — der gesamte Mechanismus bleibt im
+Code für eine mögliche spätere GPose-basierte Neuauflage (siehe Diskussion unten), nur die
+Bedienung ist gesperrt.
+
+### GPose-Alternative (diskutiert, nicht begonnen)
+
+Bei einer Diskussion um Optionen für den nächsten Anlauf kam die Frage auf, ob ein separat
+gespawnter Actor (Brio-Stil) plus native Verpflanzung des fertigen Waffen-Objekts in den
+CharaView-Klon machbar wäre ("Option B"). **Bewusst verworfen** — echtes Absturzrisiko: ein
+natives Objekt aus dem Speicher-Management EINES Charakters gewaltsam in einen anderen zu
+verpflanzen ist kein von der Engine vorgesehener Vorgang (kein Referenz-Plugin macht das), Gefahr
+von Use-after-free wenn der Spender-Actor despawnt während der Klon noch drauf zeigt.
+
+**Vielversprechendere Alternative: GPose.** Innerhalb von GPose läuft ein gespawnter Actor im
+**normalen Spiel-Viewport**, nicht in CharaViews privater Textur — volle native Update-Pipeline,
+Waffen würden vermutlich einfach funktionieren, kein Gebastel nötig. GPose bringt außerdem sein
+eigenes, fertiges Kamerasystem mit (der größte Kostenpunkt eines Custom-Capture-Pipeline-Baus
+entfiele) und blendet andere Spieler/Mobs schon von sich aus aus. Nötig wäre: der bereits
+existierende D3D11-Texture-Capture-Hook (aktuell auf CharaViews private Textur gerichtet) müsste
+stattdessen auf den normalen Viewport zielen. Kosten: der Nutzer müsste für die Live-Vorschau
+tatsächlich in GPose sein — kein "jederzeit überall"-Preview mehr, aber ein einmaliger
+Hotkey/Command, kein großer Akt (Brio/Anamnesis verlangen das für ihre Sachen auch schon). Nicht
+begonnen, nur als Richtung festgehalten.
 
 ## Offene Punkte
 
