@@ -223,6 +223,11 @@ public class CraftingCostServiceTests
         public GameData GameData => null!;
         public uint? ResolveMountItemId(uint mountId) => null;
         public string? GetEnglishName(uint itemId) => null;
+        public IReadOnlyList<DutyInfo> ListDutiesWithDrops() => Array.Empty<DutyInfo>();
+        public DutyDetail? GetDutyDetail(uint cfcId) => null;
+        public System.Threading.Tasks.Task<IReadOnlyList<DutyCoffer>> GetDutyCoffersAsync(uint cfcId)
+            => System.Threading.Tasks.Task.FromResult<IReadOnlyList<DutyCoffer>>(Array.Empty<DutyCoffer>());
+        public uint? FindDutyByTerritory(uint territoryTypeId) => null;
     }
 
     private sealed class FakeUniversalisService : IUniversalisService

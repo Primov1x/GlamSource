@@ -51,6 +51,28 @@ input[type=search]:focus{border-color:var(--accent)}
 #filters select,#filters input{background:var(--panel);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:6px;font-size:12px;outline:none}
 #filters select:focus,#filters input:focus{border-color:var(--accent)}
 #filters input{width:72px}
+.row.active{border-color:var(--gold)}
+.row .type{color:var(--muted);font-size:11px;margin-left:auto;white-space:nowrap}
+/* Duty Drops tab: duty list left, drop grid + item detail right */
+#dutylayout{display:flex;gap:18px;align-items:flex-start}
+#dutyside{width:320px;flex-shrink:0}
+#dutyside input[type=search]{max-width:none;margin-top:8px}
+#dutylist{max-width:none;max-height:520px;overflow-y:auto}
+#dutymain{flex:1;min-width:0}
+/* Duty Finder style tiles: banner thumbnail (ContentFinderCondition.Image via /api/icon) + name/meta */
+.dtile{display:flex;gap:10px;align-items:center;background:var(--panel);border:1px solid transparent;border-radius:8px;padding:6px 8px;cursor:pointer;transition:.12s}
+.dtile:hover,.dtile:focus,.dtile.active{border-color:var(--gold);background:var(--panel2);outline:none}
+.dtile img{width:96px;height:31px;object-fit:cover;border-radius:4px;flex-shrink:0;border:1px solid var(--gold-dim);background:var(--panel2)}
+.dtile .nm{font-size:13px;line-height:1.25}
+.dtile .meta{color:var(--muted);font-size:11px}
+.dutybanner{display:flex;gap:16px;align-items:center;margin-bottom:6px}
+.dutybanner img{width:376px;height:120px;object-fit:cover;border-radius:8px;border:1px solid var(--gold-dim)}
+.dsec{margin-top:14px}
+.dsech{color:var(--gold);font-size:12px;letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid var(--border);padding-bottom:4px}
+.dsub{color:var(--muted);font-size:11px;margin-top:8px}
+.dgrid{max-width:none;flex-direction:row;flex-wrap:wrap;margin-top:6px}
+.dgrid .row{width:calc(50% - 4px)}
+#dutydrops{max-height:460px;overflow-y:auto;padding-right:4px}
 .cards{display:flex;flex-direction:column;gap:14px;margin-top:16px}
 .card{background:var(--panel);border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:10px;padding:14px 16px;box-shadow:0 2px 10px rgba(0,0,0,.35)}
 .card h3{display:flex;align-items:center;gap:8px;font-size:14px;margin-bottom:8px}
@@ -140,6 +162,7 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 <nav>
   <button id="tab-lookup" class="active" data-i18n="tab_lookup" onclick="showTab('lookup')"></button>
   <button id="tab-character" data-i18n="tab_character" onclick="showTab('character')"></button>
+  <button id="tab-duties" data-i18n="tab_duties" onclick="showTab('duties')"></button>
   <button id="tab-settings" data-i18n="tab_settings" onclick="showTab('settings')"></button>
 </nav>
 
@@ -188,6 +211,21 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
   <pre id="p3ddebug" style="display:none;font-size:11px;background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:8px;margin-top:6px;white-space:pre-wrap"></pre>
 </section>
 
+<section id="view-duties" style="display:none">
+  <div id="dutylayout">
+    <div id="dutyside">
+      <div id="dutycurrent" class="empty" style="margin-top:0"></div>
+      <input type="search" id="dq" data-i18n-ph="duty_search_ph">
+      <div class="results" id="dutylist"></div>
+    </div>
+    <div id="dutymain">
+      <div id="dutyhead"></div>
+      <div id="dutydrops"></div>
+      <div id="dutydetail"></div>
+    </div>
+  </div>
+</section>
+
 <section id="view-settings" style="display:none">
   <!-- ponytail: mirrors GlamSourceShellWindow.DrawSettingsTab's Configuration-backed toggles —
        not "Web UI" itself (self-disable) or "Movable Window" (ImGui-only), and not the
@@ -213,6 +251,18 @@ const I18N={
   tab_lookup:{en:'Item Search',de:'Item-Suche'},
   tab_character:{en:'Character',de:'Charakter'},
   tab_settings:{en:'Settings',de:'Einstellungen'},
+  tab_duties:{en:'Duty Drops',de:'Duty-Drops'},
+  duty_current:{en:'Current duty',de:'Aktuelle Duty'},
+  duty_none:{en:'Not inside a duty — pick one from the list',de:'Nicht in einer Duty — eine aus der Liste wählen'},
+  duty_search_ph:{en:'Search dungeon, trial, raid…',de:'Dungeon, Prüfung, Raid suchen…'},
+  duty_pick:{en:'Pick a duty to see its drops',de:'Duty wählen, um die Drops zu sehen'},
+  duty_nodrops:{en:'No drops known for this duty.',de:'Keine Drops für diese Duty bekannt.'},
+  boss:{en:'Boss',de:'Boss'},
+  chest:{en:'Chest',de:'Truhe'},
+  duty_general:{en:'Elsewhere in the duty (chests & mobs)',de:'Unterwegs in der Duty (Truhen & Gegner)'},
+  drops:{en:'drops',de:'Drops'},
+  duty_coffers:{en:'Treasure chests along the way (Garland Tools)',de:'Truhen unterwegs (Garland Tools)'},
+  map:{en:'Map',de:'Karte'},
   search_ph:{en:'Search any item… or paste an item ID',de:'Beliebiges Item suchen… oder Item-ID einfügen'},
   p3dhint:{en:'Overlay is unlocked — lock it top-right, then drag-rotate.',de:'Overlay ist entsperrt — Schloss oben rechts sperren, dann per Ziehen drehen.'},
   chardetail_hint:{en:'Click a slot for source & details',de:'Slot anklicken für Herkunft & Quellen'},
@@ -287,12 +337,13 @@ function typeIcon(cls){return ''} // emoji render as empty boxes in Browsingway 
 let currentTab='lookup';
 function showTab(t){
   currentTab=t;
-  for(const x of['lookup','character','settings']){
+  for(const x of['lookup','character','duties','settings']){
     $('#view-'+x).style.display=x===t?'':'none';
     $('#tab-'+x).classList.toggle('active',x===t);
   }
   if(t==='character'){loadSnapshot(true);loadRecents();startPreview3D()}else{stopPreview3D()}
   if(t==='settings')loadSettings();
+  if(t==='duties')loadDuties();
   updateOverlayCompactness();
 }
 
@@ -602,6 +653,60 @@ $('#results').addEventListener('keydown',e=>{
   else if(e.key==='ArrowDown'&&i<rows.length-1){rows[i+1].focus();e.preventDefault()}
   else if(e.key==='ArrowUp'){(i>0?rows[i-1]:$('#q')).focus();e.preventDefault()}
 });
+// Duty Drops tab (doku TODO): duty list from /api/duties (once), current duty from
+// /api/duty/current on every tab open (auto-select), drops per duty, item detail in-tab.
+let dutyList=null,dutySelected=0;
+async function loadDuties(){
+  if(!dutyList){dutyList=await fetch('/api/duties').then(r=>r.json());renderDutyList()}
+  if(!dutySelected)$('#dutyhead').innerHTML=`<div class="empty" style="margin-top:0">${t('duty_pick')}</div>`;
+  const cur=await fetch('/api/duty/current').then(r=>r.ok?r.json():{id:0}).catch(()=>({id:0}));
+  const d=dutyList.find(x=>x.id===cur.id);
+  $('#dutycurrent').textContent=d?`${t('duty_current')}: ${d.name}`:t('duty_none');
+  if(d&&dutySelected!==d.id)selectDuty(d.id);
+}
+function renderDutyList(){
+  const q=$('#dq').value.trim().toLowerCase();
+  const rows=(dutyList||[]).filter(x=>!q||x.name.toLowerCase().includes(q));
+  $('#dutylist').innerHTML=rows.map(x=>`<div class="dtile${x.id===dutySelected?' active':''}" tabindex="0" role="button" onclick="selectDuty(${x.id})"><img src="/api/icon/${x.imageId}" loading="lazy" onerror="this.style.visibility='hidden'"><div><div class="nm">${esc(x.name)}</div><div class="meta">${esc(x.type)} · Lv.${x.level}${x.itemLevel?` · iLvl ${x.itemLevel}`:''} · ${x.drops} ${t('drops')}</div></div></div>`).join('')||`<div class="empty">${t('no_items')}</div>`;
+}
+$('#dq').addEventListener('input',renderDutyList);
+const dropRows=list=>list.map(x=>`<div class="row" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${img(x.iconId,28)}<span>${esc(x.name)}${x.itemLevel?`<span class="ilvl">iLvl ${x.itemLevel}</span>`:''}</span></div>`).join('');
+async function selectDuty(id){
+  dutySelected=id;renderDutyList();
+  $('#dutydetail').innerHTML='';$('#dutyhead').innerHTML='';
+  $('#dutydrops').innerHTML=`<div class="empty"><span class="spinner"></span>${t('loading')}</div>`;
+  const d=await fetch('/api/duty/'+id).then(r=>r.ok?r.json():null);
+  if(!d){$('#dutydrops').innerHTML=`<div class="empty">${t('not_found')}</div>`;return}
+  // Duty Finder style header: the game's own banner image, then one section per boss (drops +
+  // chests after that boss), then whatever drops anywhere in the duty
+  $('#dutyhead').innerHTML=`<div class="dutybanner"><img src="/api/icon/${d.imageId}" onerror="this.style.display='none'"><div><h2 class="name">${esc(d.name)}</h2><div class="meta">${esc(d.type)} · Lv.${d.level}${d.itemLevel?` · iLvl ${d.itemLevel}`:''}</div></div></div>`;
+  let h='';
+  for(const b of d.bosses){
+    h+=`<div class="dsec"><div class="dsech">${t('boss')} ${b.fightNo+1}${b.name?` — ${esc(b.name)}`:''}</div>`;
+    if(b.drops.length)h+=`<div class="results dgrid">${dropRows(b.drops)}</div>`;
+    for(const c of b.chests)h+=`<div class="dsub">${t('chest')}${b.chests.length>1?` ${c.cofferNo+1}`:''}</div><div class="results dgrid">${dropRows(c.items)}</div>`;
+    h+='</div>';
+  }
+  if(d.general.length)h+=`<div class="dsec"><div class="dsech">${t('duty_general')}</div><div class="results dgrid">${dropRows(d.general)}</div></div>`;
+  $('#dutydrops').innerHTML=h||`<div class="empty">${t('duty_nodrops')}</div>`;
+  // chests along the way come from Garland Tools (live, cached server-side) — appended when they
+  // arrive, with the in-game map flag button the NPC rows already use
+  const coffers=await fetch(`/api/duty/${id}/coffers`).then(r=>r.ok?r.json():[]).catch(()=>[]);
+  if(dutySelected!==id||!coffers.length)return;
+  let c='';
+  coffers.forEach((cf,i)=>{
+    const map=d.mapId?` <button class="act" onclick="post('/api/action/map?territory=${d.territoryTypeId}&map=${d.mapId}&x=${cf.x}&y=${cf.y}')">${t('map')}</button>`:'';
+    c+=`<div class="dsub">${t('chest')} ${i+1} · (${cf.x.toFixed(1)}, ${cf.y.toFixed(1)})${map}</div><div class="results dgrid">${dropRows(cf.items)}</div>`;
+  });
+  $('#dutydrops').insertAdjacentHTML('beforeend',`<div class="dsec"><div class="dsech">${t('duty_coffers')}</div>${c}</div>`);
+}
+async function openDutyItem(id){
+  $('#dutydetail').innerHTML=`<div class="empty"><span class="spinner"></span>${t('loading')}</div>`;
+  const d=await fetch('/api/item/'+id).then(r=>r.ok?r.json():null);
+  $('#dutydetail').innerHTML=d?buildItemHtml(d,'openDutyItem'):`<div class="empty">${t('not_found')}</div>`;
+  if(d)annotateInventory($('#dutydetail'));
+}
+
 // "Suchergebnisse verschwinden beim Item-Klick": list is only hidden, the back bar restores it
 function backToResults(){
   $('#detail').innerHTML='';$('#resback').style.display='none';$('#results').style.display='';

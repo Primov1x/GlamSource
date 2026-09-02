@@ -26,6 +26,7 @@ namespace GlamSource.Windows;
 public class ItemDetailWindow : Window, IDisposable
 {
     private readonly IItemDetailService _detailService;
+    internal IItemDetailService DetailService => _detailService; // shell's Duty Drops tab reads duty tables through it
     private readonly IItemSourceService _sourceService;
     private readonly IUniversalisService _universalisService;
     private readonly ITextureProvider? _textureProvider;

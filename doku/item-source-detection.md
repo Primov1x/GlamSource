@@ -1,26 +1,37 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
-## TODO — New tab: current-duty drop list
+## Duty Drops tab (0.0.0.312) — current-duty auto-detect + Duty Finder style browse
 
-Not started, idea only. Request: a new tab showing what drops in the dungeon/duty you're currently
-inside (or pick one from a list, similar to how the in-game Duty Finder lets you browse
-dungeons/trials/raids). Two use cases in one tab:
+Was the TODO above this line; built for ImGui and Web UI in the same change.
 
-- **Auto-detect**: while actually inside a duty (`ITerritoryIntel`/`IClientState.TerritoryType` or
-  `ContentFinderCondition` lookup via the current territory), show that duty's drop table directly —
-  no manual picking needed.
-- **Browse**: a searchable/filterable list of all known dungeons/trials/raids (the `ContentFinderCondition`
-  sheet already covers this, same sheet `_itemToDutyMap`/`GetDutyType` already read for the reverse
-  direction — item → which duty drops it) to pick one and see its drops even when not currently
-  inside it.
-
-Data-wise this is largely the REVERSE of what `_itemToDutyMap` (`BuildDutyDropCache`, built from
-`InstanceContentTextData`/loot-table sources already parsed for item detail pages) already indexes
-— that map goes item → duty; this tab needs duty → items, i.e. inverting the same dictionary once
-built (`Dictionary<uint duty, List<uint> items>` alongside the existing `Dictionary<uint item,
-List<uint> duties>`), no new game-data source needed. Build for both ImGui and Web UI from the
-start, not one first (standing project convention).
-
+- **Data**: `ItemDetailService.ListDutiesWithDrops()` inverts the existing item→duty map
+  (`_itemToDutyMap`) once; `GetDutyDetail(cfcId)` keeps the four LuminaSupplemental CSVs whole
+  (`DungeonBoss` → boss name via `BNpcName`, `DungeonBossDrop`, `DungeonBossChest` grouped by
+  `FightNo`/`CofferNo`, `DungeonDrop` = duty-wide) and returns banner (`ContentFinderCondition.Image`,
+  e.g. 112001 for Sastasha — same `ui/icon/` path as item icons, so `/api/icon/` and
+  `GetFromGameIcon` both serve it), level, per-boss sections, general list, territory + map ids.
+  `FindDutyByTerritory(territoryTypeId)` = auto-detect (prefers a CFC we have drops for).
+- **Chests along the way** (`GetDutyCoffersAsync`): Garland Tools' instance doc
+  (`garlandtools.org/db/doc/instance/en/2/{id}.json`, `GarlandInstanceService`, cached per id)
+  lists every treasure coffer WITH map coordinates — nothing local has that. Verified: Garland's
+  instance id == `ContentFinderCondition.Content` (Sastasha 4→4, Syrcus Tower 102→30011, Castrum
+  Fluminis 537→20055). Coffers whose items are fully covered by a boss chest are dropped (they're
+  the boss coffers again); the rest show as "Chest N · (x, y)" with the existing map-flag button
+  on the web side. xivapi v2 was checked too: sheet data only, no drop tables — not used.
+- **Web**: new "Duty Drops" tab — duty tiles with banner thumbnail + type/level/drop count,
+  search box, selected duty = big banner header, then Boss 1 — Chopper / Chest … sections,
+  "Elsewhere in the duty", then the Garland chests; item click opens the detail in-tab.
+  `/api/duties`, `/api/duty/current`, `/api/duty/{id}`, `/api/duty/{id}/coffers` (plugin + mock;
+  mock's current is always 0, and its DalaMock Lumina can't resolve `TerritoryType→Map`, so
+  `MapId` is 0 there — `Safe()`-guarded).
+- **ImGui**: `TabId.Duties` — current-duty line, filter box, duty list, banner, boss sections,
+  chests loaded via a polled `Task` (no blocking on the draw thread). `Plugin.ClientState.TerritoryType`
+  read directly in Draw (framework thread).
+- **Needs in-game verification**: auto-select when entering a duty (web: on tab open; ImGui: on
+  territory change), banner rendering via `GetFromGameIcon` for 112xxx ids, the map-flag button on
+  chest coords inside the instance, Garland fetch latency (6 s timeout, failure = no chest section).
+- **Not local**: the "what drops here" popup plugin the user mentioned isn't among the reference
+  checkouts; Garland covered the need.
 
 ## Localization (DE/EN, manual toggle) — chrome done, ItemDetailWindow deferred
 

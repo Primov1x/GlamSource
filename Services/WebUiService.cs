@@ -63,6 +63,7 @@ public sealed class WebUiService : IDisposable
     private double _lastStreamDurationS;
     private double _lastStreamAvgFps;
     private ItemSearchIndex? _search; // lazy: first /api/search builds the ~40k-row index
+    private readonly IClientState _clientState; // Duty Drops tab: current territory -> duty
     private TcpListener? _listener;
     private TcpListener? _listener6;
     private CancellationTokenSource? _cts;
@@ -82,10 +83,11 @@ public sealed class WebUiService : IDisposable
     /// <summary>Human-readable state of the Browsingway inlay bootstrap, shown in Settings.</summary>
     public string? InlayStatus { get; private set; }
 
-    public WebUiService(IItemDetailService detail, IGlamourService glamour, GlamSourceShellWindow shell, Configuration configuration, IFramework framework, Dalamud.Plugin.IDalamudPluginInterface pi, IPluginLog log)
+    public WebUiService(IItemDetailService detail, IGlamourService glamour, GlamSourceShellWindow shell, Configuration configuration, IFramework framework, Dalamud.Plugin.IDalamudPluginInterface pi, IPluginLog log, IClientState clientState)
     {
         _detail = detail;
         _glamour = glamour;
+        _clientState = clientState;
         _shell = shell;
         _configuration = configuration;
         _framework = framework;
@@ -441,6 +443,24 @@ public sealed class WebUiService : IDisposable
             var hits = (_search ??= new ItemSearchIndex(_detail.GameData))
                 .Search(q, query["slot"], query["job"], Int("ilvlmin"), Int("ilvlmax"), 60);
             return Json(hits.Select(h => new { id = h.Id, name = h.Name, iconId = h.IconId, ilvl = h.ItemLevel }).ToArray());
+        }
+
+        // Duty Drops tab (doku TODO): list of duties with known drops, the one we're standing in,
+        // and one duty's drop table. Territory is game state -> read it on the framework thread.
+        if (method == "GET" && path == "/api/duties")
+            return Json(_detail.ListDutiesWithDrops().Select(d => new { id = d.CfcId, name = d.Name, type = d.Type, drops = d.DropCount, imageId = d.ImageId, level = d.Level, itemLevel = d.ItemLevel }).ToArray());
+        if (method == "GET" && path == "/api/duty/current")
+        {
+            var territory = _framework.RunOnFrameworkThread(() => (uint)_clientState.TerritoryType).GetAwaiter().GetResult();
+            return Json(new { id = _detail.FindDutyByTerritory(territory) ?? 0 });
+        }
+        if (method == "GET" && path.StartsWith("/api/duty/") && path.EndsWith("/coffers")
+            && uint.TryParse(path["/api/duty/".Length..^"/coffers".Length], out var cofferDutyId))
+            return Json(_detail.GetDutyCoffersAsync(cofferDutyId).GetAwaiter().GetResult()); // request thread, blocking is fine
+        if (method == "GET" && path.StartsWith("/api/duty/") && uint.TryParse(path["/api/duty/".Length..], out var dutyId))
+        {
+            var dd = _detail.GetDutyDetail(dutyId);
+            return dd == null ? ("404 Not Found", "text/plain", Encoding.UTF8.GetBytes("duty not found")) : Json(dd);
         }
 
         if (method == "GET" && path == "/api/jobs")

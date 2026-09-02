@@ -52,9 +52,32 @@ public record ItemSourceDetail(
     string? ShopUrl = null,
     uint? SourceItemId = null);
 
+/// One duty (ContentFinderCondition) that has at least one known drop.
+public sealed record DutyInfo(uint CfcId, string Name, string Type, uint TerritoryTypeId, int DropCount, uint ImageId, int Level, int ItemLevel);
+public sealed record DutyDrop(uint ItemId, string Name, uint IconId, int ItemLevel);
+public sealed record DutyChest(int CofferNo, IReadOnlyList<DutyDrop> Items);
+public sealed record DutyBoss(int FightNo, string Name, IReadOnlyList<DutyDrop> Drops, IReadOnlyList<DutyChest> Chests);
+/// Duty Finder style detail: banner image (ContentFinderCondition.Image), per-boss drops and
+/// chests (LuminaSupplemental DungeonBoss / DungeonBossDrop / DungeonBossChest), plus the
+/// duty-wide DungeonDrop list.
+public sealed record DutyDetail(uint CfcId, string Name, string Type, uint ImageId, int Level, int ItemLevel,
+    IReadOnlyList<DutyBoss> Bosses, IReadOnlyList<DutyDrop> General, uint TerritoryTypeId, uint MapId);
+/// A treasure coffer along the way (Garland Tools), with its map coordinates.
+public sealed record DutyCoffer(float X, float Y, IReadOnlyList<DutyDrop> Items);
+
 public interface IItemDetailService
 {
     ItemDetail? GetDetail(uint itemId);
+    /// Duty Drops tab: every duty with a known drop table, sorted by type then name.
+    IReadOnlyList<DutyInfo> ListDutiesWithDrops();
+    /// Duty Drops tab: one duty's banner, bosses, chests and drops (iLvl descending inside each list).
+    DutyDetail? GetDutyDetail(uint cfcId);
+    /// Duty Drops tab: treasure coffers along the way (Garland Tools, live), minus the boss coffers
+    /// GetDutyDetail already lists. Empty without a Garland service or when Garland has nothing.
+    Task<IReadOnlyList<DutyCoffer>> GetDutyCoffersAsync(uint cfcId);
+    /// Duty Drops tab auto-detect: the ContentFinderCondition for the territory the player is in
+    /// (prefers one we have drops for), null outside duties.
+    uint? FindDutyByTerritory(uint territoryTypeId);
     GameData GameData { get; }
     uint? ResolveMountItemId(uint mountId);
     string? GetEnglishName(uint itemId);
@@ -166,9 +189,12 @@ public sealed class ItemDetailService : IItemDetailService
     // itself may have since delisted/renamed, or a transient fetch failure this session).
     private readonly MogStationLiveService _mogstationLive = new(new HttpClient());
 
-    public ItemDetailService(GameData gameData)
+    private readonly IGarlandInstanceService? _garland;
+
+    public ItemDetailService(GameData gameData, IGarlandInstanceService? garland = null)
     {
         _gameData = gameData ?? throw new ArgumentNullException(nameof(gameData));
+        _garland = garland;
 
         BuildCaches();
         BuildDutyDropCache();
@@ -994,6 +1020,138 @@ public sealed class ItemDetailService : IItemDetailService
         }
 
         return results;
+    }
+
+    // ---- duty -> drops: the reverse of _itemToDutyMap, for the Duty Drops tab (doku TODO) ----
+    private Dictionary<uint, List<uint>>? _dutyToItems;
+    private Dictionary<uint, List<uint>> DutyToItems
+    {
+        get
+        {
+            if (_dutyToItems != null) return _dutyToItems;
+            var map = new Dictionary<uint, List<uint>>();
+            foreach (var (itemId, duties) in _itemToDutyMap)
+                foreach (var cfc in duties)
+                {
+                    if (!map.TryGetValue(cfc, out var list)) map[cfc] = list = new();
+                    list.Add(itemId);
+                }
+            return _dutyToItems = map;
+        }
+    }
+
+    public IReadOnlyList<DutyInfo> ListDutiesWithDrops()
+    {
+        var cfcSheet = _gameData.GetExcelSheet<ContentFinderCondition>();
+        if (cfcSheet == null) return Array.Empty<DutyInfo>();
+        var list = new List<DutyInfo>();
+        foreach (var (cfcId, items) in DutyToItems)
+        {
+            var cfc = cfcSheet.GetRowOrDefault(cfcId);
+            if (cfc == null) continue;
+            var name = cfc.Value.Name.ToString();
+            if (name.Length == 0) continue;
+            list.Add(new DutyInfo(cfcId, name, GetDutyType(cfcId), cfc.Value.TerritoryType.RowId, items.Count,
+                cfc.Value.Image, cfc.Value.ClassJobLevelRequired, cfc.Value.ItemLevelRequired));
+        }
+        return list.OrderBy(d => d.Type, StringComparer.Ordinal).ThenBy(d => d.Name, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    // the same four LuminaSupplemental CSVs BuildDutyDropCache flattens into item -> duty, kept
+    // whole here because the tab wants them by boss / chest (loaded once, ~10k rows total)
+    private (List<DungeonBoss> bosses, List<DungeonBossDrop> bossDrops, List<DungeonBossChest> chests, List<DungeonDrop> general)? _dutyTables;
+    private (List<DungeonBoss> bosses, List<DungeonBossDrop> bossDrops, List<DungeonBossChest> chests, List<DungeonDrop> general) DutyTables => _dutyTables ??= (
+        CsvLoader.LoadResource<DungeonBoss>(CsvLoader.DungeonBossResourceName, true, out _, out _, null).ToList(),
+        CsvLoader.LoadResource<DungeonBossDrop>(CsvLoader.DungeonBossDropResourceName, true, out _, out _, null).ToList(),
+        CsvLoader.LoadResource<DungeonBossChest>(CsvLoader.DungeonBossChestResourceName, true, out _, out _, null).ToList(),
+        CsvLoader.LoadResource<DungeonDrop>(CsvLoader.DungeonDropItemResourceName, true, out _, out _, null).ToList());
+
+    public DutyDetail? GetDutyDetail(uint cfcId)
+    {
+        var cfc = _gameData.GetExcelSheet<ContentFinderCondition>()?.GetRowOrDefault(cfcId);
+        if (cfc == null) return null;
+        var (bosses, bossDrops, chests, general) = DutyTables;
+        var itemSheet = _gameData.GetExcelSheet<Item>();
+        var bnpc = _gameData.GetExcelSheet<BNpcName>();
+
+        List<DutyDrop> Drops(IEnumerable<uint> ids)
+        {
+            var list = new List<DutyDrop>();
+            foreach (var id in ids.Distinct())
+            {
+                var row = itemSheet?.GetRowOrDefault(id);
+                if (row == null) continue;
+                list.Add(new DutyDrop(id, row.Value.Name.ToString(), row.Value.Icon, (int)row.Value.LevelItem.RowId));
+            }
+            return list.OrderByDescending(d => d.ItemLevel).ThenBy(d => d.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
+        var fights = bosses.Where(b => b.ContentFinderConditionId == cfcId).Select(b => (int)b.FightNo)
+            .Concat(bossDrops.Where(d => d.ContentFinderConditionId == cfcId).Select(d => (int)d.FightNo))
+            .Concat(chests.Where(c => c.ContentFinderConditionId == cfcId).Select(c => (int)c.FightNo))
+            .Distinct().OrderBy(f => f).ToList();
+        var bossList = new List<DutyBoss>();
+        foreach (var f in fights)
+        {
+            var boss = bosses.Where(b => b.ContentFinderConditionId == cfcId && b.FightNo == f).ToList();
+            // BNpcName.Singular is lowercase in the English sheet ("chopper") — capitalise for display
+            var name = boss.Count == 0 ? "" : bnpc?.GetRowOrDefault(boss[0].BNpcNameId)?.Singular.ToString() ?? "";
+            if (name.Length > 0) name = char.ToUpperInvariant(name[0]) + name[1..];
+            var drops = Drops(bossDrops.Where(d => d.ContentFinderConditionId == cfcId && d.FightNo == f).Select(d => d.ItemId));
+            var chestList = chests.Where(c => c.ContentFinderConditionId == cfcId && c.FightNo == f)
+                .GroupBy(c => (int)c.CofferNo).OrderBy(g => g.Key)
+                .Select(g => new DutyChest(g.Key, Drops(g.Select(c => c.ItemId))))
+                .Where(c => c.Items.Count > 0).ToList();
+            if (drops.Count == 0 && chestList.Count == 0) continue;
+            bossList.Add(new DutyBoss(f, name, drops, chestList));
+        }
+        var generalDrops = Drops(general.Where(d => d.ContentFinderConditionId == cfcId).Select(d => d.ItemId));
+        return new DutyDetail(cfcId, cfc.Value.Name.ToString(), GetDutyType(cfcId), cfc.Value.Image,
+            cfc.Value.ClassJobLevelRequired, cfc.Value.ItemLevelRequired, bossList, generalDrops,
+            cfc.Value.TerritoryType.RowId,
+            Safe(() => cfc.Value.TerritoryType.ValueNullable?.Map.RowId ?? 0, 0u)); // TerritoryType sheet mismatches under DalaMock
+    }
+
+    public async Task<IReadOnlyList<DutyCoffer>> GetDutyCoffersAsync(uint cfcId)
+    {
+        if (_garland == null) return Array.Empty<DutyCoffer>();
+        var cfc = _gameData.GetExcelSheet<ContentFinderCondition>()?.GetRowOrDefault(cfcId);
+        if (cfc == null || cfc.Value.Content.RowId == 0) return Array.Empty<DutyCoffer>();
+        var raw = await _garland.GetCoffersAsync(cfc.Value.Content.RowId).ConfigureAwait(false);
+        if (raw.Count == 0) return Array.Empty<DutyCoffer>();
+        // Garland lists the boss coffers too (same items as our per-boss chests) — keep only the
+        // coffers not fully covered by a boss chest, i.e. the ones along the way
+        var bossChestSets = (GetDutyDetail(cfcId)?.Bosses ?? Array.Empty<DutyBoss>())
+            .SelectMany(b => b.Chests).Select(c => c.Items.Select(i => i.ItemId).ToHashSet()).ToList();
+        var itemSheet = _gameData.GetExcelSheet<Item>();
+        var result = new List<DutyCoffer>();
+        foreach (var c in raw)
+        {
+            if (bossChestSets.Any(set => c.ItemIds.All(set.Contains))) continue;
+            var items = new List<DutyDrop>();
+            foreach (var id in c.ItemIds)
+            {
+                var row = itemSheet?.GetRowOrDefault(id);
+                if (row != null) items.Add(new DutyDrop(id, row.Value.Name.ToString(), row.Value.Icon, (int)row.Value.LevelItem.RowId));
+            }
+            if (items.Count > 0) result.Add(new DutyCoffer(c.X, c.Y, items));
+        }
+        return result;
+    }
+
+    public uint? FindDutyByTerritory(uint territoryTypeId)
+    {
+        if (territoryTypeId == 0) return null;
+        var cfcSheet = _gameData.GetExcelSheet<ContentFinderCondition>();
+        if (cfcSheet == null) return null;
+        uint? any = null;
+        foreach (var cfc in cfcSheet)
+        {
+            if (cfc.TerritoryType.RowId != territoryTypeId || cfc.Name.IsEmpty) continue;
+            if (DutyToItems.ContainsKey(cfc.RowId)) return cfc.RowId;
+            any ??= cfc.RowId;
+        }
+        return any;
     }
 
     private static ItemSourceDetail Note(ItemSourceType type, string description, IReadOnlyList<CostEntry>? materials = null, uint? sourceItemId = null)

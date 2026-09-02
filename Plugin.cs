@@ -139,7 +139,7 @@ public class Plugin : IAsyncDalamudPlugin
             () => Configuration);
 
 
-        itemDetailService = new ItemDetailService(DataManager.GameData);
+        itemDetailService = new ItemDetailService(DataManager.GameData, new GarlandInstanceService(new System.Net.Http.HttpClient()));
         var universalisHttpClient = new System.Net.Http.HttpClient();
         _universalisService = new UniversalisService(universalisHttpClient, "Shiva", "Light");
         var craftingCostService = new CraftingCostService(itemDetailService, _universalisService!);
@@ -174,7 +174,7 @@ public class Plugin : IAsyncDalamudPlugin
         debugApiService.SetEnabled(Configuration.DebugApiEnabled);
         shellWindow.OnDebugApiToggle = enabled => debugApiService.SetEnabled(enabled);
 
-        webUiService = new WebUiService(itemDetailService, GlamourServiceOverride ?? gameDataService, shellWindow, Configuration, Framework, PluginInterface, Log);
+        webUiService = new WebUiService(itemDetailService, GlamourServiceOverride ?? gameDataService, shellWindow, Configuration, Framework, PluginInterface, Log, ClientState);
         shellWindow.WebUiInlayStatus = () => webUiService.InlayStatus;
         webUiService.SetEnabled(Configuration.WebUiEnabled);
         shellWindow.OnWebUiToggle = enabled => webUiService.SetEnabled(enabled);

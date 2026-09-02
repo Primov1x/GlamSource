@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -33,6 +34,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         Lookup = 0,
         Character = 1,
         Settings = 2,
+        Duties = 3,
     }
 
     // Wired shared deps
@@ -64,6 +66,14 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
     private int _filterSlot, _filterJob;
     private string _filterIlvlMin = "", _filterIlvlMax = "";
     private string[]? _jobAbbrs, _jobLabels;
+    // Duty Drops tab
+    private string _dutyFilter = "";
+    private uint _dutySelected, _lastDutyTerritory;
+    private uint? _currentDuty;
+    private IReadOnlyList<DutyInfo>? _duties;
+    private DutyDetail? _dutyDetail;
+    private Task<IReadOnlyList<DutyCoffer>>? _cofferTask; // Garland Tools fetch, polled in Draw
+    private IReadOnlyList<DutyCoffer>? _dutyCoffers;
     private static readonly string[] FilterSlotKeys = { "", "MainHand", "OffHand", "Head", "Body", "Hands", "Legs", "Feet", "Earrings", "Necklace", "Bracelets", "RingRight", "RingLeft" };
 
     // ---------- Character tab state (from CharacterGlamourWindow) ----------
@@ -239,6 +249,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         {
             DrawTab(Loc.T("Lookup"),    TabId.Lookup,    DrawLookupTab);
             DrawTab(Loc.T("Character"), TabId.Character, DrawCharacterTab);
+            DrawTab(Loc.T("Duty Drops"), TabId.Duties,    DrawDutiesTab);
             DrawTab(Loc.T("Settings"),  TabId.Settings,  DrawSettingsTab);
             ImGui.EndTabBar();
         }
@@ -956,7 +967,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
     }
 
     private Vector2? _previewDragLast;
-    private bool _weaponDrawn;
+    private bool _weaponDrawn = false; // parked weapon feature (doku/character-preview.md); explicit init keeps CS0649 quiet
 
     private void DrawRecentSidebar()
     {
@@ -1192,6 +1203,126 @@ private void ApplyTargetGlamourToSelf()
         EquipmentSlotType.RingLeft => ApiEquipSlot.LFinger,
         _ => ApiEquipSlot.Unknown,
     };
+
+    // Duty Drops (doku TODO): auto-select the duty we're standing in, browse the rest. Draw runs
+    // on the framework thread, so the territory read is fine here.
+    private void DrawDutiesTab()
+    {
+        var svc = _detailWindow.DetailService;
+        _duties ??= svc.ListDutiesWithDrops();
+        var territory = (uint)Plugin.ClientState.TerritoryType;
+        if (territory != _lastDutyTerritory)
+        {
+            _lastDutyTerritory = territory;
+            _currentDuty = svc.FindDutyByTerritory(territory);
+            if (_currentDuty is { } c && _duties.Any(d => d.CfcId == c))
+                SelectDuty(c);
+        }
+
+        UiStyle.SectionHeader(Loc.T("Duty Drops"));
+        var curName = _currentDuty is { } cur ? _duties.FirstOrDefault(d => d.CfcId == cur)?.Name : null;
+        ImGui.TextColored(UiStyle.Muted, curName != null ? $"{Loc.T("Current duty:")} {curName}" : Loc.T("Not inside a duty"));
+        ImGui.SetNextItemWidth(ImGui.GetFontSize() * 22f);
+        ImGui.InputTextWithHint("##duty_filter", Loc.T("Search dungeon, trial, raid..."), ref _dutyFilter, 128);
+
+        var listSize = new Vector2(ImGui.GetFontSize() * 26f, ImGui.GetFontSize() * 9f);
+        using (var card = UiStyle.BeginCard("##duty_list", listSize))
+        {
+            if (card.Opened)
+            {
+                foreach (var d in _duties)
+                {
+                    if (_dutyFilter.Length > 0 && !d.Name.Contains(_dutyFilter, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    if (ImGui.Selectable($"{d.Name}  ({d.Type}, Lv.{d.Level}, {d.DropCount})##duty_{d.CfcId}", d.CfcId == _dutySelected))
+                        SelectDuty(d.CfcId);
+                }
+            }
+        }
+
+        if (_dutyDetail == null)
+            return;
+        var dd = _dutyDetail;
+        ImGui.Spacing();
+        // Duty Finder look: the game's own banner (ContentFinderCondition.Image, same icon path
+        // as item icons), then one section per boss with its drops + the chests after it
+        if (dd.ImageId > 0)
+        {
+            var banner = _textures.GetFromGameIcon(new GameIconLookup(dd.ImageId)).GetWrapOrEmpty();
+            var w = ImGui.GetFontSize() * 20f;
+            ImGui.Image(banner.Handle, new Vector2(w, w * 120f / 376f));
+        }
+        UiStyle.SectionHeader($"{dd.Name} — {dd.Type}, Lv.{dd.Level}{(dd.ItemLevel > 0 ? $", iLvl {dd.ItemLevel}" : "")}");
+        var dropSize = new Vector2(ImGui.GetFontSize() * 26f, ImGui.GetFontSize() * 14f);
+        using (var card = UiStyle.BeginCard("##duty_drops", dropSize))
+        {
+            if (!card.Opened)
+                return;
+            if (dd.Bosses.Count == 0 && dd.General.Count == 0)
+                ImGui.TextColored(UiStyle.Muted, Loc.T("No drops known for this duty."));
+            foreach (var b in dd.Bosses)
+            {
+                UiStyle.SectionHeader($"{Loc.T("Boss")} {b.FightNo + 1}{(b.Name.Length > 0 ? $" — {b.Name}" : "")}");
+                foreach (var r in b.Drops) DrawDutyDropRow(r);
+                foreach (var c in b.Chests)
+                {
+                    ImGui.TextDisabled(b.Chests.Count > 1 ? $"{Loc.T("Chest")} {c.CofferNo + 1}" : Loc.T("Chest"));
+                    foreach (var r in c.Items) DrawDutyDropRow(r);
+                }
+            }
+            if (dd.General.Count > 0)
+            {
+                UiStyle.SectionHeader(Loc.T("Elsewhere in the duty (chests & mobs)"));
+                foreach (var r in dd.General) DrawDutyDropRow(r);
+            }
+            // chests along the way (Garland Tools): started in SelectDuty, picked up here once done
+            if (_cofferTask is { IsCompleted: true })
+            {
+                _dutyCoffers = _cofferTask.IsCompletedSuccessfully ? _cofferTask.Result : Array.Empty<DutyCoffer>();
+                _cofferTask = null;
+            }
+            if (_cofferTask != null)
+                ImGui.TextColored(UiStyle.Muted, Loc.T("Loading treasure chests..."));
+            else if (_dutyCoffers is { Count: > 0 })
+            {
+                UiStyle.SectionHeader(Loc.T("Treasure chests along the way (Garland Tools)"));
+                for (var i = 0; i < _dutyCoffers.Count; i++)
+                {
+                    var c = _dutyCoffers[i];
+                    ImGui.TextDisabled($"{Loc.T("Chest")} {i + 1} · ({c.X:0.0}, {c.Y:0.0})");
+                    foreach (var r in c.Items) DrawDutyDropRow(r);
+                }
+            }
+        }
+    }
+
+    private void DrawDutyDropRow(DutyDrop r)
+    {
+        if (r.IconId > 0)
+        {
+            var tex = _textures.GetFromGameIcon(new GameIconLookup(r.IconId)).GetWrapOrEmpty();
+            var edge = ImGui.GetFontSize() * 1.2f;
+            ImGui.Image(tex.Handle, new Vector2(edge, edge));
+            ImGui.SameLine();
+        }
+        if (r.ItemLevel > 0)
+        {
+            ImGui.TextColored(UiStyle.Muted, $"{r.ItemLevel,3}");
+            ImGui.SameLine();
+        }
+        if (ImGui.Selectable($"{r.Name}##drop_{r.ItemId}"))
+            _detailWindow.ShowItem(r.ItemId);
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip($"Item ID {r.ItemId} · iLvl {r.ItemLevel} — click for details");
+    }
+
+    private void SelectDuty(uint cfcId)
+    {
+        _dutySelected = cfcId;
+        _dutyDetail = _detailWindow.DetailService.GetDutyDetail(cfcId);
+        _dutyCoffers = null;
+        _cofferTask = _detailWindow.DetailService.GetDutyCoffersAsync(cfcId);
+    }
 
     private bool HasLookupFilter => _filterSlot > 0 || _filterJob > 0 || _filterIlvlMin.Length > 0 || _filterIlvlMax.Length > 0;
 
