@@ -2,16 +2,22 @@
 
 ## TODO — Localization (DE/EN, client-language-driven)
 
-Not started, no time slot yet found. Real scope: extract every user-facing string out of both
-UIs, build a DE/EN table, wire it to Dalamud's client language, rebuild + verify. Not a quick
-add-on — plan it as its own task.
+Not started, no time slot yet found.
+
+**Scope is narrower than it first looks**: item/data names (item names, source descriptions built
+from `Item.Name`, NPC/zone names, etc.) are **already localized for free** — Dalamud's
+`IDataManager` loads Lumina Excel sheets in the client's own game language, no code of ours
+involved (confirmed: nowhere in this repo do we pass a `ClientLanguage` to `GetExcelSheet<T>()`,
+it's just the default). Only the **UI chrome** — our own hardcoded labels/tooltips/section
+headers/button text, not game data — actually needs a translation table.
 
 - **ImGui** (`Windows/GlamSourceShellWindow.cs`, `Windows/ItemDetailWindow.cs`) — ~40+ hardcoded
-  strings (labels, tooltips, section headers).
-- **Web UI** (`Services/WebUiPage.cs`) — ~50+ strings baked into the HTML/JS template.
-- Trigger: Dalamud's `IClientState.ClientLanguage` (or `IDalamudPluginInterface.UiLanguage`) —
-  needs checking which one actually reflects the user's chosen UI language vs. game client
-  language, they're not always the same.
+  chrome strings.
+- **Web UI** (`Services/WebUiPage.cs`) — ~50+ chrome strings baked into the HTML/JS template.
+- Trigger: still needs deciding — `IDataManager.Language` (mirrors whatever already localizes item
+  names, so chrome would match data automatically) vs. `IDalamudPluginInterface.UiLanguage`
+  (Dalamud's own UI language setting, can differ from the game's, e.g. JP game client + German
+  Dalamud UI) — pick one, don't wire both.
 - Needs a translation-table structure (dictionary keyed by string id, or resx) picked before
   starting — retrofitting one after strings are already extracted means doing the extraction
   twice.
