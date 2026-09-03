@@ -463,6 +463,14 @@ public class ItemDetailWindow : Window, IDisposable
             ImGui.Spacing();
         }
 
+        if (detail.ContentsSummary is { Count: > 0 })
+        {
+            ImGui.TextDisabled(Loc.T("Can contain:"));
+            foreach (var line in detail.ContentsSummary)
+                ImGui.BulletText(line);
+            ImGui.Spacing();
+        }
+
         if (_history.Count > 0)
         {
             if (ImGui.SmallButton(Loc.T("← Back")))

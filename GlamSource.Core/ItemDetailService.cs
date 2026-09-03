@@ -24,7 +24,8 @@ public record ItemDetail(
     string? SetName = null,
     IReadOnlyList<SetMember>? SetMembers = null,
     bool IsEquippable = false,
-    IReadOnlyList<SetMember>? Contents = null); // this item IS a coffer/sack — what it can contain
+    IReadOnlyList<SetMember>? Contents = null, // this item IS a coffer/sack — what it can contain (clickable, small pools)
+    IReadOnlyList<string>? ContentsSummary = null); // same idea but for huge pools (Accursed Hoard sacks) — grouped counts, not chips
 
 public record SetMember(uint ItemId, string Name, uint IconId);
 
@@ -363,14 +364,14 @@ public sealed class ItemDetailService : IItemDetailService
             sources = new[] { Note(ItemSourceType.Other, $"Source detection failed for this item ({e.GetType().Name} at {e.StackTrace?.Split(Environment.NewLine).FirstOrDefault()?.Trim()}). Please report the item ID.") };
         }
         IReadOnlyList<SetMember>? contents = null;
+        IReadOnlyList<string>? contentsSummary = null;
         List<uint>? cofferIds2 = null;
         List<uint>? hoardIds = null;
         var cofferHit = _cofferToItemsMap != null && _cofferToItemsMap.TryGetValue(itemId, out cofferIds2) && cofferIds2.Count > 0;
         var hoardHit = !cofferHit && _hoardSackContents.TryGetValue(itemId, out hoardIds) && hoardIds.Count > 0;
-        if (cofferHit || hoardHit)
+        if (cofferHit)
         {
-            var containedIds = cofferHit ? cofferIds2! : hoardIds!;
-            contents = containedIds
+            contents = cofferIds2!
                 .Select(id =>
                 {
                     var row = itemSheet.GetRowOrDefault(id);
@@ -380,10 +381,40 @@ public sealed class ItemDetailService : IItemDetailService
                 .Select(m => m!)
                 .ToList();
         }
+        else if (hoardHit)
+        {
+            // Accursed Hoard sacks hold 37-119 possible items each — a clickable chip per item is
+            // unreadable clutter. Group by ItemUICategory into "N Category" summary lines instead;
+            // mounts stay called out by name (rare, worth flagging), same convention as the original
+            // wiki-category research this data came from.
+            var mountIds = MountItemIds;
+            var mountNames = new List<string>();
+            var categoryCounts = new Dictionary<string, int>();
+            foreach (var id in hoardIds!)
+            {
+                var row = itemSheet.GetRowOrDefault(id);
+                if (row == null) continue;
+                if (mountIds.Contains(id))
+                {
+                    mountNames.Add(row.Value.Name.ToString());
+                    continue;
+                }
+                var cat = row.Value.ItemUICategory.IsValid ? row.Value.ItemUICategory.Value.Name.ToString() : "Other";
+                if (string.IsNullOrEmpty(cat)) cat = "Other";
+                categoryCounts[cat] = categoryCounts.GetValueOrDefault(cat) + 1;
+            }
+            var summary = new List<string>();
+            foreach (var mountName in mountNames)
+                summary.Add($"Mount: {mountName}");
+            foreach (var (cat, count) in categoryCounts.OrderByDescending(kv => kv.Value))
+                summary.Add($"{count}x {cat}");
+            contentsSummary = summary;
+        }
 
         var detail = new ItemDetail(itemId, name, itemLevel, isMarketable, iconId, sources, setName, setMembers,
             IsEquippable: item.EquipSlotCategory.RowId > 0, // mounts/minions/etc. get no "Apply to Self"
-            Contents: contents);
+            Contents: contents,
+            ContentsSummary: contentsSummary);
 
         _cache[itemId] = detail;
         return detail;
@@ -896,6 +927,8 @@ public sealed class ItemDetailService : IItemDetailService
                 ? "Deep Dungeon currency — earned as a reward for clearing that Deep Dungeon's floors (progression reward, not a drop or purchase)."
             : enName == "Resistance Token"
                 ? "Bozja/Zadnor Resistance relic currency — earned from Critical Engagements and Duels in Bozja/Zadnor, and from Save the Queen relic quest steps."
+            : enName == "Bozjan Cluster"
+                ? "Bozja/Zadnor field currency — earned from Critical Engagements, Duels, and general activity in the Bozjan Southern Front/Zadnor."
             : enName == "Enlightenment Silver Piece"
                 ? "Occult Crescent currency — earned from combat participation (Critical Engagements/duels) in the Occult Crescent (South Horn)."
             : null;

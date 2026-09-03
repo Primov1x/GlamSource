@@ -871,6 +871,11 @@ function buildItemHtml(d,openFn='openItem'){
     for(const m of d.contents)h+=`<div class="row" style="width:auto" onclick="${openFn}(${m.itemId})">${img(m.iconId,24)}<span>${esc(m.name)}</span></div>`;
     h+='</div>';
   }
+  if((d.contentsSummary??[]).length){
+    h+=`<div class="tbl">${t('can_contain')}</div><ul style="margin:6px 0 14px;padding-left:20px">`;
+    for(const line of d.contentsSummary)h+=`<li>${esc(line)}</li>`;
+    h+='</ul>';
+  }
   h+='<div class="cards">';
   // ponytail: same shop/vendor sold from several NPC locations used to render as one full repeated
   // card per location ("unübersichtlich" — a shop with 3 vendor spots meant 3 near-identical cards).
