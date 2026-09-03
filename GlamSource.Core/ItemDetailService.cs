@@ -1096,6 +1096,9 @@ public sealed class ItemDetailService : IItemDetailService
             var cfcId = cfc.RowId;
             var name = cfc.Name.ToString();
             if (name.Length == 0) continue;
+            // "Bezeichner für die Duty wie im Duty Finder": the raw sheet name is lowercase
+            // ("the minstrel's ballad: ..."), Duty Finder capitalizes the leading word for its list
+            name = CapitalizeFirst(name);
             // every dungeon / trial / raid / ultimate, plus anything else we have drop data for.
             // Duties without local data get their drops live from Garland — LuminaSupplemental's
             // tables end around patch 7.1 ("Dawntrail Extreme nur 3 Stück").
@@ -1140,7 +1143,7 @@ public sealed class ItemDetailService : IItemDetailService
             {
                 var name = bnpc?.GetRowOrDefault(b.BNpcNameId)?.Singular.ToString() ?? "";
                 if (name.Length == 0) continue;
-                name = char.ToUpperInvariant(name[0]) + name[1..];
+                name = CapitalizeFirst(name);
                 if (!map.TryGetValue(b.ContentFinderConditionId, out var list)) map[b.ContentFinderConditionId] = list = new();
                 if (!list.Contains(name)) list.Add(name);
             }
@@ -1196,7 +1199,7 @@ public sealed class ItemDetailService : IItemDetailService
             var boss = bosses.Where(b => b.ContentFinderConditionId == cfcId && b.FightNo == f).ToList();
             // BNpcName.Singular is lowercase in the English sheet ("chopper") — capitalise for display
             var name = boss.Count == 0 ? "" : bnpc?.GetRowOrDefault(boss[0].BNpcNameId)?.Singular.ToString() ?? "";
-            if (name.Length > 0) name = char.ToUpperInvariant(name[0]) + name[1..];
+            if (name.Length > 0) name = CapitalizeFirst(name);
             var drops = Drops(bossDrops.Where(d => d.ContentFinderConditionId == cfcId && d.FightNo == f).Select(d => d.ItemId));
             // one merged chest per boss: the data splits savage/extreme loot into coffer 1/2/3 with the
             // same pool ("es gibt nur eine, wo alles drin ist") — the split means nothing to a player
@@ -1270,7 +1273,7 @@ public sealed class ItemDetailService : IItemDetailService
                 .Where(b => b.Drops.Count > 0 || b.Chests.Count > 0).ToList();
             generalDrops = generalDrops.Where(d => d.Kind.Length == 0).ToList();
         }
-        return new DutyDetail(cfcId, cfc.Value.Name.ToString(), GetDutyType(cfcId), cfc.Value.Image,
+        return new DutyDetail(cfcId, CapitalizeFirst(cfc.Value.Name.ToString()), GetDutyType(cfcId), cfc.Value.Image,
             cfc.Value.ClassJobLevelRequired, cfc.Value.ItemLevelRequired, bossList, generalDrops,
             cfc.Value.TerritoryType.RowId,
             Safe(() => cfc.Value.TerritoryType.ValueNullable?.Map.RowId ?? 0, 0u), // TerritoryType sheet mismatches under DalaMock
@@ -2438,6 +2441,31 @@ public sealed class ItemDetailService : IItemDetailService
     /// if this mount isn't in the scraped dataset.</summary>
     public uint? ResolveMountItemId(uint mountId) => _mountToItemId.TryGetValue(mountId, out var id) ? id : null;
 
+    // Duty and NPC display names come back lowercase from the game's own sheets ("the minstrel's
+    // ballad...", "chopper") — they're written to be embedded mid-sentence elsewhere in the UI, but
+    // the Duty Finder capitalizes the leading word for its own standalone list ("The Minstrel's
+    // Ballad..."). Capitalize just the first character to match — proper-noun words later in the
+    // name are already capitalized in the source data, so title-casing the whole string isn't needed.
+    private static string CapitalizeFirst(string s) => s.Length == 0 ? s : char.ToUpperInvariant(s[0]) + s[1..];
+
+    // Minor words the wiki's own MediaWiki title-case convention keeps lowercase mid-title
+    // (first word always capitalized regardless — handled below).
+    private static readonly HashSet<string> WikiMinorWords = new(StringComparer.OrdinalIgnoreCase)
+        { "of", "the", "a", "an", "and", "in", "on", "to", "for" };
+
+    private static string TitleCaseWikiName(string s)
+    {
+        var words = s.Split(' ');
+        for (var i = 0; i < words.Length; i++)
+        {
+            if (words[i].Length == 0) continue;
+            words[i] = i > 0 && WikiMinorWords.Contains(words[i])
+                ? words[i]
+                : char.ToUpperInvariant(words[i][0]) + words[i][1..];
+        }
+        return string.Join(' ', words);
+    }
+
     private Dictionary<uint, uint>? _itemToMountId;
     public string? GetWikiPageName(uint itemId)
     {
@@ -2445,7 +2473,12 @@ public sealed class ItemDetailService : IItemDetailService
         if (_itemToMountId.TryGetValue(itemId, out var mountId))
         {
             var mount = Safe(() => _gameData.GetExcelSheet<Mount>(Language.English)?.GetRowOrDefault(mountId)?.Singular.ToString(), null);
-            if (!string.IsNullOrEmpty(mount)) return char.ToUpperInvariant(mount[0]) + mount[1..];
+            // Mount.Singular is fully lowercase ("lynx of eternal darkness") — MediaWiki page titles
+            // are case-sensitive past the first letter, so a mount page needs proper title case
+            // ("Lynx of Eternal Darkness": every word capitalized except minor words like "of",
+            // verified against the wiki's own page title). .NET's ToTitleCase capitalizes ALL words
+            // ("Lynx Of Eternal Darkness"), which would 404 just the same — hence TitleCaseWikiName.
+            if (!string.IsNullOrEmpty(mount)) return TitleCaseWikiName(mount);
         }
         return GetEnglishName(itemId);
     }

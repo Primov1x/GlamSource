@@ -27,6 +27,24 @@ what do I need and where". Prototype, deliberately small:
   included, no same-model alternatives when the best source is unobtainable, "Other" stops are
   just the source text.
 
+## Duty names capitalized, mount wiki images fixed (1.0.9.0)
+
+Two bugs found live testing 1.0.8.0 ("the Minstrel's Ballad: Zodiark's Fall" — no image, lowercase "the"):
+
+- **Duty display names were lowercase** ("the minstrel's ballad...") because `ContentFinderCondition.Name`
+  is written to be embedded mid-sentence elsewhere in the game's own UI — the real Duty Finder
+  capitalizes the leading word for its own list. New `CapitalizeFirst` helper (also now used for
+  the boss-name capitalization that already existed) applied at both `DutyInfo`/`DutyDetail`
+  construction sites — the ONE place duty names are built, so every consumer (web JSON, ImGui) got
+  it for free. `DifficultyOf`'s Minstrel's-Ballad check already used `OrdinalIgnoreCase`, unaffected.
+- **Mount item preview pictures were missing** (204, e.g. the Lynx of Eternal Darkness Flute):
+  `GetWikiPageName` only capitalized the mount name's first LETTER ("Lynx of eternal darkness"),
+  but MediaWiki page titles are case-sensitive past the first letter and the real page is
+  "Lynx of Eternal Darkness" (verified against the wiki) — every word needs capitalizing except
+  minor words ("of", "the", "a", ...). `.NET`'s `TextInfo.ToTitleCase` capitalizes ALL words
+  ("Lynx Of Eternal Darkness") which 404s just the same, so a small `TitleCaseWikiName` helper
+  does real title case instead. This likely fixes most/all mount preview images, not just this one.
+
 ## Duty Drops open button + event availability (1.0.8.0)
 
 - **"Duty öffnen" fehlte im Duty-Drops-Tab**: the banner header now has an "Open in Duty Finder" /
