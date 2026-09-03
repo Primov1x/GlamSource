@@ -1114,12 +1114,12 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         var esc = item.Value.EquipSlotCategory;
         if (!esc.IsValid || esc.RowId == 0) return Loc.T("Not equippable.");
         var c = esc.Value;
-        if (c.MainHand > 0 || c.OffHand > 0) return Loc.T("Weapons are not supported here.");
         var slot = c.Head > 0 ? EquipmentSlotType.Head : c.Body > 0 ? EquipmentSlotType.Body : c.Gloves > 0 ? EquipmentSlotType.Hands
             : c.Legs > 0 ? EquipmentSlotType.Legs : c.Feet > 0 ? EquipmentSlotType.Feet : c.Ears > 0 ? EquipmentSlotType.Earrings
             : c.Neck > 0 ? EquipmentSlotType.Necklace : c.Wrists > 0 ? EquipmentSlotType.Bracelets : c.FingerR > 0 ? EquipmentSlotType.RingRight
             : c.FingerL > 0 ? EquipmentSlotType.RingLeft : EquipmentSlotType.Waist;
-        var apiSlot = MapToApiSlot(slot);
+        // weapons go through too ("wie Glam anziehbar") — Glamourer reports a job/type mismatch itself
+        var apiSlot = c.MainHand > 0 ? ApiEquipSlot.MainHand : c.OffHand > 0 ? ApiEquipSlot.OffHand : MapToApiSlot(slot);
         if (apiSlot == ApiEquipSlot.Unknown) return Loc.T("Not equippable.");
         try
         {
@@ -1402,12 +1402,22 @@ private void ApplyTargetGlamourToSelf()
         {
             if (!card.Opened)
                 return;
-            if (dd.Bosses.Count == 0 && dd.General.Count == 0 && dd.Featured.Count == 0)
+            var hasLocal = dd.Bosses.Count > 0 || dd.General.Count > 0 || dd.Featured.Count > 0 || dd.Exchanges.Count > 0;
+            if (!hasLocal && _cofferTask == null && (_dutyCoffers?.Count ?? 0) == 0)
                 ImGui.TextColored(UiStyle.Muted, Loc.T("No drops known for this duty."));
-            if (dd.Featured.Count > 0)
+            // mounts / minions: from the local table, else from the Garland coffers
+            var featured = dd.Featured.Count > 0 ? dd.Featured
+                : _dutyCoffers?.SelectMany(c => c.Items).Where(i => i.Kind.Length > 0).DistinctBy(i => i.ItemId).ToList() ?? new List<DutyDrop>();
+            if (featured.Count > 0)
             {
                 UiStyle.SectionHeader(Loc.T("Mounts & minions"));
-                foreach (var r in dd.Featured) DrawDutyDropRow(r);
+                foreach (var r in featured) DrawDutyDropRow(r);
+            }
+            foreach (var ex in dd.Exchanges)
+            {
+                UiStyle.SectionHeader($"{Loc.T("Exchange")} — {ex.Shop}");
+                if (ex.Token != null) ImGui.TextDisabled($"{Loc.T("Hand in:")} {ex.Token.Name}");
+                foreach (var r in ex.Items) DrawDutyDropRow(r);
             }
             foreach (var b in dd.Bosses)
             {
@@ -1434,11 +1444,13 @@ private void ApplyTargetGlamourToSelf()
                 ImGui.TextColored(UiStyle.Muted, Loc.T("Loading treasure chests..."));
             else if (_dutyCoffers is { Count: > 0 })
             {
-                UiStyle.SectionHeader(Loc.T("Treasure chests along the way (Garland Tools)"));
+                UiStyle.SectionHeader(Loc.T(hasLocal ? "Treasure chests along the way (Garland Tools)" : "Drops (Garland Tools)"));
                 for (var i = 0; i < _dutyCoffers.Count; i++)
                 {
                     var c = _dutyCoffers[i];
-                    ImGui.TextDisabled($"{Loc.T("Chest")} {i + 1} · ({c.X:0.0}, {c.Y:0.0})");
+                    ImGui.TextDisabled(c.FightNo >= 0
+                        ? $"{Loc.T("Boss")} {c.FightNo + 1} · {Loc.T("Chest")}"
+                        : $"{Loc.T("Chest")} {i + 1} · ({c.X:0.0}, {c.Y:0.0})");
                     foreach (var r in c.Items) DrawDutyDropRow(r);
                 }
             }

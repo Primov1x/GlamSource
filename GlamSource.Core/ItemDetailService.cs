@@ -64,11 +64,15 @@ public sealed record DutyBoss(int FightNo, string Name, IReadOnlyList<DutyDrop> 
 /// Duty Finder style detail: banner image (ContentFinderCondition.Image), per-boss drops and
 /// chests (LuminaSupplemental DungeonBoss / DungeonBossDrop / DungeonBossChest), plus the
 /// duty-wide DungeonDrop list.
+/// An exchange shop that belongs to the duty: "Totem Gear (Zelenia)" for its totem, the savage
+/// book exchange, ... Token = what the duty drops to pay with (null when unknown).
+public sealed record DutyExchange(string Shop, DutyDrop? Token, IReadOnlyList<DutyDrop> Items);
 public sealed record DutyDetail(uint CfcId, string Name, string Type, uint ImageId, int Level, int ItemLevel,
     IReadOnlyList<DutyBoss> Bosses, IReadOnlyList<DutyDrop> General, uint TerritoryTypeId, uint MapId,
-    IReadOnlyList<DutyDrop> Featured);
+    IReadOnlyList<DutyDrop> Featured, IReadOnlyList<DutyExchange> Exchanges);
 /// A treasure coffer along the way (Garland Tools), with its map coordinates.
-public sealed record DutyCoffer(float X, float Y, IReadOnlyList<DutyDrop> Items);
+/// FightNo >= 0 = boss coffer of that fight (Garland, no coordinates), -1 = placed chest with X/Y.
+public sealed record DutyCoffer(float X, float Y, IReadOnlyList<DutyDrop> Items, int FightNo = -1);
 
 public interface IItemDetailService
 {
@@ -1061,27 +1065,34 @@ public sealed class ItemDetailService : IItemDetailService
         var cfcSheet = _gameData.GetExcelSheet<ContentFinderCondition>();
         if (cfcSheet == null) return Array.Empty<DutyInfo>();
         var list = new List<DutyInfo>();
-        foreach (var (cfcId, items) in DutyToItems)
+        foreach (var cfc in cfcSheet)
         {
-            var cfc = cfcSheet.GetRowOrDefault(cfcId);
-            if (cfc == null) continue;
-            var name = cfc.Value.Name.ToString();
+            var cfcId = cfc.RowId;
+            var name = cfc.Name.ToString();
             if (name.Length == 0) continue;
-            list.Add(new DutyInfo(cfcId, name, GetDutyType(cfcId), cfc.Value.TerritoryType.RowId, items.Count,
-                cfc.Value.Image, cfc.Value.ClassJobLevelRequired, cfc.Value.ItemLevelRequired, ExpansionName(cfc.Value.ClassJobLevelRequired),
-                Safe(() => (uint)(cfc.Value.ContentType.ValueNullable?.Icon ?? 0), 0u), // Duty Finder category icon (61801 dungeons, ...)
+            // every dungeon / trial / raid / ultimate, plus anything else we have drop data for.
+            // Duties without local data get their drops live from Garland — LuminaSupplemental's
+            // tables end around patch 7.1 ("Dawntrail Extreme nur 3 Stück").
+            var contentType = cfc.ContentType.RowId;
+            var hasLocal = DutyToItems.TryGetValue(cfcId, out var items);
+            if (!hasLocal && contentType is not (2 or 4 or 5 or 28)) continue;
+            list.Add(new DutyInfo(cfcId, name, GetDutyType(cfcId), cfc.TerritoryType.RowId, hasLocal ? items!.Count : 0,
+                cfc.Image, cfc.ClassJobLevelRequired, cfc.ItemLevelRequired, ExpansionName(cfc.ClassJobLevelRequired),
+                Safe(() => (uint)(cfc.ContentType.ValueNullable?.Icon ?? 0), 0u), // Duty Finder category icon (61801 dungeons, ...)
                 BossNamesByDuty.TryGetValue(cfcId, out var bossNames) ? bossNames : Array.Empty<string>(),
-                DifficultyOf(name, Safe(() => cfc.Value.AllianceRoulette, false))));
+                DifficultyOf(name, Safe(() => cfc.AllianceRoulette, false))));
         }
-        // grouped for the tab: content type, difficulty, expansion, level, name
+        // grouped for the tab: content type, difficulty, expansion — and inside that in RELEASE
+        // order ("nach Release sortieren"): ContentFinderCondition row ids grow with the patches
         return list.OrderBy(d => DutyTypeOrder(d.Type)).ThenBy(d => DifficultyOrder(d.Difficulty)).ThenBy(d => ExpansionOrder(d.Level))
-            .ThenBy(d => d.Level).ThenBy(d => d.Name, StringComparer.OrdinalIgnoreCase).ToList();
+            .ThenBy(d => d.CfcId).ToList();
     }
 
     // Duty Finder sub-folders from the name suffix; alliance raids have no suffix but sit in the
     // alliance roulette (ContentFinderCondition.AllianceRoulette).
     private static string DifficultyOf(string name, bool alliance) =>
-        name.EndsWith("(Extreme)", StringComparison.Ordinal) ? "Extreme"
+        // ARR–EW extremes are "The Minstrel's Ballad: X" (no suffix), DT ones carry "(Extreme)"
+        name.EndsWith("(Extreme)", StringComparison.Ordinal) || name.StartsWith("the Minstrel's Ballad:", StringComparison.OrdinalIgnoreCase) ? "Extreme"
         : name.EndsWith("(Savage)", StringComparison.Ordinal) ? "Savage"
         : name.EndsWith("(Unreal)", StringComparison.Ordinal) ? "Unreal"
         : alliance ? "Alliance" : "Normal";
@@ -1144,10 +1155,7 @@ public sealed class ItemDetailService : IItemDetailService
             {
                 var row = itemSheet?.GetRowOrDefault(id);
                 if (row == null) continue;
-                // mount = item of a MountItemMap entry (ItemUICategory 63 is the generic "Other" bucket — gil,
-                // seals, whistles all share it), minion = ItemUICategory 81 (verified: Wind-up Cursor)
-                var kind = MountItemIds.Contains(id) ? "Mount" : row.Value.ItemUICategory.RowId == 81 ? "Minion" : "";
-                list.Add(new DutyDrop(id, row.Value.Name.ToString(), row.Value.Icon, (int)row.Value.LevelItem.RowId, kind));
+                list.Add(MakeDrop(id, row.Value));
             }
             return list.OrderByDescending(d => d.ItemLevel).ThenBy(d => d.Name, StringComparer.OrdinalIgnoreCase).ToList();
         }
@@ -1164,10 +1172,10 @@ public sealed class ItemDetailService : IItemDetailService
             var name = boss.Count == 0 ? "" : bnpc?.GetRowOrDefault(boss[0].BNpcNameId)?.Singular.ToString() ?? "";
             if (name.Length > 0) name = char.ToUpperInvariant(name[0]) + name[1..];
             var drops = Drops(bossDrops.Where(d => d.ContentFinderConditionId == cfcId && d.FightNo == f).Select(d => d.ItemId));
-            var chestList = chests.Where(c => c.ContentFinderConditionId == cfcId && c.FightNo == f)
-                .GroupBy(c => (int)c.CofferNo).OrderBy(g => g.Key)
-                .Select(g => new DutyChest(g.Key, Drops(g.Select(c => c.ItemId))))
-                .Where(c => c.Items.Count > 0).ToList();
+            // one merged chest per boss: the data splits savage/extreme loot into coffer 1/2/3 with the
+            // same pool ("es gibt nur eine, wo alles drin ist") — the split means nothing to a player
+            var chestItems = Drops(chests.Where(c => c.ContentFinderConditionId == cfcId && c.FightNo == f).Select(c => c.ItemId));
+            var chestList = chestItems.Count > 0 ? new List<DutyChest> { new(0, chestItems) } : new List<DutyChest>();
             if (drops.Count == 0 && chestList.Count == 0) continue;
             bossList.Add(new DutyBoss(f, name, drops, chestList));
         }
@@ -1177,6 +1185,58 @@ public sealed class ItemDetailService : IItemDetailService
         var featured = bossList.SelectMany(b => b.Drops.Concat(b.Chests.SelectMany(c => c.Items))).Concat(generalDrops)
             .Where(d => d.Kind.Length > 0).DistinctBy(d => d.ItemId)
             .OrderBy(d => d.Kind, StringComparer.Ordinal).ThenBy(d => d.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        // mounts / minions FFXIV Collect attributes to this duty (matched by the English duty name)
+        // — covers trials newer than the bundled drop tables (Garland has nothing for 7.2+ either)
+        var enCfcName = Safe(() => _gameData.GetExcelSheet<ContentFinderCondition>(Language.English)?.GetRowOrDefault(cfcId)?.Name.ToString(), null);
+        if (!string.IsNullOrEmpty(enCfcName))
+        {
+            foreach (var (collectItemId, entries) in _collectSources)
+            {
+                if (featured.Any(f => f.ItemId == collectItemId)) continue;
+                if (!entries.Any(e => (e.Kind == "Mount" || e.Kind == "Minion") && e.SourceText.Equals(enCfcName, StringComparison.OrdinalIgnoreCase))) continue;
+                if (itemSheet?.GetRowOrDefault(collectItemId) is { } collectRow)
+                    featured.Add(MakeDrop(collectItemId, collectRow) with { Kind = MountItemIds.Contains(collectItemId) ? "Mount" : "Minion" });
+            }
+        }
+        // exchange shops that belong to this duty — from the game's own shop sheets, so this stays
+        // current when the bundled drop tables don't:
+        //  a) tokens this duty drops (Dreadwyrm Totem, books ...) -> everything they buy
+        //  b) the duty's mount / minion (FFXIV Collect) -> the totem that buys it -> everything it buys
+        var exchanges = new List<DutyExchange>();
+        void AddExchange(string shop, DutyDrop? token, IEnumerable<uint> ids)
+        {
+            var drops = new List<DutyDrop>();
+            foreach (var id in ids.Distinct())
+                if (itemSheet?.GetRowOrDefault(id) is { } r) drops.Add(MakeDrop(id, r));
+            if (drops.Count == 0) return;
+            var idx = exchanges.FindIndex(e => e.Shop == shop);
+            if (idx >= 0) exchanges[idx] = exchanges[idx] with { Items = exchanges[idx].Items.Concat(drops).DistinctBy(d => d.ItemId).ToList() };
+            else exchanges.Add(new DutyExchange(shop, token, drops));
+        }
+        var tokenIds = new HashSet<uint>();
+        foreach (var d in bossList.SelectMany(b => b.Drops.Concat(b.Chests.SelectMany(c => c.Items))).Concat(generalDrops))
+            if (itemSheet?.GetRowOrDefault(d.ItemId)?.EquipSlotCategory.RowId == 0) tokenIds.Add(d.ItemId);
+        // the duty's own mount / minion is sold in its totem shop — so the cost item that buys it is
+        // the duty's totem. No boss-name heuristics (those mis-filed brand-new trials); currencies
+        // that buy hundreds of things (MGP, tomestones ...) are excluded by list size.
+        foreach (var f in featured)
+            foreach (var (costId, uses) in ExchangeByCost)
+                if (uses.Count <= 60 && uses.Any(u => u.receiveId == f.ItemId)) tokenIds.Add(costId);
+        foreach (var tokenId in tokenIds)
+        {
+            if (!ExchangeByCost.TryGetValue(tokenId, out var uses)) continue;
+            var token = itemSheet?.GetRowOrDefault(tokenId) is { } tr ? MakeDrop(tokenId, tr) : null;
+            foreach (var g in uses.GroupBy(u => u.shop)) AddExchange(g.Key, token, g.Select(u => u.receiveId));
+        }
+        // a totem usually feeds two shops with the same weapon list ("Totem Gear (X)" and the generic
+        // "Primal/Auspice Gear (IL ...)") — drop an exchange whose items another one already covers
+        for (var i = exchanges.Count - 1; i >= 0; i--)
+        {
+            var ids = exchanges[i].Items.Select(x => x.ItemId).ToHashSet();
+            var covered = exchanges.Where((e, j) => j != i && ids.IsSubsetOf(e.Items.Select(x => x.ItemId)))
+                .Any(e => e.Items.Count > ids.Count || exchanges.IndexOf(e) < i);
+            if (covered) exchanges.RemoveAt(i);
+        }
         if (featured.Count > 0)
         {
             bossList = bossList.Select(b => new DutyBoss(b.FightNo, b.Name, b.Drops.Where(d => d.Kind.Length == 0).ToList(),
@@ -1188,7 +1248,7 @@ public sealed class ItemDetailService : IItemDetailService
             cfc.Value.ClassJobLevelRequired, cfc.Value.ItemLevelRequired, bossList, generalDrops,
             cfc.Value.TerritoryType.RowId,
             Safe(() => cfc.Value.TerritoryType.ValueNullable?.Map.RowId ?? 0, 0u), // TerritoryType sheet mismatches under DalaMock
-            featured);
+            featured, exchanges);
     }
 
     public async Task<IReadOnlyList<DutyCoffer>> GetDutyCoffersAsync(uint cfcId)
@@ -1198,24 +1258,62 @@ public sealed class ItemDetailService : IItemDetailService
         if (cfc == null || cfc.Value.Content.RowId == 0) return Array.Empty<DutyCoffer>();
         var raw = await _garland.GetCoffersAsync(cfc.Value.Content.RowId).ConfigureAwait(false);
         if (raw.Count == 0) return Array.Empty<DutyCoffer>();
-        // Garland lists the boss coffers too (same items as our per-boss chests) — keep only the
-        // coffers not fully covered by a boss chest, i.e. the ones along the way
+        // Garland lists the boss coffers too (same items as our per-boss chests) — drop those; for
+        // duties without local data (post-7.1) the fight coffers ARE the drop table. A fight coffer
+        // whose items equal a placed coffer is the same chest — keep the placed one (has coordinates).
         var bossChestSets = (GetDutyDetail(cfcId)?.Bosses ?? Array.Empty<DutyBoss>())
             .SelectMany(b => b.Chests).Select(c => c.Items.Select(i => i.ItemId).ToHashSet()).ToList();
+        var placedSets = raw.Where(c => c.FightNo < 0).Select(c => c.ItemIds.ToHashSet()).ToList();
         var itemSheet = _gameData.GetExcelSheet<Item>();
         var result = new List<DutyCoffer>();
         foreach (var c in raw)
         {
             if (bossChestSets.Any(set => c.ItemIds.All(set.Contains))) continue;
+            if (c.FightNo >= 0 && placedSets.Any(set => set.SetEquals(c.ItemIds))) continue;
             var items = new List<DutyDrop>();
             foreach (var id in c.ItemIds)
             {
                 var row = itemSheet?.GetRowOrDefault(id);
-                if (row != null) items.Add(new DutyDrop(id, row.Value.Name.ToString(), row.Value.Icon, (int)row.Value.LevelItem.RowId));
+                if (row != null) items.Add(MakeDrop(id, row.Value));
             }
-            if (items.Count > 0) result.Add(new DutyCoffer(c.X, c.Y, items));
+            if (items.Count > 0) result.Add(new DutyCoffer(c.X, c.Y, items, c.FightNo));
         }
-        return result;
+        return result.OrderBy(c => c.FightNo < 0 ? 1 : 0).ThenBy(c => c.FightNo).ToList();
+    }
+
+    // cost item -> every (shop, received item) of the SpecialShop sheet, uncapped (TradeInUses keeps
+    // 3 per item for the source cards; the Duty Drops exchange section wants the whole weapon set)
+    private Dictionary<uint, List<(string shop, uint receiveId)>>? _exchangeByCost;
+    private Dictionary<uint, List<(string shop, uint receiveId)>> ExchangeByCost => _exchangeByCost ??= Safe(BuildExchangeByCost, new());
+    private Dictionary<uint, List<(string shop, uint receiveId)>> BuildExchangeByCost()
+    {
+        var map = new Dictionary<uint, List<(string, uint)>>();
+        foreach (var shop in _gameData.GetExcelSheet<SpecialShop>() ?? Enumerable.Empty<SpecialShop>())
+        {
+            var shopName = shop.Name.ToString();
+            if (string.IsNullOrEmpty(shopName)) shopName = "Item Exchange";
+            foreach (var entry in shop.Item)
+            {
+                var recvId = entry.ReceiveItems.Where(r => r.Item.RowId != 0).Select(r => r.Item.RowId).FirstOrDefault();
+                if (recvId == 0) continue;
+                foreach (var cost in entry.ItemCosts)
+                {
+                    var costId = cost.ItemCost.RowId;
+                    if (costId <= 19) continue; // gil / seals / tomestones: not duty tokens
+                    if (!map.TryGetValue(costId, out var list)) map[costId] = list = new();
+                    if (!list.Contains((shopName, recvId))) list.Add((shopName, recvId));
+                }
+            }
+        }
+        return map;
+    }
+
+    private DutyDrop MakeDrop(uint id, Item row)
+    {
+        // mount = item of a MountItemMap entry (ItemUICategory 63 is the generic "Other" bucket — gil,
+        // seals, whistles all share it), minion = ItemUICategory 81 (verified: Wind-up Cursor)
+        var kind = MountItemIds.Contains(id) ? "Mount" : row.ItemUICategory.RowId == 81 ? "Minion" : "";
+        return new DutyDrop(id, row.Name.ToString(), row.Icon, (int)row.LevelItem.RowId, kind);
     }
 
     public uint? FindDutyByTerritory(uint territoryTypeId)

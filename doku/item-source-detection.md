@@ -79,6 +79,22 @@ what do I need and where". Prototype, deliberately small:
   Normal / Extreme / Unreal, Raids → Normal / Savage / Alliance (`DutyInfo.Difficulty`: name suffix,
   alliance via `ContentFinderCondition.AllianceRoulette`); the level is skipped for types with a
   single difficulty (dungeons). Both UIs.
+- **All duties + sheet-derived drops (1.0.7.0)** — "Dawntrail Extreme nur 3 Stück": the list only
+  had duties with LuminaSupplemental drop rows (tables end ~7.1). Now every dungeon / trial / raid /
+  ultimate from `ContentFinderCondition` is listed (release order = row id order, "nach Release
+  sortieren"); duties without local rows get: (1) Garland fight coffers — but Garland has NOTHING for
+  7.2+ either (checked 20103 Windward Wilds EX: no fights/coffers), (2) mounts/minions FFXIV Collect
+  attributes to the duty by English name (`DutyDetail.Featured`), (3) **exchange shops from the
+  game's own `SpecialShop` sheet** (`DutyDetail.Exchanges`): tokens the duty drops (Dreadwyrm Totem)
+  and the cost item that buys the duty's mount are the totems; everything they buy is the weapon /
+  gear list. Verified: UCoB → "Totem Gear (Bahamut)" 15 weapons, Everkeep EX → Zoraal Ja 20 +
+  Wings of Resolve, Windward Wilds EX (MH Wilds collab) → Arkveld certificate 21 + Felyne mount. The
+  old boss-name heuristics (`MatchCfcForBoss` stage 3 partial match) mis-filed new trials (Cloud of
+  Darkness → Windward Wilds) and are NOT used here. Extremes named "The Minstrel's Ballad: …" now
+  count as Extreme (were under Normal). Per-boss chests merged into one (the coffer 1/2/3 split
+  means nothing to a player). xivapi v2 checked on request: Boilmaster = sheet/search/asset, raw
+  game sheets only — nothing beyond the local client. Weapons can now be applied via Glamourer
+  (`ApiEquipSlot.MainHand/OffHand`; Glamourer reports job mismatches itself).
 
 ## Duty Drops tab (0.0.0.312) — current-duty auto-detect + Duty Finder style browse
 

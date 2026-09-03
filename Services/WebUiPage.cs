@@ -278,6 +278,10 @@ const I18N={
   drops:{en:'drops',de:'Drops'},
   duty_coffers:{en:'Treasure chests along the way (Garland Tools)',de:'Truhen unterwegs (Garland Tools)'},
   duty_featured:{en:'Mounts & minions',de:'Reittiere & Begleiter'},
+  duty_garland_drops:{en:'Drops (Garland Tools)',de:'Drops (Garland Tools)'},
+  duty_exchange:{en:'Exchange',de:'Tausch'},
+  duty_exchange_for:{en:'Hand in:',de:'Einlösen:'},
+  duty_garland:{en:'drops via Garland',de:'Drops via Garland'},
   mount:{en:'Mount',de:'Reittier'},
   minion:{en:'Minion',de:'Begleiter'},
   shopping_btn:{en:'Shopping list',de:'Einkaufsliste'},
@@ -712,7 +716,7 @@ async function loadDuties(){
 // drill-down and shows the flat grouped list.
 const dutyNav={type:null,diff:null,exp:null};
 function dutyNavTo(type,diff,exp){dutyNav.type=type;dutyNav.diff=diff;dutyNav.exp=exp;renderDutyList()}
-const dutyTile=(x,boss)=>`<div class="dtile${x.id===dutySelected?' active':''}" tabindex="0" role="button" onclick="selectDuty(${x.id})"><img src="/api/icon/${x.imageId}" loading="lazy" onerror="this.style.visibility='hidden'"><div><div class="nm">${esc(x.name)}${boss?`<span class="ilvl">${esc(boss)}</span>`:''}</div><div class="meta">Lv.${x.level}${x.itemLevel?` · iLvl ${x.itemLevel}`:''} · ${x.drops} ${t('drops')}</div></div></div>`;
+const dutyTile=(x,boss)=>`<div class="dtile${x.id===dutySelected?' active':''}" tabindex="0" role="button" onclick="selectDuty(${x.id})"><img src="/api/icon/${x.imageId}" loading="lazy" onerror="this.style.visibility='hidden'"><div><div class="nm">${esc(x.name)}${boss?`<span class="ilvl">${esc(boss)}</span>`:''}</div><div class="meta">Lv.${x.level}${x.itemLevel?` · iLvl ${x.itemLevel}`:''} · ${x.drops?`${x.drops} ${t('drops')}`:t('duty_garland')}</div></div></div>`;
 // banner of the newest (highest level, then newest id) duty of a folder as the tile background
 const dutyRep=rows=>rows.reduce((a,b)=>(b.level>a.level||(b.level===a.level&&b.id>a.id))?b:a);
 const folderTile=(label,rows,onclick,icon)=>{const r=dutyRep(rows);return `<div class="ntile" tabindex="0" role="button" onclick="${onclick}" style="background-image:url(/api/icon/${r.imageId})"><div class="nshade">${icon?`<img class="ticon" src="/api/icon/${icon}" onerror="this.remove()">`:''}<div><div class="nm">${label}</div><div class="meta">${rows.length} ${t('duties')}</div></div></div></div>`};
@@ -759,11 +763,13 @@ function renderDutyList(){
   }
 }
 $('#dq').addEventListener('input',renderDutyList);
+const featSection=list=>`<div class="dsec" style="margin-top:0"><div class="dsech">${t('duty_featured')}</div><div class="results dgrid">${list.map(x=>`<div class="row" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${img(x.iconId,28)}<span>${esc(x.name)}<span class="ilvl">${x.kind==='Mount'?t('mount'):t('minion')}</span></span><img class="rowpreview" src="/api/itemimage/${x.itemId}" loading="lazy" onerror="this.remove()"></div>`).join('')}</div></div>`;
+const previewRows=list=>list.map(x=>`<div class="row" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${img(x.iconId,28)}<span>${esc(x.name)}${x.itemLevel?`<span class="ilvl">iLvl ${x.itemLevel}</span>`:''}</span><img class="rowpreview" src="/api/itemimage/${x.itemId}" loading="lazy" onerror="this.remove()"></div>`).join('');
 const dropRows=list=>list.map(x=>`<div class="row" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${img(x.iconId,28)}<span>${esc(x.name)}${x.itemLevel?`<span class="ilvl">iLvl ${x.itemLevel}</span>`:''}</span></div>`).join('');
 async function selectDuty(id){
   dutySelected=id;
   const nav=(dutyList||[]).find(y=>y.id===id);
-  if(nav&&!$('#dq').value.trim()){dutyNav.type=nav.type;dutyNav.diff=nav.difficulty;dutyNav.exp=nav.expansion} // land in the duty's own folder
+  if(nav&&!$('#dq').value.trim()){dutyNav.type=nav.type;dutyNav.diff=new Set((dutyList||[]).filter(y=>y.type===nav.type).map(y=>y.difficulty)).size>1?nav.difficulty:null;dutyNav.exp=nav.expansion} // land in the duty's own folder
   renderDutyList();
   $('#dutydetail').innerHTML='';$('#dutyhead').innerHTML='';
   $('#dutydrops').innerHTML=`<div class="empty"><span class="spinner"></span>${t('loading')}</div>`;
@@ -774,7 +780,9 @@ async function selectDuty(id){
   $('#dutyhead').innerHTML=`<div class="dutybanner"><img src="/api/icon/${d.imageId}" onerror="this.style.display='none'"><div><h2 class="name">${esc(d.name)}</h2><div class="meta">${esc(d.type)} · Lv.${d.level}${d.itemLevel?` · iLvl ${d.itemLevel}`:''}</div></div></div>`;
   let h='';
   // mounts / minions first, with the wiki preview picture — that's what people farm Extremes for
-  if(d.featured?.length)h+=`<div class="dsec" style="margin-top:0"><div class="dsech">${t('duty_featured')}</div><div class="results dgrid">${d.featured.map(x=>`<div class="row" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${img(x.iconId,28)}<span>${esc(x.name)}<span class="ilvl">${x.kind==='Mount'?t('mount'):t('minion')}</span></span><img class="rowpreview" src="/api/itemimage/${x.itemId}" loading="lazy" onerror="this.remove()"></div>`).join('')}</div></div>`;
+  if(d.featured?.length)h+=featSection(d.featured);
+  // exchange shops of the duty (totem -> weapons, books -> gear): with preview pictures
+  for(const ex of d.exchanges||[])h+=`<div class="dsec"><div class="dsech">${t('duty_exchange')} — ${esc(ex.shop)}</div>${ex.token?`<div class="dsub">${t('duty_exchange_for')} ${esc(ex.token.name)}</div>`:''}<div class="results dgrid">${previewRows(ex.items)}</div></div>`;
   for(const b of d.bosses){
     h+=`<div class="dsec"><div class="dsech">${t('boss')} ${b.fightNo+1}${b.name?` — ${esc(b.name)}`:''}</div>`;
     if(b.drops.length)h+=`<div class="results dgrid">${dropRows(b.drops)}</div>`;
@@ -782,17 +790,27 @@ async function selectDuty(id){
     h+='</div>';
   }
   if(d.general.length)h+=`<div class="dsec"><div class="dsech">${t('duty_general')}</div><div class="results dgrid">${dropRows(d.general)}</div></div>`;
-  $('#dutydrops').innerHTML=h||`<div class="empty">${t('duty_nodrops')}</div>`;
-  // chests along the way come from Garland Tools (live, cached server-side) — appended when they
-  // arrive, with the in-game map flag button the NPC rows already use
+  const hasLocal=!!h||!!(d.exchanges||[]).length;
+  // no local table (post-7.1 content): Garland's fight coffers are the whole drop list — show a
+  // spinner instead of "no drops" until they arrive
+  $('#dutydrops').innerHTML=h||`<div class="empty"><span class="spinner"></span>${t('loading')}</div>`;
   const coffers=await fetch(`/api/duty/${id}/coffers`).then(r=>r.ok?r.json():[]).catch(()=>[]);
-  if(dutySelected!==id||!coffers.length)return;
+  if(dutySelected!==id)return;
+  if(!coffers.length){if(!hasLocal)$('#dutydrops').innerHTML=`<div class="empty">${t('duty_nodrops')}</div>`;return}
+  if(!hasLocal)$('#dutydrops').innerHTML='';
+  // mounts / minions from the Garland coffers when the local table had none
+  if(!d.featured?.length){
+    const feat=[...new Map(coffers.flatMap(c=>c.items).filter(x=>x.kind).map(x=>[x.itemId,x])).values()];
+    if(feat.length)$('#dutydrops').insertAdjacentHTML('beforeend',featSection(feat));
+  }
   let c='';
   coffers.forEach((cf,i)=>{
-    const map=d.mapId?` <button class="act" onclick="post('/api/action/map?territory=${d.territoryTypeId}&map=${d.mapId}&x=${cf.x}&y=${cf.y}')">${t('map')}</button>`:'';
-    c+=`<div class="dsub">${t('chest')} ${i+1} · (${cf.x.toFixed(1)}, ${cf.y.toFixed(1)})${map}</div><div class="results dgrid">${dropRows(cf.items)}</div>`;
+    const placed=cf.fightNo<0;
+    const map=placed&&d.mapId?` <button class="act" onclick="post('/api/action/map?territory=${d.territoryTypeId}&map=${d.mapId}&x=${cf.x}&y=${cf.y}')">${t('map')}</button>`:'';
+    const label=placed?`${t('chest')} ${i+1} · (${cf.x.toFixed(1)}, ${cf.y.toFixed(1)})`:`${t('boss')} ${cf.fightNo+1} · ${t('chest')}`;
+    c+=`<div class="dsub">${label}${map}</div><div class="results dgrid">${dropRows(cf.items)}</div>`;
   });
-  $('#dutydrops').insertAdjacentHTML('beforeend',`<div class="dsec"><div class="dsech">${t('duty_coffers')}</div>${c}</div>`);
+  $('#dutydrops').insertAdjacentHTML('beforeend',`<div class="dsec"${hasLocal?'':' style="margin-top:0"'}><div class="dsech">${hasLocal?t('duty_coffers'):t('duty_garland_drops')}</div>${c}</div>`);
 }
 async function openDutyItem(id){
   $('#dutydetail').innerHTML=`<div class="empty"><span class="spinner"></span>${t('loading')}</div>`;

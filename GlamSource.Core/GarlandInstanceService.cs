@@ -4,7 +4,8 @@ using Newtonsoft.Json.Linq;
 
 namespace GlamSource.Core;
 
-public sealed record GarlandCoffer(float X, float Y, IReadOnlyList<uint> ItemIds);
+/// FightNo >= 0: the boss coffer of that fight (no coordinates); -1: a placed coffer with X/Y.
+public sealed record GarlandCoffer(float X, float Y, IReadOnlyList<uint> ItemIds, int FightNo = -1);
 
 public interface IGarlandInstanceService
 {
@@ -37,18 +38,30 @@ public sealed class GarlandInstanceService : IGarlandInstanceService
         try
         {
             var json = await _http.GetStringAsync($"https://garlandtools.org/db/doc/instance/en/2/{id}.json").ConfigureAwait(false);
-            if (JObject.Parse(json)["instance"]?["coffers"] is not JArray coffers)
-                return Array.Empty<GarlandCoffer>();
+            var instance = JObject.Parse(json)["instance"];
             var list = new List<GarlandCoffer>();
-            foreach (var c in coffers)
+            if (instance?["coffers"] is JArray coffers)
             {
-                var coords = c["coords"] as JArray;
-                var items = (c["items"] as JArray)?.Select(i => (uint)i).ToList() ?? new List<uint>();
-                if (coords == null || coords.Count < 2 || items.Count == 0) continue;
-                list.Add(new GarlandCoffer(
-                    float.Parse((string)coords[0]!, CultureInfo.InvariantCulture),
-                    float.Parse((string)coords[1]!, CultureInfo.InvariantCulture),
-                    items));
+                foreach (var c in coffers)
+                {
+                    var coords = c["coords"] as JArray;
+                    var items = (c["items"] as JArray)?.Select(i => (uint)i).ToList() ?? new List<uint>();
+                    if (coords == null || coords.Count < 2 || items.Count == 0) continue;
+                    list.Add(new GarlandCoffer(
+                        float.Parse((string)coords[0]!, CultureInfo.InvariantCulture),
+                        float.Parse((string)coords[1]!, CultureInfo.InvariantCulture),
+                        items));
+                }
+            }
+            // boss coffers per fight — for trials / raids (no placed coffers) and for every duty
+            // newer than the bundled LuminaSupplemental tables this IS the drop table
+            if (instance?["fights"] is JArray fights)
+            {
+                for (var i = 0; i < fights.Count; i++)
+                {
+                    var items = (fights[i]["coffer"]?["items"] as JArray)?.Select(x => (uint)x).ToList() ?? new List<uint>();
+                    if (items.Count > 0) list.Add(new GarlandCoffer(0, 0, items, i));
+                }
             }
             return list;
         }
