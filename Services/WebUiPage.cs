@@ -880,14 +880,24 @@ function buildItemHtml(d,openFn='openItem'){
   return h;
 }
 
+// ponytail: "dumb user" click-A-then-B-fast race, actually reproduced (item 24599, not
+// marketable, showed item 20524's price after a rapid double-click) — annotateEvent/annotateMarket
+// each do their OWN async fetch, then insert into container.querySelector('.header .meta') at
+// insert time, not render time. If a newer openItem/showItemPanel call already replaced the panel
+// by then, that insert lands on the WRONG (newer) item's header. A simple incrementing token per
+// container: bump it on every new call, annotate* functions check it's still theirs before
+// touching the DOM after their await.
 async function openItem(id){
+  const el=$('#detail');
+  const myToken=(el._reqToken=(el._reqToken||0)+1);
   const n=$('#results').querySelectorAll('.row').length;
   if(n){$('#results').style.display='none';$('#resback').style.display='';$('#resback').textContent=`${t('back_results')} (${n})`}
-  $('#detail').innerHTML=`<div class="empty"><span class="spinner"></span>${t('loading')}</div>`;
+  el.innerHTML=`<div class="empty"><span class="spinner"></span>${t('loading')}</div>`;
   updateOverlayCompactness();
   const d=await fetch('/api/item/'+id).then(r=>r.ok?r.json():null);
-  $('#detail').innerHTML=d?buildItemHtml(d):`<div class="empty">${t('not_found')}</div>`;
-  if(d){annotateInventory($('#detail'));annotateEvent($('#detail'),id);annotateMarket($('#detail'),id,d.isMarketable)}
+  if(el._reqToken!==myToken)return; // a newer click already superseded this one
+  el.innerHTML=d?buildItemHtml(d):`<div class="empty">${t('not_found')}</div>`;
+  if(d){annotateInventory(el);annotateEvent(el,id,myToken);annotateMarket(el,id,d.isMarketable,myToken)}
 }
 
 // group: one or more sources sharing the same description+cost (see buildItemHtml) — one card,
@@ -933,9 +943,9 @@ function renderSource(group,itemId,openFn='openItem'){
 // "auch events prüfen, nicht mehr erhältlich markieren, oder ob's grad läuft": one best-effort
 // badge under the item name — recurring events never say "gone", only live status (or "unknown" if
 // the Lodestone check failed); one-time events say "gone" only once we positively know it's not on.
-async function annotateEvent(container,itemId){
+async function annotateEvent(container,itemId,token){
   const ev=await fetch(`/api/item/${itemId}/event`).then(r=>r.ok?r.json():null).catch(()=>null);
-  if(!ev)return;
+  if(!ev||container._reqToken!==token)return; // panel got replaced by a newer click while we awaited
   const kind=ev.recurring?t('ev_recurring'):t('ev_onetime');
   let status;
   if(ev.active===true)status=t('ev_active');
@@ -948,10 +958,10 @@ async function annotateEvent(container,itemId){
 // (DrawMarketPricesCompact), the web panel never fetched it at all. Same insert-after-header
 // pattern as annotateEvent above; skipped entirely for non-marketable items (no point hitting
 // Universalis for something that can't be traded).
-async function annotateMarket(container,itemId,isMarketable){
+async function annotateMarket(container,itemId,isMarketable,token){
   if(!isMarketable)return;
   const m=await fetch(`/api/market/${itemId}`).then(r=>r.ok?r.json():null).catch(()=>null);
-  if(!m)return;
+  if(!m||container._reqToken!==token)return; // panel got replaced by a newer click while we awaited
   const dc=m.dcWorldName?` · ${t('market_dc')} (${esc(m.dcWorldName)}): <b style="color:var(--success)">${m.dcMinPrice.toLocaleString()} Gil</b>`:'';
   container.querySelector('.header .meta')?.insertAdjacentHTML('afterend',
     `<div class="meta">${t('market_world')} <b style="color:var(--accent)">${m.worldMinPrice.toLocaleString()} Gil</b>${dc}</div>`);
@@ -1044,10 +1054,12 @@ async function removeRecent(index){
 
 async function showItemPanel(id){
   const box=$('#chardetail');
+  const myToken=(box._reqToken=(box._reqToken||0)+1); // same race guard as openItem — see its comment
   box.innerHTML=`<div class="empty"><span class="spinner"></span>${t('loading')}</div>`;
   const d=await fetch('/api/item/'+id).then(r=>r.ok?r.json():null);
+  if(box._reqToken!==myToken)return;
   box.innerHTML=d?buildItemHtml(d,'showItemPanel'):`<div class="empty">${t('not_found')}</div>`;
-  if(d){annotateInventory(box);annotateEvent(box,id);annotateMarket(box,id,d.isMarketable)}
+  if(d){annotateInventory(box);annotateEvent(box,id,myToken);annotateMarket(box,id,d.isMarketable,myToken)}
 }
 
 async function post(url){await fetch(url,{method:'POST'})}

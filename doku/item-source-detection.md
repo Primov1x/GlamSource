@@ -1,5 +1,24 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Fix: fast-click race leaked stale market price/event onto the wrong item (1.0.20.0)
+
+Found via "invent dumb-user scenarios and test them" — rapid double-click A-then-B before A's
+price finished loading. Reproduced live: item 24599 (Far Eastern Schoolboy's Hat, NOT marketable)
+showed item 20524's price after clicking 20524 then immediately 24599.
+
+Root cause: `annotateEvent`/`annotateMarket` each run their own `await fetch(...)`, then insert
+into `container.querySelector('.header .meta')` — the CURRENT content of the container at insert
+time, not render time. If a newer `openItem`/`showItemPanel` call already replaced the panel by
+the time the older one's fetch resolves, that insert lands on the wrong (newer) item.
+`annotateInventory` doesn't have this problem — it mutates row elements captured in a NodeList
+snapshot, which just go harmlessly orphaned if superseded, not re-queried live.
+
+Fix: a simple incrementing token per container (`el._reqToken`, bumped on every new
+`openItem`/`showItemPanel` call). `annotateEvent`/`annotateMarket` take the token and check it's
+still current right after their own await, before touching the DOM. Verified live: same repro
+(20524 then 24599) now shows only 24599's own data, no leak; single-click happy path (20524 alone)
+still shows its own price correctly — guard doesn't suppress the normal case.
+
 ## Fix: Mock hung ("Not Responding") on any Duty Drops item click (1.0.19.0)
 
 Live report: clicking a mount/minion in the new Duty Drops tab hung the whole Mock process
