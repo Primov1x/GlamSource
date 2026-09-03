@@ -1,5 +1,31 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Fix: bogus 54-item "Rest of the set" for minions (1.0.18.0)
+
+Live report (screenshot): item 20531 "Road Sparrow" (a minion) showed "Rest of the set" listing
+Odder Otter, Wind-up Susano, Capybara Pup, and 51 other completely unrelated minions — clearly
+wrong, minions have no glamour-set concept the way gear does. Root-caused via `/api/item/20531` in
+the mock: TWO separate paths in `GetDetail` both compute `setName`/`setMembers` for ANY item
+without checking equippability —
+- `Item.ItemSeries` (the real Mog Station bundle field, correct for gear like Abes Attire) matched
+  minions to some shared series row too.
+- The coffer-unlocked-glamour fallback (`_itemToCofferMap`) also matched: "Materiel Container 4.0"
+  is a minion-batch Island Sanctuary coffer, not a glamour one, but the fallback doesn't
+  distinguish — fixing only the ItemSeries path left this second path still producing the exact
+  same bogus set.
+
+Both gated on `item.EquipSlotCategory.RowId > 0` (the same check `IsEquippable` already uses for
+"no Apply to Self on mounts/minions") — sets are gear-only now. Verified live via mock: item 20531
+now returns `setName: null`, while a real gear set (16042 Abes Jacket → "Abes Attire", 3 members)
+is untouched.
+
+**Not changed, flagged for the user to decide**: the SOURCES list for the same item shows real
+structured entries (`Dungeon Drop: Bardam's Mettle`, `HeavenOnHigh: ...-haloed Sack`, `Coffer:
+Materiel Container 4.0...`) alongside near-duplicate `Minion: ... (via FFXIV Collect)` restatements
+of the SAME facts. That's deliberate (see `BuildSources` "8b." comment: FFXIV Collect entries are
+"always shown additively" as a safety net in case a structured source is stale/wrong) — not
+touched here without confirming that's still wanted now that it's visibly redundant in practice.
+
 ## Item detail inline (no more separate window) + Universalis prices in the web UI (1.0.17.0)
 
 Two ImGui/web parity gaps, both live-reported:

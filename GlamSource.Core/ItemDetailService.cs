@@ -275,11 +275,16 @@ public sealed class ItemDetailService : IItemDetailService
         var itemLevel = (ushort)item.LevelItem.RowId;
         var isMarketable = item.ItemSearchCategory.RowId > 0;
         var iconId = item.Icon;
+        var isEquippable = item.EquipSlotCategory.RowId > 0; // mounts/minions/etc. get no "Apply to Self"
         // ponytail: Item.ItemSeries is the game's own Mog Station bundle grouping (verified: Abes
         // Jacket -> ItemSeries.Name "Abes Attire", matching the real store's set name exactly) — no
         // scraping needed, unlike the exact product page URL (the store itself has no search feature
         // and is fully client-rendered, so a precise per-set link isn't cheaply obtainable).
-        var setName = item.ItemSeries.IsValid ? item.ItemSeries.Value.Name.ToString() : null;
+        // Equippable gear ONLY: minions apparently share ItemSeries rows across huge unrelated
+        // batches (live: item 20531 "Road Sparrow" came back with a 54-item "Rest of the set"
+        // including Odder Otter, Wind-up Susano, Capybara Pup... — reported live as clearly wrong,
+        // confirmed via /api/item/20531). There's no glamour "set" concept for a standalone minion.
+        var setName = isEquippable && item.ItemSeries.IsValid ? item.ItemSeries.Value.Name.ToString() : null;
         if (string.IsNullOrEmpty(setName)) setName = null;
 
         // ponytail: same ItemSeries field also lists every OTHER item sharing it — verified against
@@ -315,7 +320,11 @@ public sealed class ItemDetailService : IItemDetailService
 
         // Coffer-unlocked glamours (e.g. "Street Attire Coffer") have no ItemSeries at all — the
         // coffer's own contents ARE the set. Fallback only when ItemSeries found nothing.
-        if (setName == null && _itemToCofferMap.TryGetValue(itemId, out var cofferIds) && cofferIds.Count > 0
+        // Equippable-only for the same reason as the ItemSeries path above — verified live this
+        // fallback ALSO misfires for minions (item 20531 "Road Sparrow": the ItemSeries gate above
+        // alone wasn't enough, this coffer map matched instead and produced the exact same bogus
+        // 54-item "set" via "Materiel Container 4.0", a minion-batch coffer, not a glamour one).
+        if (isEquippable && setName == null && _itemToCofferMap.TryGetValue(itemId, out var cofferIds) && cofferIds.Count > 0
             && _cofferToItemsMap != null)
         {
             var cofferId = cofferIds[0];
