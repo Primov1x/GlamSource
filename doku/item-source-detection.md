@@ -27,6 +27,22 @@ what do I need and where". Prototype, deliberately small:
   included, no same-model alternatives when the best source is unobtainable, "Other" stops are
   just the source text.
 
+## Fix: item panel hung forever on "Lädt..." (1.0.13.0)
+
+Live regression from the 1.0.11 translation sweep, caught by the user clicking a real slot
+("hab item geklickt und lädt sich tot"): `renderSource()` already had a local
+`const t=(s.type??'').toString()` (the source's type string, e.g. "Vendor") — my i18n patch added
+`t('open_craftlog')`, `t('duty_open')`, `t('npc')`, `t('location')`, `t('cost_label')` etc. calls
+inside that SAME function scope, which now called the local string instead of the global `t()`
+translation function → `TypeError: t is not a function`, thrown synchronously before the fetch
+even started (no network request, spinner never resolves — reproduced exactly: clicking "Cosmic
+Explorer's Jacket" left "Lädt..." spinning forever, zero `/api/item/` request in the network log).
+Renamed the local variable to `srcType` (kept every use, including `esc(t)` → `esc(srcType)`);
+`t('key')` calls in that function now correctly reach the i18n table again. Verified live:
+the jacket click now renders NPC/Ort/Kosten table (translated) plus its own preview picture.
+Checked the rest of the page for the same shadowing pattern (`grep` for other local `t` bindings)
+— only `showTab(t)`'s tab-name parameter, which never calls `t(...)` as a function, harmless.
+
 ## Wiki preview image: apostrophes broke the per-item name match (1.0.12.0)
 
 User report: item 24599 (Far Eastern Schoolboy's Hat) showed the whole 4-piece outfit group shot

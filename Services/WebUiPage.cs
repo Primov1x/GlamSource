@@ -892,12 +892,14 @@ async function openItem(id){
 // one NPC/location table row per entry instead of a fully repeated card per location.
 function renderSource(group,itemId,openFn='openItem'){
   const s=group[0];
-  const t=(s.type??'').toString();
-  const cls=/craft/i.test(t)?'crafted':/vendor|shop/i.test(t)?'vendor':/quest/i.test(t)?'quest':/trial|raid|dungeon/i.test(t)?'duty':'';
-  let h=`<div class="card ${cls}"><h3><span class="badge">${typeIcon(cls)} ${esc(t).toUpperCase()}</span> ${esc(s.description??'')}</h3>`;
+  // ponytail: named srcType, not t — a local "t" here shadows the global t() i18n function used
+  // below (live crash: "TypeError: t is not a function" the moment any t('key') call ran)
+  const srcType=(s.type??'').toString();
+  const cls=/craft/i.test(srcType)?'crafted':/vendor|shop/i.test(srcType)?'vendor':/quest/i.test(srcType)?'quest':/trial|raid|dungeon/i.test(srcType)?'duty':'';
+  let h=`<div class="card ${cls}"><h3><span class="badge">${typeIcon(cls)} ${esc(srcType).toUpperCase()}</span> ${esc(s.description??'')}</h3>`;
   // same jump ImGui's ItemDetailWindow offers: coffer / "Retired — replaced by Augmented X" -> that item
   if(s.sourceItemId)h+=`<button class="act" onclick="${openFn}(${s.sourceItemId})">${I18N.open_item[lang]}</button> `;
-  if(/craft/i.test(t))h+=`<button class="act" onclick="post('/api/action/craftlog/${itemId}')">${t('open_craftlog')}</button>`;
+  if(/craft/i.test(srcType))h+=`<button class="act" onclick="post('/api/action/craftlog/${itemId}')">${t('open_craftlog')}</button>`;
   if(s.cfcRowId)h+=` <button class="act" onclick="post('/api/action/dutyfinder/${s.cfcRowId}')">${t('duty_open')}</button>`;
   const withNpc=group.filter(g=>g.npcName);
   if(withNpc.length){
@@ -909,7 +911,7 @@ function renderSource(group,itemId,openFn='openItem'){
     const list=s[key];
     if(list&&list.length){
       // an "Other" card with materials is an outfit set (ItemDetailService 7f) — its rows are pieces
-      h+=`<div style="margin-top:8px;color:var(--muted);font-size:12px">${key==='materials'?(t==='Other'?t('pieces_label'):t('materials_label')):t('cost_label')}</div>`;
+      h+=`<div style="margin-top:8px;color:var(--muted);font-size:12px">${key==='materials'?(srcType==='Other'?t('pieces_label'):t('materials_label')):t('cost_label')}</div>`;
       for(const m of list){
         // data-item + data-need: annotateInventory() fills in have/where AFTER this HTML lands in
         // the DOM (needs an async /api/inventory fetch per item — can't do that synchronously here).
