@@ -944,26 +944,32 @@ public sealed class ItemDetailService : IItemDetailService
             {
                 var shopName = group.First().shop;
                 var groupList = group.DistinctBy(g => g.receiveId).ToList();
-                // each piece can cost a different amount — show it per item, not just the list.
-                var names = string.Join(", ", groupList.Select(g => $"{g.receiveName} ({g.costAmount}x)"));
                 uint? singleReceiveId = groupList.Count == 1 ? groupList[0].receiveId : null;
+
+                // one row per receivable piece (icon + name + cost amount) instead of a giant
+                // comma-joined sentence — reuses the same "Pieces:" list the outfit-coffer case (7f)
+                // already renders in both UIs, verified live: 12 items in one description read as a
+                // wall of text ("unschön").
+                var pieces = groupList
+                    .Select(g => new CostEntry(g.receiveId, g.receiveName, g.costAmount, GetItemIconId(g.receiveId)))
+                    .ToList();
 
                 // where to actually go trade it in — same NPC lookup FindSpecialShopSources uses.
                 var npcInfos = _shopNpcLookup.GetValueOrDefault(group.Key);
                 if (npcInfos == null && _shopNpcNameOnly.TryGetValue(group.Key, out var nameOnly))
                     npcInfos = new List<NpcLocationInfo> { new(nameOnly, "", 0, 0, 0, 0) };
 
-                var desc = $"Trade-in only — handed over at \"{shopName}\" to receive {names}; the item itself isn't sold there.";
+                var desc = $"Trade-in only — handed over at \"{shopName}\"; the item itself isn't sold there.";
                 if (npcInfos is { Count: > 0 })
                 {
                     foreach (var npc in npcInfos)
                         results.Add(new ItemSourceDetail(ItemSourceType.Other, desc,
                             npc.NpcName, npc.ZoneName, npc.MapX, npc.MapY, npc.TerritoryTypeId, npc.MapId,
-                            null, null, null, null, null, null, null, null, null, SourceItemId: singleReceiveId));
+                            null, pieces, null, null, null, null, null, null, null, SourceItemId: singleReceiveId));
                 }
                 else
                 {
-                    results.Add(Note(ItemSourceType.Other, desc, sourceItemId: singleReceiveId));
+                    results.Add(Note(ItemSourceType.Other, desc, materials: pieces, sourceItemId: singleReceiveId));
                 }
             }
         }
