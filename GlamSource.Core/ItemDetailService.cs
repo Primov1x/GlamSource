@@ -958,7 +958,7 @@ public sealed class ItemDetailService : IItemDetailService
                     foreach (var npc in npcInfos)
                         results.Add(new ItemSourceDetail(ItemSourceType.Other, desc,
                             npc.NpcName, npc.ZoneName, npc.MapX, npc.MapY, npc.TerritoryTypeId, npc.MapId,
-                            null, null, null, null, null, null, null, null, null, sourceItemId: singleReceiveId));
+                            null, null, null, null, null, null, null, null, null, SourceItemId: singleReceiveId));
                 }
                 else
                 {
