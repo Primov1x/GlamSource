@@ -1,5 +1,30 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Fix: Mock hung ("Not Responding") on any Duty Drops item click (1.0.19.0)
+
+Live report: clicking a mount/minion in the new Duty Drops tab hung the whole Mock process
+(confirmed via `tasklist /V`: status "Not Responding"). Root-caused via systematic debugging —
+`DrawDutyFinderRow` called `CheckUnlockStatus(cfcRowId)` → `QuestManager.IsQuestComplete()` on
+EVERY Draw() frame for any Dungeon/Trial/Raid-type source, not gated behind the Duty Finder
+button click at all. `QuestManager.IsQuestComplete` is a raw FFXIVClientStructs `Service<T>` call
+— it HANGS (not throws) outside a real `ffxiv_dx11.exe` process, exactly the class of bug
+`GlamSource.Mock/Program.cs`'s own header comment already documented (why the real Plugin can't
+be loaded in Mock at all). A try/catch already wrapped the call but can't rescue a hang.
+
+Not mount/minion-specific in itself — ANY item whose Sources include a Dungeon/Trial/Raid entry
+with a `CfcRowId` would trigger it. The brand-new Duty Drops tab just guarantees hitting one on
+literally every click (that's the tab's whole premise), so it surfaced immediately there where it
+never had before.
+
+Fix: `CheckUnlockStatus` now short-circuits when `_plugin == null` — set only by the real
+`Plugin.cs` (`SetPlugin`), never in Mock, so it's the existing "is a live game actually running"
+signal, no new state needed. Real-game behavior (where `_plugin` is always set) is unchanged.
+
+**Flagged, not fixed here**: `GetItemCount`/`GetInventoryBreakdown` (material/cost rows) call
+`InventoryManager.Instance()` the same unconditional, unguarded-against-Mock way — same hang risk,
+just not yet confirmed to actually fire (the specific item that crashed today had no cost/material
+rows). Worth the same guard if it turns out to bite too.
+
 ## Fix: bogus 54-item "Rest of the set" for minions (1.0.18.0)
 
 Live report (screenshot): item 20531 "Road Sparrow" (a minion) showed "Rest of the set" listing

@@ -1254,8 +1254,16 @@ public class ItemDetailWindow : Window, IDisposable
         }
     }
 
-    private static bool CheckUnlockStatus(uint questId)
+    // ponytail: live crash — Mock hung ("Not Responding") the moment ANY Duty Drops item was
+    // clicked. Root cause: this ran on every Draw() frame for a Dungeon/Trial/Raid source, not
+    // gated behind the Duty Finder button — QuestManager.IsQuestComplete() is a raw ClientStructs
+    // Service<T> call, which HANGS (not throws) outside a real ffxiv_dx11.exe process, exactly the
+    // documented gotcha in GlamSource.Mock/Program.cs. A try/catch can't rescue a hang. _plugin is
+    // only ever set by the real Plugin.cs (SetPlugin) — never in Mock — so it's the cheapest
+    // existing signal for "is a live game actually running", no new state needed.
+    private bool CheckUnlockStatus(uint questId)
     {
+        if (_plugin == null) return false;
         try
         {
             return QuestManager.IsQuestComplete(questId);
