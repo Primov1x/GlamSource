@@ -1,5 +1,16 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Fix: same fast-click race in Duty Drops duty-switching (1.0.21.0)
+
+Same "dumb user" scenario testing pass, one duty-tab pattern over: `selectDuty` already had a race
+guard after its SECOND await (Garland coffers, `if(dutySelected!==id)return`), but not after its
+FIRST await (`/api/duty/{id}` — the duty's own local data). Reproduced live: `selectDuty(1)` then
+immediately `selectDuty(2)` left `dutySelected===2` (correct) but the panel showing duty 1's data
+(Toto-Rak) — state and DOM desynced, user picks duty B and sees duty A's drops.
+
+Fix: same guard added right after the first await too. Verified live: same repro now shows duty
+2's own data; single-select happy path (duty 1 alone) still renders correctly.
+
 ## Fix: fast-click race leaked stale market price/event onto the wrong item (1.0.20.0)
 
 Found via "invent dumb-user scenarios and test them" — rapid double-click A-then-B before A's

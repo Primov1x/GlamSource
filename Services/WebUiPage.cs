@@ -794,6 +794,7 @@ async function selectDuty(id){
   $('#dutydetail').innerHTML='';$('#dutyhead').innerHTML='';
   $('#dutydrops').innerHTML=`<div class="empty"><span class="spinner"></span>${t('loading')}</div>`;
   const d=await fetch('/api/duty/'+id).then(r=>r.ok?r.json():null);
+  if(dutySelected!==id)return; // a newer selectDuty() already superseded this one (fast duty-switch race)
   if(!d){$('#dutydrops').innerHTML=`<div class="empty">${t('not_found')}</div>`;return}
   // Duty Finder style header: the game's own banner image, then one section per boss (drops +
   // chests after that boss), then whatever drops anywhere in the duty
