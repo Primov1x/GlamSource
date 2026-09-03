@@ -252,6 +252,15 @@ public sealed class WebUiService : IDisposable
         }
     }
 
+    // security: same-origin check for the /api/ guard above. This server is only ever meant to be
+    // called by its own page (127.0.0.1/localhost, this exact port) — no legitimate cross-origin
+    // caller exists, so no allowlist beyond "is it actually this server".
+    private static bool IsAllowedOrigin(string? origin)
+    {
+        if (string.IsNullOrEmpty(origin)) return true; // no Origin header — see caller's comment
+        return origin == $"http://127.0.0.1:{Port}" || origin == $"http://localhost:{Port}" || origin == $"http://[::1]:{Port}";
+    }
+
     private void HandleClient(TcpClient client, CancellationToken token)
     {
         client.ReceiveTimeout = 5000;
@@ -259,10 +268,17 @@ public sealed class WebUiService : IDisposable
         using var stream = client.GetStream();
         using var reader = new StreamReader(stream, Encoding.ASCII, false, 4096, leaveOpen: true);
 
-        // request line + headers (bodies ignored — all POST params travel in the query string)
+        // request line + headers (bodies ignored — all POST params travel in the query string).
+        // Origin is the one header worth keeping — see IsAllowedOrigin below.
         var requestLine = reader.ReadLine();
         if (string.IsNullOrEmpty(requestLine)) return;
-        while (!string.IsNullOrEmpty(reader.ReadLine())) { }
+        string? originHeader = null;
+        string? headerLine;
+        while (!string.IsNullOrEmpty(headerLine = reader.ReadLine()))
+        {
+            if (headerLine.StartsWith("Origin:", StringComparison.OrdinalIgnoreCase))
+                originHeader = headerLine["Origin:".Length..].Trim();
+        }
 
         var parts = requestLine.Split(' ');
         if (parts.Length < 2) return;
@@ -271,6 +287,26 @@ public sealed class WebUiService : IDisposable
         var qIdx = rawUrl.IndexOf('?');
         var path = qIdx >= 0 ? rawUrl[..qIdx] : rawUrl;
         var query = HttpUtility.ParseQueryString(qIdx >= 0 ? rawUrl[(qIdx + 1)..] : "");
+
+        // security: this server has zero auth (by design — it's meant to be hit by the page it
+        // itself serves), and used to send Access-Control-Allow-Origin: * with no origin check at
+        // all, on EVERY /api/ route including state-changing ones (Glamourer apply, Duty Finder
+        // open, ...). Loopback-only binding stops LAN/remote attackers, but not a malicious page
+        // open in the SAME browser while the game runs — a plain cross-origin <form>/fetch POST
+        // needs no preflight and was previously neither blocked nor even noticed. Reject any /api/
+        // request whose Origin header (browsers send this on cross-origin requests) doesn't match
+        // this server itself; a MISSING Origin (curl, direct navigation, this page's own top-level
+        // load) is allowed through — there's nothing more to check against in that case, same
+        // baseline every other localhost dev server (Vite, Jupyter, ...) works with.
+        if (path.StartsWith("/api/", StringComparison.Ordinal) && !IsAllowedOrigin(originHeader))
+        {
+            var forbidden = Encoding.UTF8.GetBytes("cross-origin request blocked");
+            stream.Write(Encoding.ASCII.GetBytes(
+                $"HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\nContent-Length: {forbidden.Length}\r\nConnection: close\r\n\r\n"));
+            stream.Write(forbidden);
+            stream.Flush();
+            return;
+        }
 
         // ponytail: long-lived multipart stream, not a single (status, body) response — handled
         // separately from Route()'s request/response model. See StreamPreviewMjpeg's doc comment.
@@ -289,7 +325,9 @@ public sealed class WebUiService : IDisposable
         var cacheControl = path.StartsWith("/api/icon/", StringComparison.Ordinal) || path.StartsWith("/api/itemimage/", StringComparison.Ordinal)
             ? "public, max-age=604800, immutable"
             : "no-store";
-        var head = $"HTTP/1.1 {status}\r\nContent-Type: {contentType}\r\nContent-Length: {body.Length}\r\nCache-Control: {cacheControl}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n";
+        // no Access-Control-Allow-Origin: this page only ever calls itself (same-origin, no CORS
+        // needed) — the wildcard used to make every response readable by any website's JS too.
+        var head = $"HTTP/1.1 {status}\r\nContent-Type: {contentType}\r\nContent-Length: {body.Length}\r\nCache-Control: {cacheControl}\r\nConnection: close\r\n\r\n";
         stream.Write(Encoding.ASCII.GetBytes(head));
         stream.Write(body);
         stream.Flush();
@@ -318,7 +356,7 @@ public sealed class WebUiService : IDisposable
         const string boundary = "glamsourceframe";
         stream.Write(Encoding.ASCII.GetBytes(
             $"HTTP/1.1 200 OK\r\nContent-Type: multipart/x-mixed-replace; boundary={boundary}\r\n" +
-            "Cache-Control: no-store\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n"));
+            "Cache-Control: no-store\r\nConnection: close\r\n\r\n"));
         stream.Flush();
 
         var swStart = Environment.TickCount64;

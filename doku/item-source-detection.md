@@ -1,5 +1,36 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Security: CSRF + wildcard CORS on the Web UI's local HTTP server (1.0.23.0)
+
+Requested security review found one real issue in `WebUiService` (port 23424, opt-in, off by
+default): loopback-only binding (`127.0.0.1`/`::1`) blocks LAN/remote attackers, but every response
+sent `Access-Control-Allow-Origin: *` and NO endpoint checked where a request actually came from —
+including every state-changing `/api/action/*` route (Glamourer apply-to-self, Duty Finder open,
+map open, recent-remove, pose reset, settings toggles, ...). A malicious or compromised webpage
+open in the same browser while the game runs could POST to any of these with a plain `<form>` or
+`fetch()` — no preflight needed, no auth exists to bypass — and the wildcard CORS meant it could
+also read back private data (inventory, equipped gear, live character preview) it had no business
+seeing. Classic local-companion-HTTP-server CSRF, unrelated to the loopback binding (that only
+stops OTHER machines, not other browser tabs on this one).
+
+Fix: `HandleClient` now captures the `Origin` header (previously headers were read and discarded
+entirely — "bodies ignored — all POST params travel in the query string" — headers weren't even
+looked at). Any `/api/` request whose Origin is present and doesn't match this server itself
+(`http://127.0.0.1:23424`, `http://localhost:23424`, `http://[::1]:23424`) gets `403 Forbidden`
+before `Route()` ever sees it. A MISSING Origin (curl, direct navigation, the page's own top-level
+load) is allowed — nothing more to check against, same baseline every other localhost dev server
+works with. `Access-Control-Allow-Origin: *` removed from both response paths (main + MJPEG
+stream) — the page only ever calls itself, same-origin needs no CORS header at all; the wildcard
+served no legitimate purpose, only attackers.
+
+Verified: `IsAllowedOrigin` + the header-parsing line extraction logic checked against 8
+origin cases (same-origin variants, attacker origin, wrong port, subdomain-prefix trick, trailing-
+slash mismatch) and 4 header-line-format cases via a standalone probe — all correct. `dotnet build`
+0/0, `dotnet test` 54/54. **Not live-verified against the real running server** — `WebUiService`
+needs a live Dalamud/game context to construct (unlike `GlamSource.Mock`'s `WebPreviewServer`,
+which is a separate `HttpListener`-based stand-in never carrying this specific code path); no
+live game available to spin it up end-to-end in this session.
+
 ## Fix: same fast-click race in ImGui (market price + crafting savings) (1.0.22.0)
 
 "Test ImGui with the same scenarios" — can't click-drive the native window, so this was static
