@@ -79,7 +79,13 @@ public sealed class ItemImageService : IItemImageService, IDisposable
                 if (file.Contains("icon", StringComparison.OrdinalIgnoreCase)) continue;
                 if (!int.TryParse(m.Groups["width"].Value, out var width)) continue;
                 if (width < 150) continue; // UI chrome (class frames, store badges) tops out ~25px
-                if (file.StartsWith(underscored, StringComparison.OrdinalIgnoreCase))
+                // filenames in the raw HTML are percent-encoded ("Schoolboy%27s"), itemName isn't —
+                // decode before comparing, or an apostrophe (or any other special char) in the name
+                // always misses the name match and falls through to "widest wins", i.e. the SAME
+                // bug this name-match was written to fix (live: 24599 Far Eastern Schoolboy's Hat
+                // returned the 400px Far_Eastern_Schoolboy's_Uniform group shot, not its own
+                // 280px _Male.jpeg portrait — reported by the user, reproduced, confirmed here).
+                if (Uri.UnescapeDataString(file).StartsWith(underscored, StringComparison.OrdinalIgnoreCase))
                     nameMatch ??= "https://ffxiv.consolegameswiki.com" + m.Groups["src"].Value;
                 if (width <= bestWidth) continue;
                 bestWidth = width;

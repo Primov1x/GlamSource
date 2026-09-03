@@ -27,6 +27,20 @@ what do I need and where". Prototype, deliberately small:
   included, no same-model alternatives when the best source is unobtainable, "Other" stops are
   just the source text.
 
+## Wiki preview image: apostrophes broke the per-item name match (1.0.12.0)
+
+User report: item 24599 (Far Eastern Schoolboy's Hat) showed the whole 4-piece outfit group shot
+instead of its own portrait — same failure class as the already-documented Abes Attire bug below,
+but that fix didn't catch this one. Root cause found and reproduced with a live probe against the
+real wiki page: `ItemImageService`'s name-match compared the RAW (still percent-encoded) filename
+from the HTML — `Far_Eastern_Schoolboy%27s_Hat_Male.jpeg` — against the plain item name
+`Far_Eastern_Schoolboy's_Hat` (literal apostrophe). `%27` never starts with `'`, so the match
+always failed for any name containing an apostrophe (or any other char MediaWiki encodes), silently
+falling through to "widest image wins" — the exact bug the name-match was written to prevent, just
+for names the file-name comparison couldn't see past. Fix: `Uri.UnescapeDataString(file)` before
+the `StartsWith` check. Verified live: 24599/24600/24601 (Hat/Hakama/Zori, same set) now return
+3695B/8147B/5030B — three distinct real portraits, not the same shared group image.
+
 ## "Ultimates" kept English, not "Fatale" (1.0.11.0)
 
 User correction: "Fatale" (our German translation for the Ultimates duty-type folder) should stay
