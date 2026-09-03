@@ -53,7 +53,7 @@ public record ItemSourceDetail(
     uint? SourceItemId = null);
 
 /// One duty (ContentFinderCondition) that has at least one known drop.
-public sealed record DutyInfo(uint CfcId, string Name, string Type, uint TerritoryTypeId, int DropCount, uint ImageId, int Level, int ItemLevel);
+public sealed record DutyInfo(uint CfcId, string Name, string Type, uint TerritoryTypeId, int DropCount, uint ImageId, int Level, int ItemLevel, string Expansion);
 public sealed record DutyDrop(uint ItemId, string Name, uint IconId, int ItemLevel);
 public sealed record DutyChest(int CofferNo, IReadOnlyList<DutyDrop> Items);
 public sealed record DutyBoss(int FightNo, string Name, IReadOnlyList<DutyDrop> Drops, IReadOnlyList<DutyChest> Chests);
@@ -1052,10 +1052,21 @@ public sealed class ItemDetailService : IItemDetailService
             var name = cfc.Value.Name.ToString();
             if (name.Length == 0) continue;
             list.Add(new DutyInfo(cfcId, name, GetDutyType(cfcId), cfc.Value.TerritoryType.RowId, items.Count,
-                cfc.Value.Image, cfc.Value.ClassJobLevelRequired, cfc.Value.ItemLevelRequired));
+                cfc.Value.Image, cfc.Value.ClassJobLevelRequired, cfc.Value.ItemLevelRequired, ExpansionName(cfc.Value.ClassJobLevelRequired)));
         }
-        return list.OrderBy(d => d.Type, StringComparer.Ordinal).ThenBy(d => d.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        // grouped for the tab: content type, then expansion, then level, then name
+        return list.OrderBy(d => DutyTypeOrder(d.Type)).ThenBy(d => ExpansionOrder(d.Level)).ThenBy(d => d.Level)
+            .ThenBy(d => d.Name, StringComparer.OrdinalIgnoreCase).ToList();
     }
+
+    private static int DutyTypeOrder(string type) => type switch { "Dungeon" => 0, "Trial" => 1, "Raid" => 2, "Ultimate" => 3, _ => 4 };
+    // Expansion from the required level (ARR ≤50, HW ≤60, SB ≤70, ShB ≤80, EW ≤90, DT ≤100): holds
+    // for every duty incl. ultimates, and needs no TerritoryType/ExVersion read (DalaMock can't).
+    private static int ExpansionOrder(int level) => level <= 50 ? 0 : level <= 60 ? 1 : level <= 70 ? 2 : level <= 80 ? 3 : level <= 90 ? 4 : level <= 100 ? 5 : 6;
+    private static string ExpansionName(int level) => ExpansionOrder(level) switch
+    {
+        0 => "A Realm Reborn", 1 => "Heavensward", 2 => "Stormblood", 3 => "Shadowbringers", 4 => "Endwalker", 5 => "Dawntrail", _ => "Later",
+    };
 
     // the same four LuminaSupplemental CSVs BuildDutyDropCache flattens into item -> duty, kept
     // whole here because the tab wants them by boss / chest (loaded once, ~10k rows total)

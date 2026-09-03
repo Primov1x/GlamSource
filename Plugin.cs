@@ -175,6 +175,7 @@ public class Plugin : IAsyncDalamudPlugin
         shellWindow.OnDebugApiToggle = enabled => debugApiService.SetEnabled(enabled);
 
         webUiService = new WebUiService(itemDetailService, GlamourServiceOverride ?? gameDataService, shellWindow, Configuration, Framework, PluginInterface, Log, ClientState);
+        itemDetailWindow.SetApplyCallback(shellWindow.ApplyItemToSelf); // "Apply to Self" on item details, Glamourer IPC via the shell
         shellWindow.WebUiInlayStatus = () => webUiService.InlayStatus;
         webUiService.SetEnabled(Configuration.WebUiEnabled);
         shellWindow.OnWebUiToggle = enabled => webUiService.SetEnabled(enabled);

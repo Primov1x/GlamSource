@@ -1082,6 +1082,44 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         catch { return false; }
     }
 
+    // Web UI "Apply to Self" — same Glamourer IPC path as the toolbar button; framework thread only.
+    internal string ApplyToSelfFromWeb()
+    {
+        if (!IsGlamourerInstalled()) return Loc.T("Requires Glamourer plugin");
+        if (_snapshot.Count == 0) return Loc.T("No snapshot yet — target or examine a character first.");
+        ApplyTargetGlamourToSelf();
+        return _lastApplyStatus ?? "";
+    }
+
+    // One piece onto the own character (item detail button, ImGui + web). Slot from the item's
+    // EquipSlotCategory; weapons skipped like the outfit apply (type/job mismatch risk).
+    internal string ApplyItemToSelf(uint itemId)
+    {
+        if (!IsGlamourerInstalled()) return Loc.T("Requires Glamourer plugin");
+        var item = _data.GetExcelSheet<Lumina.Excel.Sheets.Item>()?.GetRowOrDefault(itemId);
+        if (item == null) return Loc.T("Not found.");
+        var esc = item.Value.EquipSlotCategory;
+        if (!esc.IsValid || esc.RowId == 0) return Loc.T("Not equippable.");
+        var c = esc.Value;
+        if (c.MainHand > 0 || c.OffHand > 0) return Loc.T("Weapons are not supported here.");
+        var slot = c.Head > 0 ? EquipmentSlotType.Head : c.Body > 0 ? EquipmentSlotType.Body : c.Gloves > 0 ? EquipmentSlotType.Hands
+            : c.Legs > 0 ? EquipmentSlotType.Legs : c.Feet > 0 ? EquipmentSlotType.Feet : c.Ears > 0 ? EquipmentSlotType.Earrings
+            : c.Neck > 0 ? EquipmentSlotType.Necklace : c.Wrists > 0 ? EquipmentSlotType.Bracelets : c.FingerR > 0 ? EquipmentSlotType.RingRight
+            : c.FingerL > 0 ? EquipmentSlotType.RingLeft : EquipmentSlotType.Waist;
+        var apiSlot = MapToApiSlot(slot);
+        if (apiSlot == ApiEquipSlot.Unknown) return Loc.T("Not equippable.");
+        try
+        {
+            var ret = new SetItem(_pi).Invoke(0, apiSlot, itemId, new List<byte> { 0, 0 }, 0, ApplyFlag.Once);
+            return ret == GlamourerApiEc.Success ? Loc.T("Applied.") : $"Glamourer: {ret}";
+        }
+        catch (Exception ex)
+        {
+            _log.Error(ex, "[GlamSource] ApplyItemToSelf failed");
+            return "Failed — Glamourer IPC error.";
+        }
+    }
+
 private void ApplyTargetGlamourToSelf()
     {
         try
@@ -1242,11 +1280,24 @@ private void ApplyTargetGlamourToSelf()
         {
             if (card.Opened)
             {
+                string lastType = "", lastExp = "";
                 foreach (var d in _duties)
                 {
                     if (_dutyFilter.Length > 0 && !d.Name.Contains(_dutyFilter, StringComparison.OrdinalIgnoreCase))
                         continue;
-                    if (ImGui.Selectable($"{d.Name}  ({d.Type}, Lv.{d.Level}, {d.DropCount})##duty_{d.CfcId}", d.CfcId == _dutySelected))
+                    // grouped like the Duty Finder: content type, then expansion
+                    if (d.Type != lastType)
+                    {
+                        UiStyle.SectionHeader(Loc.T(DutyTypeLabel(d.Type)));
+                        lastType = d.Type;
+                        lastExp = "";
+                    }
+                    if (d.Expansion != lastExp)
+                    {
+                        ImGui.TextDisabled(d.Expansion);
+                        lastExp = d.Expansion;
+                    }
+                    if (ImGui.Selectable($"{d.Name}  (Lv.{d.Level}, {d.DropCount})##duty_{d.CfcId}", d.CfcId == _dutySelected))
                         SelectDuty(d.CfcId);
                 }
             }
@@ -1363,7 +1414,18 @@ private void ApplyTargetGlamourToSelf()
             ImGui.TextColored(new Vector4(1f, 0.84f, 0f, 1f), $"{e.Count:N0} Gil");
             return;
         }
-        var have = e.ItemId > 19 ? GlamSource.Services.RetainerInventoryCache.GetTotal(e.ItemId) : 0;
+        var have = 0;
+        var where = "";
+        if (e.ItemId > 19)
+        {
+            var bd = GlamSource.Services.RetainerInventoryCache.GetOwnedBreakdown(e.ItemId);
+            have = bd.Total;
+            var parts = new List<string>();
+            if (bd.Bags > 0) parts.Add($"{Loc.T("Bags")} {bd.Bags}");
+            if (bd.Saddlebag > 0) parts.Add($"{Loc.T("Saddlebag")} {bd.Saddlebag}");
+            parts.AddRange(bd.Retainers.Select(r => $"{r.Name} {r.Count}"));
+            where = string.Join(" · ", parts);
+        }
         var ok = have >= e.Count;
         if (e.IconId > 0)
         {
@@ -1373,6 +1435,11 @@ private void ApplyTargetGlamourToSelf()
             ImGui.SameLine();
         }
         ImGui.TextColored(ok ? UiStyle.Success : UiStyle.Muted, piece ? (ok ? Loc.T("owned") : Loc.T("missing")) : $"({have}/{e.Count})");
+        if (where.Length > 0)
+        {
+            ImGui.SameLine();
+            ImGui.TextColored(UiStyle.Muted, where);
+        }
         ImGui.SameLine();
         if (piece)
         {
@@ -1384,6 +1451,11 @@ private void ApplyTargetGlamourToSelf()
             ImGui.TextColored(ok ? UiStyle.Success : UiStyle.Muted, $"{e.Name} x{e.Count:N0}");
         }
     }
+
+    private static string DutyTypeLabel(string type) => type switch
+    {
+        "Dungeon" => "Dungeons", "Trial" => "Trials", "Raid" => "Raids", "Ultimate" => "Ultimates", _ => "Other duties",
+    };
 
     private void SelectDuty(uint cfcId)
     {

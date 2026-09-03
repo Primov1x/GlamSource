@@ -447,8 +447,15 @@ public sealed class WebUiService : IDisposable
 
         // Duty Drops tab (doku TODO): list of duties with known drops, the one we're standing in,
         // and one duty's drop table. Territory is game state -> read it on the framework thread.
+        // Glamourer IPC (same code path as the ImGui buttons, framework thread): the whole shown
+        // outfit, or one piece from an item detail
+        if (method == "POST" && path == "/api/action/glamourer/apply")
+            return Json(new { status = _framework.RunOnFrameworkThread(() => _shell.ApplyToSelfFromWeb()).GetAwaiter().GetResult() });
+        if (method == "POST" && path.StartsWith("/api/action/glamourer/item/") && uint.TryParse(path["/api/action/glamourer/item/".Length..], out var applyItemId))
+            return Json(new { status = _framework.RunOnFrameworkThread(() => _shell.ApplyItemToSelf(applyItemId)).GetAwaiter().GetResult() });
+
         if (method == "GET" && path == "/api/duties")
-            return Json(_detail.ListDutiesWithDrops().Select(d => new { id = d.CfcId, name = d.Name, type = d.Type, drops = d.DropCount, imageId = d.ImageId, level = d.Level, itemLevel = d.ItemLevel }).ToArray());
+            return Json(_detail.ListDutiesWithDrops().Select(d => new { id = d.CfcId, name = d.Name, type = d.Type, drops = d.DropCount, imageId = d.ImageId, level = d.Level, itemLevel = d.ItemLevel, expansion = d.Expansion }).ToArray());
         if (method == "GET" && path == "/api/duty/current")
         {
             var territory = _framework.RunOnFrameworkThread(() => (uint)_clientState.TerritoryType).GetAwaiter().GetResult();

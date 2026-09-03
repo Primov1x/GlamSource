@@ -160,6 +160,10 @@ public class ItemDetailWindow : Window, IDisposable
         _plugin = plugin;
     }
 
+    private Func<uint, string>? _applyToSelf; // shell's Glamourer IPC, set by Plugin
+    private string? _applyStatus;
+    public void SetApplyCallback(Func<uint, string> callback) => _applyToSelf = callback;
+
     public void SetMapCallback(Action<string, string, float, float> callback)
     {
         _onOpenMap = callback;
@@ -358,6 +362,18 @@ public class ItemDetailWindow : Window, IDisposable
         if (!string.IsNullOrEmpty(detail.SetName))
             metaLine += $"  \u00b7  {Loc.T("Set")}: {detail.SetName}";
         ImGui.TextDisabled(metaLine);
+        if (_applyToSelf != null)
+        {
+            if (ImGui.SmallButton(Loc.T("Apply to Self")))
+                _applyStatus = _applyToSelf(detail.ItemId);
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip(Loc.T("Put this piece on your own character via Glamourer (weapons skipped)"));
+            if (!string.IsNullOrEmpty(_applyStatus))
+            {
+                ImGui.SameLine();
+                ImGui.TextDisabled(_applyStatus);
+            }
+        }
         ImGui.EndGroup();
 
         ImGui.Spacing();
@@ -870,11 +886,14 @@ public class ItemDetailWindow : Window, IDisposable
         {
             ImGui.SameLine();
             ImGui.TextColored(sufficient ? UiStyle.Success : UiStyle.Muted, $"({have}/{entry.Count})");
-            if (ImGui.IsItemHovered())
+            var breakdown = GetInventoryBreakdown(entry.ItemId);
+            if (ImGui.IsItemHovered() && breakdown.Count > 0)
+                ImGui.SetTooltip(string.Join("\n", breakdown.Select(kv => $"{kv.Key}: {kv.Value}")));
+            // "man sieht welches mat wo liegt": inline too — the tooltip alone was easy to miss
+            if (breakdown.Count > 0)
             {
-                var breakdown = GetInventoryBreakdown(entry.ItemId);
-                if (breakdown.Count > 0)
-                    ImGui.SetTooltip(string.Join("\n", breakdown.Select(kv => $"{kv.Key}: {kv.Value}")));
+                ImGui.SameLine();
+                ImGui.TextColored(UiStyle.Muted, "· " + string.Join(" · ", breakdown.Select(kv => $"{kv.Key} {kv.Value}")));
             }
 
             if (showInfoButton && !string.IsNullOrEmpty(entry.Name))

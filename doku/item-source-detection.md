@@ -27,6 +27,24 @@ what do I need and where". Prototype, deliberately small:
   included, no same-model alternatives when the best source is unobtainable, "Other" stops are
   just the source text.
 
+## Round 3 after the 1.0 review (1.0.2.0)
+
+- **Inventory "where is it" inline** (web + ImGui): the per-item breakdown (bags / saddlebag /
+  each retainer) was tooltip-only and easy to miss — now shown muted inline after every
+  material, cost and shopping-list row (`annotateInventory` → `.where` span; `DrawEntryRow` +
+  `DrawShoppingEntry`). Mock got a fake deterministic `/api/inventory/{id}` so it's visible there.
+- **Apply to Self via Glamourer, both UIs**: web Character tab got the outfit button
+  (`POST /api/action/glamourer/apply` → `GlamSourceShellWindow.ApplyToSelfFromWeb`, framework
+  thread); item details (ImGui `ItemDetailWindow` + web header) got a per-piece button
+  (`ApplyItemToSelf`: slot from `EquipSlotCategory`, weapons skipped, `SetItem` IPC, status text
+  next to the button). Mock returns a "not available" status.
+- **Duty Drops list grouped** like the Duty Finder: content type (Dungeons / Trials / Raids /
+  Ultimates / Other) → expansion → level → name. Expansion from the required level (ARR ≤50,
+  HW ≤60, SB ≤70, ShB ≤80, EW ≤90, DT ≤100) — correct for every duty incl. ultimates and needs no
+  `TerritoryType.ExVersion` read (DalaMock can't resolve TerritoryType).
+- **Needs in-game verification**: per-piece Glamourer apply (slot mapping, status), web outfit
+  apply, inline breakdown with real retainer names.
+
 ## Duty Drops tab (0.0.0.312) — current-duty auto-detect + Duty Finder style browse
 
 Was the TODO above this line; built for ImGui and Web UI in the same change.

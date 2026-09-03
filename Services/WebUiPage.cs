@@ -87,6 +87,8 @@ tr:nth-child(even) td{background:rgba(255,255,255,.025)}
 td.muted{color:var(--muted)}
 .matrow{display:flex;align-items:center;gap:8px;padding:3px 0}
 .matrow img{width:22px;height:22px;border-radius:3px}
+.matrow .where{color:var(--muted);font-size:11px;margin-left:8px}
+.applystatus{color:var(--muted);font-size:11px;margin-left:6px}
 .ok{color:var(--success)}.short{color:var(--muted)}
 button.act{background:var(--panel2);border:1px solid var(--border);color:var(--text);padding:4px 12px;border-radius:6px;cursor:pointer;font-size:12px}
 button.act:hover{border-color:var(--accent);color:var(--accent)}
@@ -198,6 +200,7 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
   <div class="row p3dtoolbar" style="margin-top:6px;margin-bottom:10px;flex-wrap:wrap;gap:8px;align-items:center">
     <span class="tbl" data-i18n="view_label"></span>
     <button onclick="showShoppingList()" data-i18n="shopping_btn" data-i18n-title="shopping_tt"></button>
+    <button onclick="glamourerPost('/api/action/glamourer/apply',this)" data-i18n="apply_btn" data-i18n-title="apply_tt"></button>
     <button id="p3dspin" onclick="toggleAutoSpin()" data-i18n="spin" data-i18n-title="spin_tt"></button>
     <button onclick="resetPreview3D()" data-i18n="reset" data-i18n-title="reset_tt"></button>
     <span class="tbl" data-i18n="pose_label"></span>
@@ -269,6 +272,16 @@ const I18N={
   shopping_stops:{en:'stops',de:'Stationen'},
   shopping_total:{en:'Total cost',de:'Gesamtkosten'},
   shopping_items:{en:'Pieces here',de:'Teile hier'},
+  bags:{en:'Bags',de:'Taschen'},
+  saddlebag:{en:'Saddlebag',de:'Satteltasche'},
+  apply_btn:{en:'Apply to Self',de:'Auf mich anwenden'},
+  apply_tt:{en:'Put the shown outfit on your own character via Glamourer (weapons skipped)',de:'Gezeigtes Outfit per Glamourer auf den eigenen Charakter legen (Waffen ausgenommen)'},
+  apply_item_tt:{en:'Put this piece on your own character via Glamourer',de:'Dieses Teil per Glamourer auf den eigenen Charakter legen'},
+  dtype_Dungeon:{en:'Dungeons',de:'Dungeons'},
+  dtype_Trial:{en:'Trials',de:'Prüfungen'},
+  dtype_Raid:{en:'Raids',de:'Raids'},
+  dtype_Ultimate:{en:'Ultimates',de:'Fatale'},
+  dtype_Duty:{en:'Other duties',de:'Sonstige'},
   map:{en:'Map',de:'Karte'},
   search_ph:{en:'Search any item… or paste an item ID',de:'Beliebiges Item suchen… oder Item-ID einfügen'},
   p3dhint:{en:'Overlay is unlocked — lock it top-right, then drag-rotate.',de:'Overlay ist entsperrt — Schloss oben rechts sperren, dann per Ziehen drehen.'},
@@ -674,7 +687,14 @@ async function loadDuties(){
 function renderDutyList(){
   const q=$('#dq').value.trim().toLowerCase();
   const rows=(dutyList||[]).filter(x=>!q||x.name.toLowerCase().includes(q));
-  $('#dutylist').innerHTML=rows.map(x=>`<div class="dtile${x.id===dutySelected?' active':''}" tabindex="0" role="button" onclick="selectDuty(${x.id})"><img src="/api/icon/${x.imageId}" loading="lazy" onerror="this.style.visibility='hidden'"><div><div class="nm">${esc(x.name)}</div><div class="meta">${esc(x.type)} · Lv.${x.level}${x.itemLevel?` · iLvl ${x.itemLevel}`:''} · ${x.drops} ${t('drops')}</div></div></div>`).join('')||`<div class="empty">${t('no_items')}</div>`;
+  // grouped like the Duty Finder: content type, then expansion (server orders it that way)
+  let h='',lastType='',lastExp='';
+  for(const x of rows){
+    if(x.type!==lastType){h+=`<div class="dsech"${h?'':' style="margin-top:0"'}>${t('dtype_'+x.type)}</div>`;lastType=x.type;lastExp=''}
+    if(x.expansion!==lastExp){h+=`<div class="dsub">${esc(x.expansion)}</div>`;lastExp=x.expansion}
+    h+=`<div class="dtile${x.id===dutySelected?' active':''}" tabindex="0" role="button" onclick="selectDuty(${x.id})"><img src="/api/icon/${x.imageId}" loading="lazy" onerror="this.style.visibility='hidden'"><div><div class="nm">${esc(x.name)}</div><div class="meta">Lv.${x.level}${x.itemLevel?` · iLvl ${x.itemLevel}`:''} · ${x.drops} ${t('drops')}</div></div></div>`;
+  }
+  $('#dutylist').innerHTML=h||`<div class="empty">${t('no_items')}</div>`;
 }
 $('#dq').addEventListener('input',renderDutyList);
 const dropRows=list=>list.map(x=>`<div class="row" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${img(x.iconId,28)}<span>${esc(x.name)}${x.itemLevel?`<span class="ilvl">iLvl ${x.itemLevel}</span>`:''}</span></div>`).join('');
@@ -732,7 +752,7 @@ function updateOverlayCompactness(){
 // to #detail) or 'showItemPanel' (Charakter tab, writes to #chardetail). Set-member chips need to
 // call back into whichever panel is actually showing, not always the Suche one.
 function buildItemHtml(d,openFn='openItem'){
-  let h=`<div class="header">${img(d.iconId,48)}<div><h2 class="name">${esc(d.name)}</h2><div class="meta">Item ID ${d.itemId} · iLvl ${d.itemLevel}${d.isMarketable?' · marketable':''}${d.setName?` · Set: ${esc(d.setName)}`:''}</div></div></div><div class="preview"><img src="/api/itemimage/${d.itemId}" loading="lazy" onerror="this.parentElement.style.display='none'"></div>`;
+  let h=`<div class="header">${img(d.iconId,48)}<div><h2 class="name">${esc(d.name)}</h2><div class="meta">Item ID ${d.itemId} · iLvl ${d.itemLevel}${d.isMarketable?' · marketable':''}${d.setName?` · Set: ${esc(d.setName)}`:''}</div><button class="act" style="margin-top:4px" title="${t('apply_item_tt')}" onclick="glamourerPost('/api/action/glamourer/item/${d.itemId}',this)">${t('apply_btn')}</button></div></div><div class="preview"><img src="/api/itemimage/${d.itemId}" loading="lazy" onerror="this.parentElement.style.display='none'"></div>`;
   if((d.setMembers??[]).length){
     h+=`<div class="tbl">Rest of the set</div><div style="display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 14px">`;
     for(const m of d.setMembers)h+=`<div class="row" style="width:auto" onclick="${openFn}(${m.itemId})">${img(m.iconId,24)}<span>${esc(m.name)}</span></div>`;
@@ -816,10 +836,12 @@ async function annotateInventory(container){
     const span=row.querySelector('.matqty');
     span.style.color=sufficient?'var(--success)':'var(--muted)';
     const parts=[];
-    if(inv.bags)parts.push(`Bags: ${inv.bags}`);
-    if(inv.saddlebag)parts.push(`Saddlebag: ${inv.saddlebag}`);
-    for(const r of inv.retainers??[])parts.push(`${r.name}: ${r.count}`);
-    if(parts.length)row.title=parts.join('\n');
+    if(inv.bags)parts.push(`${t('bags')} ${inv.bags}`);
+    if(inv.saddlebag)parts.push(`${t('saddlebag')} ${inv.saddlebag}`);
+    for(const r of inv.retainers??[])parts.push(`${esc(r.name)} ${r.count}`);
+    // "man sieht welches mat wo liegt": inline, not just in a hover tooltip
+    row.querySelector('.where')?.remove();
+    if(parts.length)span.insertAdjacentHTML('afterend',`<span class="where">${parts.join(' · ')}</span>`);
   }
 }
 
@@ -896,6 +918,13 @@ async function showItemPanel(id){
 }
 
 async function post(url){await fetch(url,{method:'POST'})}
+// Glamourer apply (outfit or single piece): POST, show the plugin's status text next to the button
+async function glamourerPost(url,btn){
+  const r=await fetch(url,{method:'POST'}).then(r=>r.ok?r.json():null).catch(()=>null);
+  let s=btn.nextElementSibling;
+  if(!s||!s.classList.contains('applystatus')){s=document.createElement('span');s.className='applystatus';btn.insertAdjacentElement('afterend',s)}
+  s.textContent=r?.status||t('not_found');
+}
 
 // Outfit shopping list (prototype, see doku): one best source per shown slot, merged into stops.
 // Rows are .matrow[data-item] so annotateInventory() marks owned pieces green for free.
