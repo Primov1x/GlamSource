@@ -316,6 +316,7 @@ const I18N={
   market_world:{en:'World:',de:'World:'},
   market_dc:{en:'DC',de:'DC'},
   dtype_Dungeon:{en:'Dungeons',de:'Dungeons'},
+  'dtype_Deep Dungeon':{en:'Deep Dungeons',de:'Deep Dungeons'},
   dtype_Trial:{en:'Trials',de:'Prüfungen'},
   dtype_Raid:{en:'Raids',de:'Raids'},
   dtype_Ultimate:{en:'Ultimates',de:'Ultimates'}, // kept English per user request, not "Fatale"

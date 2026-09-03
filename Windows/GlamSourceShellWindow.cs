@@ -1595,7 +1595,7 @@ private void ApplyTargetGlamourToSelf()
 
     private static string DutyTypeLabel(string type) => type switch
     {
-        "Dungeon" => "Dungeons", "Trial" => "Trials", "Raid" => "Raids", "Ultimate" => "Ultimates", _ => "Other duties",
+        "Dungeon" => "Dungeons", "Deep Dungeon" => "Deep Dungeons", "Trial" => "Trials", "Raid" => "Raids", "Ultimate" => "Ultimates", _ => "Other duties",
     };
 
     private void SelectDuty(uint cfcId)

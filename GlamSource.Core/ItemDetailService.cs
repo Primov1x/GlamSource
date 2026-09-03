@@ -1108,12 +1108,15 @@ public sealed class ItemDetailService : IItemDetailService
             // "Bezeichner für die Duty wie im Duty Finder": the raw sheet name is lowercase
             // ("the minstrel's ballad: ..."), Duty Finder capitalizes the leading word for its list
             name = CapitalizeFirst(name);
-            // every dungeon / trial / raid / ultimate, plus anything else we have drop data for.
-            // Duties without local data get their drops live from Garland — LuminaSupplemental's
-            // tables end around patch 7.1 ("Dawntrail Extreme nur 3 Stück").
+            // every dungeon / trial / raid / ultimate / deep dungeon, plus anything else we have
+            // drop data for. Duties without local data get their drops live from Garland —
+            // LuminaSupplemental's tables end around patch 7.1 ("Dawntrail Extreme nur 3 Stück").
+            // ContentType 21 = Deep Dungeons (Palace of the Dead/Heaven-on-High/Eureka Orthos) —
+            // live report: "bin gerade im deep dungeon, das fehlt bei dungeon drops", confirmed
+            // missing from this filter (checked the real ContentType sheet, not guessed).
             var contentType = cfc.ContentType.RowId;
             var hasLocal = DutyToItems.TryGetValue(cfcId, out var items);
-            if (!hasLocal && contentType is not (2 or 4 or 5 or 28)) continue;
+            if (!hasLocal && contentType is not (2 or 4 or 5 or 21 or 28)) continue;
             list.Add(new DutyInfo(cfcId, name, GetDutyType(cfcId), cfc.TerritoryType.RowId, hasLocal ? items!.Count : 0,
                 cfc.Image, cfc.ClassJobLevelRequired, cfc.ItemLevelRequired, ExpansionName(cfc.ClassJobLevelRequired),
                 Safe(() => (uint)(cfc.ContentType.ValueNullable?.Icon ?? 0), 0u), // Duty Finder category icon (61801 dungeons, ...)
@@ -1160,7 +1163,7 @@ public sealed class ItemDetailService : IItemDetailService
         }
     }
 
-    private static int DutyTypeOrder(string type) => type switch { "Dungeon" => 0, "Trial" => 1, "Raid" => 2, "Ultimate" => 3, _ => 4 };
+    private static int DutyTypeOrder(string type) => type switch { "Dungeon" => 0, "Deep Dungeon" => 1, "Trial" => 2, "Raid" => 3, "Ultimate" => 4, _ => 5 };
     // Expansion from the required level (ARR ≤50, HW ≤60, SB ≤70, ShB ≤80, EW ≤90, DT ≤100): holds
     // for every duty incl. ultimates, and needs no TerritoryType/ExVersion read (DalaMock can't).
     private static int ExpansionOrder(int level) => level <= 50 ? 0 : level <= 60 ? 1 : level <= 70 ? 2 : level <= 80 ? 3 : level <= 90 ? 4 : level <= 100 ? 5 : 6;
@@ -2850,6 +2853,7 @@ public sealed class ItemDetailService : IItemDetailService
             2 => "Dungeon",
             4 => "Trial",
             5 => "Raid",
+            21 => "Deep Dungeon",
             28 => "Ultimate",
             _ => "Duty"
         };
