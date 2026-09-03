@@ -466,25 +466,35 @@ public class ItemDetailWindow : Window, IDisposable
         if (detail.ContentsSummary is { Count: > 0 })
         {
             ImGui.TextDisabled(Loc.T("Can contain:"));
-            foreach (var line in detail.ContentsSummary)
+            foreach (var cat in detail.ContentsSummary)
             {
-                using (ImRaii.PushId($"contentsum_{line.Name}"))
+                using (ImRaii.PushId($"contentsum_{cat.Label}"))
                 {
-                    if (_textureProvider != null && line.IconId > 0)
+                    if (_textureProvider != null && cat.IconId > 0)
                     {
-                        var tex = _textureProvider.GetFromGameIcon(new GameIconLookup(line.IconId)).GetWrapOrEmpty();
+                        var tex = _textureProvider.GetFromGameIcon(new GameIconLookup(cat.IconId)).GetWrapOrEmpty();
                         ImGui.Image(tex.Handle, new Vector2(RowIconSize, RowIconSize));
                         ImGui.SameLine();
                     }
-                    if (line.ItemId > 0)
+                    // click to see which items — was a dead-end "13x Minion" count before.
+                    if (ImGui.TreeNode($"{cat.Items.Count}x {cat.Label}##tree"))
                     {
-                        if (ImGui.SmallButton(line.Name))
-                            NavigateToItem(line.ItemId);
-                    }
-                    else
-                    {
-                        ImGui.AlignTextToFramePadding();
-                        ImGui.Text(line.Name);
+                        for (var i = 0; i < cat.Items.Count; i++)
+                        {
+                            var member = cat.Items[i];
+                            using (ImRaii.PushId($"catitem_{member.ItemId}"))
+                            {
+                                if (_textureProvider != null && member.IconId > 0)
+                                {
+                                    var tex = _textureProvider.GetFromGameIcon(new GameIconLookup(member.IconId)).GetWrapOrEmpty();
+                                    ImGui.Image(tex.Handle, new Vector2(RowIconSize, RowIconSize));
+                                    ImGui.SameLine();
+                                }
+                                if (ImGui.SmallButton(member.Name))
+                                    NavigateToItem(member.ItemId);
+                            }
+                        }
+                        ImGui.TreePop();
                     }
                 }
             }

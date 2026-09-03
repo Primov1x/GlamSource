@@ -25,9 +25,12 @@ public record ItemDetail(
     IReadOnlyList<SetMember>? SetMembers = null,
     bool IsEquippable = false,
     IReadOnlyList<SetMember>? Contents = null, // this item IS a coffer/sack — what it can contain (clickable, small pools)
-    IReadOnlyList<SetMember>? ContentsSummary = null); // same idea but for huge pools (Accursed Hoard sacks) — grouped counts w/ representative icon, non-clickable (ItemId 0 for category rows)
+    IReadOnlyList<ContentsCategory>? ContentsSummary = null); // same idea but for huge pools (Accursed Hoard sacks) — grouped by category, expandable to the real item list
 
 public record SetMember(uint ItemId, string Name, uint IconId);
+
+/// One collapsed "Nx Category" row under ContentsSummary — Items holds the real list so the UI can expand it on click.
+public record ContentsCategory(string Label, uint IconId, IReadOnlyList<SetMember> Items);
 
 public record CostEntry(
     uint ItemId,
@@ -364,7 +367,7 @@ public sealed class ItemDetailService : IItemDetailService
             sources = new[] { Note(ItemSourceType.Other, $"Source detection failed for this item ({e.GetType().Name} at {e.StackTrace?.Split(Environment.NewLine).FirstOrDefault()?.Trim()}). Please report the item ID.") };
         }
         IReadOnlyList<SetMember>? contents = null;
-        IReadOnlyList<SetMember>? contentsSummary = null;
+        IReadOnlyList<ContentsCategory>? contentsSummary = null;
         List<uint>? cofferIds2 = null;
         List<uint>? hoardIds = null;
         var cofferHit = _cofferToItemsMap != null && _cofferToItemsMap.TryGetValue(itemId, out cofferIds2) && cofferIds2.Count > 0;
@@ -383,34 +386,30 @@ public sealed class ItemDetailService : IItemDetailService
         }
         else if (hoardHit)
         {
-            // Accursed Hoard sacks hold 37-119 possible items each — a clickable chip per item is
-            // unreadable clutter. Group by ItemUICategory into "N Category" summary lines instead;
-            // mounts stay called out by name (rare, worth flagging), same convention as the original
-            // wiki-category research this data came from.
+            // Accursed Hoard sacks hold 37-119 possible items each — a flat clickable chip per item
+            // is unreadable clutter, but a plain "13x Minion" count with no way to see WHICH 13 isn't
+            // useful either. Group by ItemUICategory, keep the real item list per category (Items),
+            // so the UI can render "13x Minion" collapsed and let the user expand it on click.
             var mountIds = MountItemIds;
-            var mounts = new List<SetMember>();
-            var categoryCounts = new Dictionary<string, int>();
-            var categoryIcon = new Dictionary<string, uint>(); // first item seen in that category, for a representative icon
+            var byCategory = new Dictionary<string, List<SetMember>>();
             foreach (var id in hoardIds!)
             {
                 var row = itemSheet.GetRowOrDefault(id);
                 if (row == null) continue;
-                if (mountIds.Contains(id))
-                {
-                    mounts.Add(new SetMember(id, row.Value.Name.ToString(), row.Value.Icon));
-                    continue;
-                }
-                var cat = row.Value.ItemUICategory.IsValid ? row.Value.ItemUICategory.Value.Name.ToString() : "Other";
+                var member = new SetMember(id, row.Value.Name.ToString(), row.Value.Icon);
+                var cat = mountIds.Contains(id)
+                    ? "Mount"
+                    : row.Value.ItemUICategory.IsValid ? row.Value.ItemUICategory.Value.Name.ToString() : "Other";
                 if (string.IsNullOrEmpty(cat)) cat = "Other";
-                categoryCounts[cat] = categoryCounts.GetValueOrDefault(cat) + 1;
-                categoryIcon.TryAdd(cat, row.Value.Icon);
+                if (!byCategory.TryGetValue(cat, out var list))
+                    byCategory[cat] = list = new();
+                list.Add(member);
             }
-            var summary = new List<SetMember>();
-            foreach (var mount in mounts)
-                summary.Add(mount with { Name = $"Mount: {mount.Name}" });
-            foreach (var (cat, count) in categoryCounts.OrderByDescending(kv => kv.Value))
-                summary.Add(new SetMember(0, $"{count}x {cat}", categoryIcon[cat]));
-            contentsSummary = summary;
+            contentsSummary = byCategory
+                .OrderByDescending(kv => kv.Key == "Mount") // mounts first — rare, worth surfacing
+                .ThenByDescending(kv => kv.Value.Count)
+                .Select(kv => new ContentsCategory(kv.Key, kv.Value[0].IconId, kv.Value))
+                .ToList();
         }
 
         var detail = new ItemDetail(itemId, name, itemLevel, isMarketable, iconId, sources, setName, setMembers,

@@ -872,9 +872,15 @@ function buildItemHtml(d,openFn='openItem'){
     h+='</div>';
   }
   if((d.contentsSummary??[]).length){
-    h+=`<div class="tbl">${t('can_contain')}</div><div style="display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 14px">`;
-    for(const m of d.contentsSummary)h+=`<div class="row" style="width:auto"${m.itemId?` onclick="${openFn}(${m.itemId})"`:''}>${img(m.iconId,24)}<span>${esc(m.name)}</span></div>`;
-    h+='</div>';
+    h+=`<div class="tbl">${t('can_contain')}</div>`;
+    // click a "13x Minion" row to expand which 13 — was a dead-end count before.
+    d.contentsSummary.forEach((cat,ci)=>{
+      const gid=`cs_${d.itemId}_${ci}`;
+      h+=`<div class="row" style="width:auto;cursor:pointer;margin:2px 0" onclick="const e=document.getElementById('${gid}');e.style.display=e.style.display==='none'?'flex':'none'">${img(cat.iconId,24)}<span>${cat.items.length}x ${esc(cat.label)} ▾</span></div>`;
+      h+=`<div id="${gid}" style="display:none;flex-wrap:wrap;gap:8px;margin:4px 0 10px 28px">`;
+      for(const m of cat.items)h+=`<div class="row" style="width:auto" onclick="event.stopPropagation();${openFn}(${m.itemId})">${img(m.iconId,24)}<span>${esc(m.name)}</span></div>`;
+      h+='</div>';
+    });
   }
   h+='<div class="cards">';
   // ponytail: same shop/vendor sold from several NPC locations used to render as one full repeated
