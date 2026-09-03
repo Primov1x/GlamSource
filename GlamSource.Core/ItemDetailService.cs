@@ -25,7 +25,7 @@ public record ItemDetail(
     IReadOnlyList<SetMember>? SetMembers = null,
     bool IsEquippable = false,
     IReadOnlyList<SetMember>? Contents = null, // this item IS a coffer/sack — what it can contain (clickable, small pools)
-    IReadOnlyList<string>? ContentsSummary = null); // same idea but for huge pools (Accursed Hoard sacks) — grouped counts, not chips
+    IReadOnlyList<SetMember>? ContentsSummary = null); // same idea but for huge pools (Accursed Hoard sacks) — grouped counts w/ representative icon, non-clickable (ItemId 0 for category rows)
 
 public record SetMember(uint ItemId, string Name, uint IconId);
 
@@ -364,7 +364,7 @@ public sealed class ItemDetailService : IItemDetailService
             sources = new[] { Note(ItemSourceType.Other, $"Source detection failed for this item ({e.GetType().Name} at {e.StackTrace?.Split(Environment.NewLine).FirstOrDefault()?.Trim()}). Please report the item ID.") };
         }
         IReadOnlyList<SetMember>? contents = null;
-        IReadOnlyList<string>? contentsSummary = null;
+        IReadOnlyList<SetMember>? contentsSummary = null;
         List<uint>? cofferIds2 = null;
         List<uint>? hoardIds = null;
         var cofferHit = _cofferToItemsMap != null && _cofferToItemsMap.TryGetValue(itemId, out cofferIds2) && cofferIds2.Count > 0;
@@ -388,26 +388,28 @@ public sealed class ItemDetailService : IItemDetailService
             // mounts stay called out by name (rare, worth flagging), same convention as the original
             // wiki-category research this data came from.
             var mountIds = MountItemIds;
-            var mountNames = new List<string>();
+            var mounts = new List<SetMember>();
             var categoryCounts = new Dictionary<string, int>();
+            var categoryIcon = new Dictionary<string, uint>(); // first item seen in that category, for a representative icon
             foreach (var id in hoardIds!)
             {
                 var row = itemSheet.GetRowOrDefault(id);
                 if (row == null) continue;
                 if (mountIds.Contains(id))
                 {
-                    mountNames.Add(row.Value.Name.ToString());
+                    mounts.Add(new SetMember(id, row.Value.Name.ToString(), row.Value.Icon));
                     continue;
                 }
                 var cat = row.Value.ItemUICategory.IsValid ? row.Value.ItemUICategory.Value.Name.ToString() : "Other";
                 if (string.IsNullOrEmpty(cat)) cat = "Other";
                 categoryCounts[cat] = categoryCounts.GetValueOrDefault(cat) + 1;
+                categoryIcon.TryAdd(cat, row.Value.Icon);
             }
-            var summary = new List<string>();
-            foreach (var mountName in mountNames)
-                summary.Add($"Mount: {mountName}");
+            var summary = new List<SetMember>();
+            foreach (var mount in mounts)
+                summary.Add(mount with { Name = $"Mount: {mount.Name}" });
             foreach (var (cat, count) in categoryCounts.OrderByDescending(kv => kv.Value))
-                summary.Add($"{count}x {cat}");
+                summary.Add(new SetMember(0, $"{count}x {cat}", categoryIcon[cat]));
             contentsSummary = summary;
         }
 
@@ -503,13 +505,22 @@ public sealed class ItemDetailService : IItemDetailService
             if (cfcNames.Count > 0)
             {
                 var cfcRowIds = cfcNames.Select(c => c.rowId).ToList();
-                foreach (var (name, dutyType, sourceType, rowId) in cfcNames)
+                // Deep Dungeons split into one CFC row PER 10-floor set (Palace of the Dead alone is
+                // 20 rows, "Floors 1-10" through "Floors 191-200") — a floor-gear piece droppable
+                // across the whole dungeon used to get one near-identical card per row. Group by the
+                // dungeon name with the floor suffix stripped; >1 row sharing a base name collapses
+                // into a single "(all floors)" card. Verified live: this screenshot showed 5+ Palace
+                // of the Dead cards for one item ("lieblos").
+                foreach (var group in cfcNames.GroupBy(c => Regex.Replace(c.name, @"\s*\(Floors? \d+-\d+\)\s*$", "")))
                 {
+                    var groupList = group.ToList();
+                    var (name, dutyType, sourceType, rowId) = groupList[0];
+                    var displayName = groupList.Count > 1 ? $"{group.Key} (all floors)" : name;
                     results.Add(new ItemSourceDetail(
                         sourceType,
-                        $"{dutyType} Drop: {name}",
+                        $"{dutyType} Drop: {displayName}",
                         null, null, null, null, null, null, null, null,
-                        null, rowId, name, dutyType, null, null, cfcRowIds));
+                        null, rowId, displayName, dutyType, null, null, cfcRowIds));
                 }
             }
         }

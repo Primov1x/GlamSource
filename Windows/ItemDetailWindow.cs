@@ -467,7 +467,27 @@ public class ItemDetailWindow : Window, IDisposable
         {
             ImGui.TextDisabled(Loc.T("Can contain:"));
             foreach (var line in detail.ContentsSummary)
-                ImGui.BulletText(line);
+            {
+                using (ImRaii.PushId($"contentsum_{line.Name}"))
+                {
+                    if (_textureProvider != null && line.IconId > 0)
+                    {
+                        var tex = _textureProvider.GetFromGameIcon(new GameIconLookup(line.IconId)).GetWrapOrEmpty();
+                        ImGui.Image(tex.Handle, new Vector2(RowIconSize, RowIconSize));
+                        ImGui.SameLine();
+                    }
+                    if (line.ItemId > 0)
+                    {
+                        if (ImGui.SmallButton(line.Name))
+                            NavigateToItem(line.ItemId);
+                    }
+                    else
+                    {
+                        ImGui.AlignTextToFramePadding();
+                        ImGui.Text(line.Name);
+                    }
+                }
+            }
             ImGui.Spacing();
         }
 

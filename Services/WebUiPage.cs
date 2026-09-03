@@ -872,9 +872,9 @@ function buildItemHtml(d,openFn='openItem'){
     h+='</div>';
   }
   if((d.contentsSummary??[]).length){
-    h+=`<div class="tbl">${t('can_contain')}</div><ul style="margin:6px 0 14px;padding-left:20px">`;
-    for(const line of d.contentsSummary)h+=`<li>${esc(line)}</li>`;
-    h+='</ul>';
+    h+=`<div class="tbl">${t('can_contain')}</div><div style="display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 14px">`;
+    for(const m of d.contentsSummary)h+=`<div class="row" style="width:auto"${m.itemId?` onclick="${openFn}(${m.itemId})"`:''}>${img(m.iconId,24)}<span>${esc(m.name)}</span></div>`;
+    h+='</div>';
   }
   h+='<div class="cards">';
   // ponytail: same shop/vendor sold from several NPC locations used to render as one full repeated
