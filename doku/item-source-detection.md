@@ -1,5 +1,30 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Silent-failure UX: image error surfaced, duty cache prefetched on entry (1.0.16.0)
+
+Two "user gets stressed and uninstalls" scenarios, both root-caused to the same pattern: a network
+call that works fine in the common case fails or is slow in an uncommon one, and the user has no
+way to tell it's not the plugin's fault.
+
+- **Image fetch never worked, no visible reason** (`ItemImageService`): `LastError` existed since
+  1.0.something but only ever surfaced via the hidden `/api/debug/imageerror` endpoint — a user on
+  a network/AV that blocks the GAME PROCESS's outbound HTTPS to
+  `ffxiv.consolegameswiki.com` (the plugin's own code is fine; it's the exe being blocked
+  per-process) saw permanently-blank previews with zero indication why. New optional
+  `Action<string>? onError` ctor param, fired once (not per-failure — a permanently blocked
+  connection would otherwise spam chat) via a `ChatGui.PrintError` naming network/firewall as the
+  likely cause. Wired into both `ItemImageService` instances (Plugin's own for ImGui, WebUiService's
+  for the web UI) via the same reporter, so whichever surface hits it first tells the user.
+- **Duty Drops felt like it lagged mid-content** (`Plugin.cs`): `GlamSourceShellWindow.DrawDutiesTab`
+  already auto-selects the duty you're standing in via `FindDutyByTerritory`, but only while that
+  tab is open — opening it for the first time mid-progression triggered the Garland fetch (+
+  1 req/sec rate limit) right then, felt like a hitch during a pull. New `ClientState.TerritoryChanged`
+  handler (`PrefetchDutyCoffers`) fires `GetDutyCoffersAsync` in the background the moment a duty is
+  entered, tab open or not — same disk cache from 1.0.15.0, just warmed earlier. Confirmed via code
+  read that image/coffer fetches already run on `Task.Run`, never block the ImGui draw thread — the
+  "lag" was real wait time inside the window, not an actual game-thread freeze, but still worth
+  killing since it happens at the worst possible moment.
+
 ## Outfit shopping list — prototype (1.0.1.0)
 
 Why: the honest "why would nobody use this" review after 1.0 put an outfit-level view first — the

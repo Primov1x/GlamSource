@@ -153,7 +153,12 @@ public class Plugin : IAsyncDalamudPlugin
         CraftingCostService = craftingCostService;
         // ponytail: separate instance from WebUiService's own — cheap (in-memory cache, no shared
         // state needed), avoids reshaping WebUiService's constructor for this. Same disk cache dir.
-        itemImageService = new ItemImageService(new System.Net.Http.HttpClient(), imageCacheDir);
+        // ponytail: one chat message on the first image-fetch failure — live report was a user on
+        // a locked-down network/AV seeing NO preview images ever, no clue it was network/firewall
+        // and not the plugin itself. Same reporter feeds both surfaces below.
+        void ReportImageError(string msg) => ChatGui.PrintError(
+            $"[GlamSource] Bilder laden fehlgeschlagen (Netzwerk/Firewall blockiert ffxiv.consolegameswiki.com?): {msg}");
+        itemImageService = new ItemImageService(new System.Net.Http.HttpClient(), imageCacheDir, ReportImageError);
         itemDetailWindow = new ItemDetailWindow(itemDetailService, sourceService, _universalisService, textureProvider, DataManager, itemImageService);
         itemDetailWindow.SetPlugin(this);
         WindowSystem.AddWindow(itemDetailWindow);
@@ -181,7 +186,7 @@ public class Plugin : IAsyncDalamudPlugin
         debugApiService.SetEnabled(Configuration.DebugApiEnabled);
         shellWindow.OnDebugApiToggle = enabled => debugApiService.SetEnabled(enabled);
 
-        webUiService = new WebUiService(itemDetailService, GlamourServiceOverride ?? gameDataService, shellWindow, Configuration, Framework, PluginInterface, Log, ClientState);
+        webUiService = new WebUiService(itemDetailService, GlamourServiceOverride ?? gameDataService, shellWindow, Configuration, Framework, PluginInterface, Log, ClientState, ReportImageError);
         itemDetailWindow.SetApplyCallback(shellWindow.ApplyItemToSelf); // "Apply to Self" on item details, Glamourer IPC via the shell
         shellWindow.WebUiInlayStatus = () => webUiService.InlayStatus;
         webUiService.SetEnabled(Configuration.WebUiEnabled);
@@ -206,11 +211,27 @@ public class Plugin : IAsyncDalamudPlugin
         // isn't drawn; throttled to every 30 frames so it doesn't hammer the sheets.
         Framework.Update += OnFrameworkUpdate;
 
+        // ponytail: live report — opening Duty Drops for the first time mid-content (progression
+        // pull) felt like a lag spike, because that's exactly when the Garland fetch/rate-limit
+        // wait first happened. GlamSourceShellWindow.DrawDutiesTab already auto-selects on
+        // territory change, but only warms the cache while that tab is actually open. Warm it the
+        // moment the duty is entered instead, tab open or not, so it's already on disk by the time
+        // anyone clicks it. Pure Lumina sheet lookup + disk/network I/O, no ClientState touched
+        // off-thread — safe from a background task.
+        ClientState.TerritoryChanged += PrefetchDutyCoffers;
+
         Log.Information($"===A cool log message from {PluginInterface.Manifest.Name}===");
 
         // ponytail: test-harness auto-opens; real plugin stays closed until user opens it.
         if (GlamourServiceOverride != null)
             shellWindow.IsOpen = true;
+    }
+
+    private void PrefetchDutyCoffers(uint territoryType)
+    {
+        var cfcId = itemDetailService.FindDutyByTerritory(territoryType);
+        if (cfcId is not { } id) return;
+        _ = Task.Run(() => itemDetailService.GetDutyCoffersAsync(id));
     }
 
     public Task LoadAsync(CancellationToken cancellationToken) => Task.CompletedTask;
@@ -238,6 +259,7 @@ public class Plugin : IAsyncDalamudPlugin
             PluginInterface.UiBuilder.OpenConfigUi -= OpenConfigUi;
             PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUi;
             Framework.Update -= OnFrameworkUpdate;
+            ClientState.TerritoryChanged -= PrefetchDutyCoffers;
 
             WindowSystem.RemoveAllWindows();
             _log.Info("[Plugin] DisposeAsync() windows removed, disposing services");

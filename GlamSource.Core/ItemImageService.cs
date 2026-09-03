@@ -47,9 +47,19 @@ public sealed class ItemImageService : IItemImageService, IDisposable
     private readonly string? _cacheDir;
     private const long MaxCacheBytes = 50 * 1024 * 1024; // 50 MB — a few thousand item portraits
 
-    public ItemImageService(HttpClient httpClient, string? cacheDir = null)
+    // ponytail: live report — user on a locked-down network/AV never saw ANY preview image, no
+    // clue why (LastError only ever surfaced via the hidden /api/debug/imageerror endpoint).
+    // Most likely cause is the GAME PROCESS itself being blocked outbound to the wiki (see
+    // LastError doc above), which looks identical to "plugin is just broken" from the user's
+    // side. One chat message on the FIRST failure — not every failure, that'd spam on a
+    // permanently-blocked connection — points at the real cause instead of silence.
+    private readonly Action<string>? _onError;
+    private bool _errorNotified;
+
+    public ItemImageService(HttpClient httpClient, string? cacheDir = null, Action<string>? onError = null)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+        _onError = onError;
         // .NET HttpClient sends NO User-Agent by default — Cloudflare-fronted wikis like this one
         // commonly 403 that (bot-detection heuristic, often IP-reputation-dependent — could work
         // for one person and fail for another with no other difference). Only header ever needed
@@ -113,6 +123,7 @@ public sealed class ItemImageService : IItemImageService, IDisposable
         catch (Exception ex)
         {
             LastError = $"{DateTime.Now:HH:mm:ss} url-lookup '{itemName}': {ex.Message}";
+            NotifyError(ex.Message);
             _cache[itemId] = null;
             return null;
         }
@@ -142,6 +153,7 @@ public sealed class ItemImageService : IItemImageService, IDisposable
         catch (Exception ex)
         {
             LastError = $"{DateTime.Now:HH:mm:ss} image-fetch '{itemName}': {ex.Message}";
+            NotifyError(ex.Message);
             return null;
         }
 
@@ -171,6 +183,13 @@ public sealed class ItemImageService : IItemImageService, IDisposable
             if (total <= maxBytes * 0.8) break;
             try { total -= f.Length; f.Delete(); } catch (Exception) { /* skip, try the next one */ }
         }
+    }
+
+    private void NotifyError(string message)
+    {
+        if (_errorNotified) return;
+        _errorNotified = true;
+        _onError?.Invoke(message);
     }
 
     private async Task RateLimit()

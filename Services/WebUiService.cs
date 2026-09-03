@@ -83,7 +83,7 @@ public sealed class WebUiService : IDisposable
     /// <summary>Human-readable state of the Browsingway inlay bootstrap, shown in Settings.</summary>
     public string? InlayStatus { get; private set; }
 
-    public WebUiService(IItemDetailService detail, IGlamourService glamour, GlamSourceShellWindow shell, Configuration configuration, IFramework framework, Dalamud.Plugin.IDalamudPluginInterface pi, IPluginLog log, IClientState clientState)
+    public WebUiService(IItemDetailService detail, IGlamourService glamour, GlamSourceShellWindow shell, Configuration configuration, IFramework framework, Dalamud.Plugin.IDalamudPluginInterface pi, IPluginLog log, IClientState clientState, Action<string>? onImageError = null)
     {
         _detail = detail;
         _glamour = glamour;
@@ -101,7 +101,7 @@ public sealed class WebUiService : IDisposable
         // same on-disk ImageCache as Plugin.cs's own ItemImageService instance (see its comment —
         // separate in-memory caches are fine and cheap, but both should read/write the SAME files
         // on disk so a lookup done via one surface isn't re-fetched by the other)
-        _imageService = new ItemImageService(new System.Net.Http.HttpClient(), dir != null ? Path.Combine(dir, "ImageCache") : null);
+        _imageService = new ItemImageService(new System.Net.Http.HttpClient(), dir != null ? Path.Combine(dir, "ImageCache") : null, onImageError);
     }
 
     // ponytail: Browsingway has no IPC and no create-overlay command; it reads its config once at
