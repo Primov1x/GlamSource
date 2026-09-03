@@ -151,6 +151,7 @@ public static class Loc
         ["Weapons are not supported here."] = "Waffen werden hier nicht unterstützt.",
         ["Applied."] = "Angewendet.",
         ["Dungeons"] = "Dungeons",
+        ["All"] = "Alle",
         ["Trials"] = "Prüfungen",
         ["Raids"] = "Raids",
         ["Ultimates"] = "Fatale",

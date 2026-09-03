@@ -69,6 +69,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
     // Duty Drops tab
     private string _dutyFilter = "";
     private uint _dutySelected, _lastDutyTerritory;
+    private string? _dutyNavType, _dutyNavExp; // drill-down: type → expansion → duties
     private uint? _currentDuty;
     private IReadOnlyList<DutyInfo>? _duties;
     private DutyDetail? _dutyDetail;
@@ -1275,30 +1276,69 @@ private void ApplyTargetGlamourToSelf()
         ImGui.SetNextItemWidth(ImGui.GetFontSize() * 22f);
         ImGui.InputTextWithHint("##duty_filter", Loc.T("Search dungeon, trial, raid..."), ref _dutyFilter, 128);
 
+        // breadcrumb of the drill-down: All › Dungeons › Heavensward
+        if (ImGui.SmallButton(Loc.T("All")))
+        {
+            _dutyNavType = null;
+            _dutyNavExp = null;
+        }
+        if (_dutyNavType != null)
+        {
+            ImGui.SameLine(); ImGui.TextDisabled("›"); ImGui.SameLine();
+            if (ImGui.SmallButton(Loc.T(DutyTypeLabel(_dutyNavType))))
+                _dutyNavExp = null;
+        }
+        if (_dutyNavExp != null)
+        {
+            ImGui.SameLine(); ImGui.TextDisabled("›"); ImGui.SameLine();
+            ImGui.TextUnformatted(_dutyNavExp);
+        }
+
         var listSize = new Vector2(ImGui.GetFontSize() * 26f, ImGui.GetFontSize() * 9f);
         using (var card = UiStyle.BeginCard("##duty_list", listSize))
         {
             if (card.Opened)
             {
-                string lastType = "", lastExp = "";
-                foreach (var d in _duties)
+                if (_dutyFilter.Length > 0)
                 {
-                    if (_dutyFilter.Length > 0 && !d.Name.Contains(_dutyFilter, StringComparison.OrdinalIgnoreCase))
-                        continue;
-                    // grouped like the Duty Finder: content type, then expansion
-                    if (d.Type != lastType)
+                    // search bypasses the drill-down: flat list, grouped like the Duty Finder
+                    string lastType = "", lastExp = "";
+                    foreach (var d in _duties)
                     {
-                        UiStyle.SectionHeader(Loc.T(DutyTypeLabel(d.Type)));
-                        lastType = d.Type;
-                        lastExp = "";
+                        if (!d.Name.Contains(_dutyFilter, StringComparison.OrdinalIgnoreCase))
+                            continue;
+                        if (d.Type != lastType)
+                        {
+                            UiStyle.SectionHeader(Loc.T(DutyTypeLabel(d.Type)));
+                            lastType = d.Type;
+                            lastExp = "";
+                        }
+                        if (d.Expansion != lastExp)
+                        {
+                            ImGui.TextDisabled(d.Expansion);
+                            lastExp = d.Expansion;
+                        }
+                        if (ImGui.Selectable($"{d.Name}  (Lv.{d.Level}, {d.DropCount})##duty_{d.CfcId}", d.CfcId == _dutySelected))
+                            SelectDuty(d.CfcId);
                     }
-                    if (d.Expansion != lastExp)
-                    {
-                        ImGui.TextDisabled(d.Expansion);
-                        lastExp = d.Expansion;
-                    }
-                    if (ImGui.Selectable($"{d.Name}  (Lv.{d.Level}, {d.DropCount})##duty_{d.CfcId}", d.CfcId == _dutySelected))
-                        SelectDuty(d.CfcId);
+                }
+                else if (_dutyNavType == null)
+                {
+                    foreach (var g in _duties.GroupBy(d => d.Type))
+                        if (ImGui.Selectable($"{Loc.T(DutyTypeLabel(g.Key))}  ({g.Count()})##dtype_{g.Key}"))
+                            _dutyNavType = g.Key;
+                }
+                else if (_dutyNavExp == null)
+                {
+                    foreach (var g in _duties.Where(d => d.Type == _dutyNavType).GroupBy(d => d.Expansion))
+                        if (ImGui.Selectable($"{g.Key}  ({g.Count()})##dexp_{g.Key}"))
+                            _dutyNavExp = g.Key;
+                }
+                else
+                {
+                    foreach (var d in _duties.Where(d => d.Type == _dutyNavType && d.Expansion == _dutyNavExp))
+                        if (ImGui.Selectable($"{d.Name}  (Lv.{d.Level}, {d.DropCount})##duty_{d.CfcId}", d.CfcId == _dutySelected))
+                            SelectDuty(d.CfcId);
                 }
             }
         }
@@ -1460,6 +1500,11 @@ private void ApplyTargetGlamourToSelf()
     private void SelectDuty(uint cfcId)
     {
         _dutySelected = cfcId;
+        if (_duties?.FirstOrDefault(x => x.CfcId == cfcId) is { } nav) // land in the duty's own folder
+        {
+            _dutyNavType = nav.Type;
+            _dutyNavExp = nav.Expansion;
+        }
         _dutyDetail = _detailWindow.DetailService.GetDutyDetail(cfcId);
         _dutyCoffers = null;
         _cofferTask = _detailWindow.DetailService.GetDutyCoffersAsync(cfcId);

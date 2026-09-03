@@ -58,6 +58,13 @@ input[type=search]:focus{border-color:var(--accent)}
 #dutyside{width:320px;flex-shrink:0}
 #dutyside input[type=search]{max-width:none;margin-top:8px}
 #dutylist{max-width:none;max-height:520px;overflow-y:auto}
+#dutylist.grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+#dutycrumb{margin:8px 0 6px;font-size:12px;color:var(--muted)}
+.crumb[onclick]{color:var(--gold);cursor:pointer}
+.ntile{background:linear-gradient(180deg,#28251f,#1c1a16);border:1px solid var(--border);border-radius:8px;padding:12px 14px;cursor:pointer;transition:.12s}
+.ntile:hover,.ntile:focus{border-color:var(--gold);box-shadow:0 0 8px rgba(200,167,94,.3);outline:none}
+.ntile .nm{font-size:14px;color:var(--gold)}
+.ntile .meta{color:var(--muted);font-size:11px}
 #dutymain{flex:1;min-width:0}
 /* Duty Finder style tiles: banner thumbnail (ContentFinderCondition.Image via /api/icon) + name/meta */
 .dtile{display:flex;gap:10px;align-items:center;background:var(--panel);border:1px solid transparent;border-radius:8px;padding:6px 8px;cursor:pointer;transition:.12s}
@@ -220,6 +227,7 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
     <div id="dutyside">
       <div id="dutycurrent" class="empty" style="margin-top:0"></div>
       <input type="search" id="dq" data-i18n-ph="duty_search_ph">
+      <div id="dutycrumb"></div>
       <div class="results" id="dutylist"></div>
     </div>
     <div id="dutymain">
@@ -282,6 +290,8 @@ const I18N={
   dtype_Raid:{en:'Raids',de:'Raids'},
   dtype_Ultimate:{en:'Ultimates',de:'Fatale'},
   dtype_Duty:{en:'Other duties',de:'Sonstige'},
+  duty_all:{en:'All',de:'Alle'},
+  duties:{en:'duties',de:'Duties'},
   map:{en:'Map',de:'Karte'},
   search_ph:{en:'Search any item… or paste an item ID',de:'Beliebiges Item suchen… oder Item-ID einfügen'},
   p3dhint:{en:'Overlay is unlocked — lock it top-right, then drag-rotate.',de:'Overlay ist entsperrt — Schloss oben rechts sperren, dann per Ziehen drehen.'},
@@ -684,22 +694,50 @@ async function loadDuties(){
   $('#dutycurrent').textContent=d?`${t('duty_current')}: ${d.name}`:t('duty_none');
   if(d&&dutySelected!==d.id)selectDuty(d.id);
 }
+// Drill-down like the Duty Finder ("kompakter, Kacheln zum Klicken"): content type tiles →
+// expansion tiles → duty tiles → drops, with a breadcrumb back. A search term bypasses the
+// drill-down and shows the flat grouped list.
+const dutyNav={type:null,exp:null};
+function dutyNavTo(type,exp){dutyNav.type=type;dutyNav.exp=exp;renderDutyList()}
+const dutyTile=x=>`<div class="dtile${x.id===dutySelected?' active':''}" tabindex="0" role="button" onclick="selectDuty(${x.id})"><img src="/api/icon/${x.imageId}" loading="lazy" onerror="this.style.visibility='hidden'"><div><div class="nm">${esc(x.name)}</div><div class="meta">Lv.${x.level}${x.itemLevel?` · iLvl ${x.itemLevel}`:''} · ${x.drops} ${t('drops')}</div></div></div>`;
 function renderDutyList(){
-  const q=$('#dq').value.trim().toLowerCase();
-  const rows=(dutyList||[]).filter(x=>!q||x.name.toLowerCase().includes(q));
-  // grouped like the Duty Finder: content type, then expansion (server orders it that way)
-  let h='',lastType='',lastExp='';
-  for(const x of rows){
-    if(x.type!==lastType){h+=`<div class="dsech"${h?'':' style="margin-top:0"'}>${t('dtype_'+x.type)}</div>`;lastType=x.type;lastExp=''}
-    if(x.expansion!==lastExp){h+=`<div class="dsub">${esc(x.expansion)}</div>`;lastExp=x.expansion}
-    h+=`<div class="dtile${x.id===dutySelected?' active':''}" tabindex="0" role="button" onclick="selectDuty(${x.id})"><img src="/api/icon/${x.imageId}" loading="lazy" onerror="this.style.visibility='hidden'"><div><div class="nm">${esc(x.name)}</div><div class="meta">Lv.${x.level}${x.itemLevel?` · iLvl ${x.itemLevel}`:''} · ${x.drops} ${t('drops')}</div></div></div>`;
+  const q=$('#dq').value.trim().toLowerCase(),all=dutyList||[],list=$('#dutylist'),crumb=$('#dutycrumb');
+  if(q){
+    crumb.innerHTML='';list.classList.remove('grid');
+    let h='',lastType='',lastExp='';
+    for(const x of all.filter(x=>x.name.toLowerCase().includes(q))){
+      if(x.type!==lastType){h+=`<div class="dsech"${h?'':' style="margin-top:0"'}>${t('dtype_'+x.type)}</div>`;lastType=x.type;lastExp=''}
+      if(x.expansion!==lastExp){h+=`<div class="dsub">${esc(x.expansion)}</div>`;lastExp=x.expansion}
+      h+=dutyTile(x);
+    }
+    list.innerHTML=h||`<div class="empty">${t('no_items')}</div>`;
+    return;
   }
-  $('#dutylist').innerHTML=h||`<div class="empty">${t('no_items')}</div>`;
+  const seg=(label,fn)=>`<span class="crumb"${fn?` onclick="${fn}"`:''}>${label}</span>`;
+  let c=seg(t('duty_all'),dutyNav.type?'dutyNavTo(null,null)':null);
+  if(dutyNav.type)c+=' › '+seg(t('dtype_'+dutyNav.type),dutyNav.exp?`dutyNavTo('${dutyNav.type}',null)`:null);
+  if(dutyNav.exp)c+=' › '+seg(esc(dutyNav.exp),null);
+  crumb.innerHTML=c;
+  if(!dutyNav.type){
+    list.classList.add('grid');
+    const types=[...new Set(all.map(x=>x.type))];
+    list.innerHTML=types.map(ty=>`<div class="ntile" tabindex="0" role="button" onclick="dutyNavTo('${ty}',null)"><div class="nm">${t('dtype_'+ty)}</div><div class="meta">${all.filter(x=>x.type===ty).length} ${t('duties')}</div></div>`).join('');
+  }else if(!dutyNav.exp){
+    list.classList.add('grid');
+    const inType=all.filter(x=>x.type===dutyNav.type),exps=[...new Set(inType.map(x=>x.expansion))];
+    list.innerHTML=exps.map(ex=>`<div class="ntile" tabindex="0" role="button" onclick="dutyNavTo('${dutyNav.type}','${ex}')"><div class="nm">${esc(ex)}</div><div class="meta">${inType.filter(x=>x.expansion===ex).length} ${t('duties')}</div></div>`).join('');
+  }else{
+    list.classList.remove('grid');
+    list.innerHTML=all.filter(x=>x.type===dutyNav.type&&x.expansion===dutyNav.exp).map(dutyTile).join('')||`<div class="empty">${t('no_items')}</div>`;
+  }
 }
 $('#dq').addEventListener('input',renderDutyList);
 const dropRows=list=>list.map(x=>`<div class="row" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${img(x.iconId,28)}<span>${esc(x.name)}${x.itemLevel?`<span class="ilvl">iLvl ${x.itemLevel}</span>`:''}</span></div>`).join('');
 async function selectDuty(id){
-  dutySelected=id;renderDutyList();
+  dutySelected=id;
+  const nav=(dutyList||[]).find(y=>y.id===id);
+  if(nav&&!$('#dq').value.trim()){dutyNav.type=nav.type;dutyNav.exp=nav.expansion} // land in the duty's own folder
+  renderDutyList();
   $('#dutydetail').innerHTML='';$('#dutyhead').innerHTML='';
   $('#dutydrops').innerHTML=`<div class="empty"><span class="spinner"></span>${t('loading')}</div>`;
   const d=await fetch('/api/duty/'+id).then(r=>r.ok?r.json():null);

@@ -44,6 +44,11 @@ what do I need and where". Prototype, deliberately small:
   `TerritoryType.ExVersion` read (DalaMock can't resolve TerritoryType).
 - **Needs in-game verification**: per-piece Glamourer apply (slot mapping, status), web outfit
   apply, inline breakdown with real retainer names.
+- **Duty Drops drill-down (1.0.3.0)**: "kompakter, Kacheln zum Klicken" — the long grouped list
+  became a Duty-Finder-like drill-down: content-type tiles (with duty counts) → expansion tiles →
+  duty tiles → drops, breadcrumb "All › Dungeons › Heavensward" to go back up. A search term
+  bypasses it (flat grouped list). Selecting a duty (click or auto-detect) lands the list in that
+  duty's folder. ImGui mirrors it with Selectables per level and SmallButton breadcrumbs.
 
 ## Duty Drops tab (0.0.0.312) — current-duty auto-detect + Duty Finder style browse
 
