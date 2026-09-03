@@ -950,7 +950,7 @@ public sealed class ItemDetailService : IItemDetailService
                 // comma-joined sentence — reuses the same "Pieces:" list the outfit-coffer case (7f)
                 // already renders in both UIs, verified live: 12 items in one description read as a
                 // wall of text ("unschön").
-                var pieces = groupList
+                var tradeInPieces = groupList
                     .Select(g => new CostEntry(g.receiveId, g.receiveName, g.costAmount, GetItemIconId(g.receiveId)))
                     .ToList();
 
@@ -965,11 +965,11 @@ public sealed class ItemDetailService : IItemDetailService
                     foreach (var npc in npcInfos)
                         results.Add(new ItemSourceDetail(ItemSourceType.Other, desc,
                             npc.NpcName, npc.ZoneName, npc.MapX, npc.MapY, npc.TerritoryTypeId, npc.MapId,
-                            null, pieces, null, null, null, null, null, null, null, SourceItemId: singleReceiveId));
+                            null, tradeInPieces, null, null, null, null, null, null, null, SourceItemId: singleReceiveId));
                 }
                 else
                 {
-                    results.Add(Note(ItemSourceType.Other, desc, materials: pieces, sourceItemId: singleReceiveId));
+                    results.Add(Note(ItemSourceType.Other, desc, materials: tradeInPieces, sourceItemId: singleReceiveId));
                 }
             }
         }
