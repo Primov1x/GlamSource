@@ -247,6 +247,33 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
             ImGui.Separator();
         }
 
+        // ponytail: "kein extra Fenster" — item detail used to be its own floating WindowSystem
+        // window (popped up separately from the shell, like the web UI never does). Now it draws
+        // INLINE in a side panel here instead, same single OS window either way. ItemDetailWindow's
+        // own Draw() has no Begin/End of its own (Window base + WindowSystem normally supply that;
+        // it's no longer registered with WindowSystem — see Plugin.cs), so calling it straight
+        // inside our own child region is exactly the "embed like the web UI's #chardetail" ask.
+        if (_detailWindow.IsOpen)
+        {
+            var avail = ImGui.GetContentRegionAvail();
+            var detailW = MathF.Min(avail.X * 0.42f, ImGui.GetFontSize() * 28f);
+            var tabsW = MathF.Max(ImGui.GetFontSize() * 16f, avail.X - detailW - ImGui.GetStyle().ItemSpacing.X);
+            if (ImGui.BeginChild("##shell_tabs_region", new Vector2(tabsW, 0)))
+                DrawTabBar();
+            ImGui.EndChild();
+            ImGui.SameLine();
+            if (ImGui.BeginChild("##shell_detail_region", new Vector2(0, 0), true))
+                DrawItemDetailInline();
+            ImGui.EndChild();
+        }
+        else
+        {
+            DrawTabBar();
+        }
+    }
+
+    private void DrawTabBar()
+    {
         if (ImGui.BeginTabBar("##GlamSourceShellTabs", ImGuiTabBarFlags.None))
         {
             // Character first (the plugin's reason to exist), Settings as a trailing cog
@@ -256,6 +283,14 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
             DrawTab(FontAwesomeIcon.Cog.ToIconString(), TabId.Settings, DrawSettingsTab, iconFont: true, trailing: true, tooltip: Loc.T("Settings"));
             ImGui.EndTabBar();
         }
+    }
+
+    private void DrawItemDetailInline()
+    {
+        if (ImGui.SmallButton($"×  {Loc.T("Close")}"))
+            _detailWindow.CloseInline();
+        ImGui.Separator();
+        _detailWindow.Draw();
     }
 
     // ponytail: top-right, above everything else — closest ImGui gets to "next to the window's

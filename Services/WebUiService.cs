@@ -38,6 +38,12 @@ public sealed class WebUiService : IDisposable
     // ponytail: on-demand wiki image lookup (see ItemImageService) — self-owned HttpClient, same as
     // how UniversalisService/CraftingCostService are wired elsewhere, no need to route through Plugin.cs.
     private readonly ItemImageService _imageService;
+    // ponytail: "universalis preise fehlen im webview" — ImGui's ItemDetailWindow has had this
+    // since forever (Plugin.cs wires its own UniversalisService instance into it), the web UI just
+    // never got an equivalent call wired in. Same hardcoded world/DC as everywhere else in this
+    // codebase (Plugin.cs, GlamSource.Mock/Program.cs) — not configurable anywhere today, so no
+    // new gap introduced by matching that.
+    private readonly IUniversalisService _universalis;
     // ponytail: "push" an item into the web UI from a native trigger (Examine-window right-click,
     // /glamsource mount) — there's no live socket to the browser tab, so this is a one-slot mailbox
     // the page polls and clears (GET /api/pendingitem below), same shape as _webPreviewGear above.
@@ -102,6 +108,7 @@ public sealed class WebUiService : IDisposable
         // separate in-memory caches are fine and cheap, but both should read/write the SAME files
         // on disk so a lookup done via one surface isn't re-fetched by the other)
         _imageService = new ItemImageService(new System.Net.Http.HttpClient(), dir != null ? Path.Combine(dir, "ImageCache") : null, onImageError);
+        _universalis = new UniversalisService(new System.Net.Http.HttpClient());
     }
 
     // ponytail: Browsingway has no IPC and no create-overlay command; it reads its config once at
@@ -505,6 +512,17 @@ public sealed class WebUiService : IDisposable
         {
             var detail = _detail.GetDetail(itemId);
             return detail == null ? Json(new { error = "not found" }, "404 Not Found") : Json(detail);
+        }
+
+        if (method == "GET" && path.StartsWith("/api/market/") && uint.TryParse(path["/api/market/".Length..], out var marketItemId))
+        {
+            // same blocking-await-on-request-thread pattern as /api/itemimage/ above — fine here
+            // too, this is a ThreadPool request thread, not the UI/Framework one. Rate-limited
+            // (1 req/sec per world+DC call) same as ImGui's own UniversalisService instance —
+            // separate in-memory cache, but Universalis prices don't change fast enough for that
+            // to matter for a "click an item, see roughly what it costs" use case.
+            var market = _universalis.GetMarketInfoAsync(marketItemId).GetAwaiter().GetResult();
+            return market == null ? Json(new { error = "not marketable or lookup failed" }, "404 Not Found") : Json(market);
         }
 
         if (method == "GET" && path.StartsWith("/api/inventory/") && uint.TryParse(path["/api/inventory/".Length..], out var invItemId))
@@ -1258,5 +1276,6 @@ public sealed class WebUiService : IDisposable
     {
         Stop();
         _imageService.Dispose();
+        (_universalis as IDisposable)?.Dispose();
     }
 }

@@ -171,6 +171,16 @@ public class ItemDetailWindow : Window, IDisposable
         _onOpenMap = callback;
     }
 
+    // ponytail: "kein extra Fenster" — the shell embeds Draw()'s content inline (see
+    // GlamSourceShellWindow.DrawItemDetailInline) instead of registering this as its own floating
+    // WindowSystem window. There's no native title-bar X to close it anymore, so the shell's own
+    // Close button needs an explicit way to clear both open-flags Draw() checks.
+    public void CloseInline()
+    {
+        _isOpen = false;
+        IsOpen = false;
+    }
+
     public void ShowItem(uint itemId)
     {
         // ponytail: no slot context in single-item mode.

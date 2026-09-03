@@ -313,6 +313,8 @@ const I18N={
   ev_inactive:{en:'not running right now',de:'läuft gerade nicht'},
   ev_unknown:{en:'live status unknown — check in-game',de:'Live-Status unbekannt — im Spiel prüfen'},
   ev_gone:{en:'no longer obtainable',de:'nicht mehr erhältlich'},
+  market_world:{en:'World:',de:'World:'},
+  market_dc:{en:'DC',de:'DC'},
   dtype_Dungeon:{en:'Dungeons',de:'Dungeons'},
   dtype_Trial:{en:'Trials',de:'Prüfungen'},
   dtype_Raid:{en:'Raids',de:'Raids'},
@@ -885,7 +887,7 @@ async function openItem(id){
   updateOverlayCompactness();
   const d=await fetch('/api/item/'+id).then(r=>r.ok?r.json():null);
   $('#detail').innerHTML=d?buildItemHtml(d):`<div class="empty">${t('not_found')}</div>`;
-  if(d){annotateInventory($('#detail'));annotateEvent($('#detail'),id)}
+  if(d){annotateInventory($('#detail'));annotateEvent($('#detail'),id);annotateMarket($('#detail'),id,d.isMarketable)}
 }
 
 // group: one or more sources sharing the same description+cost (see buildItemHtml) — one card,
@@ -941,6 +943,18 @@ async function annotateEvent(container,itemId){
   else status=t('ev_unknown');
   const cls=ev.active===true?'ok':ev.active===false&&!ev.recurring?'short':'';
   container.querySelector('.header .meta')?.insertAdjacentHTML('afterend',`<div class="meta ${cls}">${kind}: ${esc(ev.eventName)} — ${status}</div>`);
+}
+// "universalis preise fehlen im webview" — ImGui's ItemDetailWindow always had this
+// (DrawMarketPricesCompact), the web panel never fetched it at all. Same insert-after-header
+// pattern as annotateEvent above; skipped entirely for non-marketable items (no point hitting
+// Universalis for something that can't be traded).
+async function annotateMarket(container,itemId,isMarketable){
+  if(!isMarketable)return;
+  const m=await fetch(`/api/market/${itemId}`).then(r=>r.ok?r.json():null).catch(()=>null);
+  if(!m)return;
+  const dc=m.dcWorldName?` · ${t('market_dc')} (${esc(m.dcWorldName)}): <b style="color:var(--success)">${m.dcMinPrice.toLocaleString()} Gil</b>`:'';
+  container.querySelector('.header .meta')?.insertAdjacentHTML('afterend',
+    `<div class="meta">${t('market_world')} <b style="color:var(--accent)">${m.worldMinPrice.toLocaleString()} Gil</b>${dc}</div>`);
 }
 async function annotateInventory(container){
   const rows=[...container.querySelectorAll('.matrow[data-item]')];
@@ -1033,7 +1047,7 @@ async function showItemPanel(id){
   box.innerHTML=`<div class="empty"><span class="spinner"></span>${t('loading')}</div>`;
   const d=await fetch('/api/item/'+id).then(r=>r.ok?r.json():null);
   box.innerHTML=d?buildItemHtml(d,'showItemPanel'):`<div class="empty">${t('not_found')}</div>`;
-  if(d){annotateInventory(box);annotateEvent(box,id)}
+  if(d){annotateInventory(box);annotateEvent(box,id);annotateMarket(box,id,d.isMarketable)}
 }
 
 async function post(url){await fetch(url,{method:'POST'})}

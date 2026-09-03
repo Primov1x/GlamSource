@@ -161,7 +161,9 @@ public class Plugin : IAsyncDalamudPlugin
         itemImageService = new ItemImageService(new System.Net.Http.HttpClient(), imageCacheDir, ReportImageError);
         itemDetailWindow = new ItemDetailWindow(itemDetailService, sourceService, _universalisService, textureProvider, DataManager, itemImageService);
         itemDetailWindow.SetPlugin(this);
-        WindowSystem.AddWindow(itemDetailWindow);
+        // ponytail: "kein extra Fenster" — NOT registered with WindowSystem anymore. The shell
+        // draws its content inline (GlamSourceShellWindow.DrawItemDetailInline) instead of it
+        // popping up as its own floating window. Still disposed directly below, same as before.
 
         contextMenuService = new ContextMenuService(ContextMenu, _gameGui, itemId => OpenItemDetail(itemId), gameDataService, itemDetailService);
 
@@ -543,6 +545,10 @@ public class Plugin : IAsyncDalamudPlugin
         }
         else
         {
+            // detail now draws inline inside the shell (no floating window of its own anymore) —
+            // an external trigger (Examine right-click, /glamsource mount) needs the shell itself
+            // visible, or the detail panel would render into nothing.
+            shellWindow.IsOpen = true;
             itemDetailWindow.ShowItem(itemId);
         }
         // ponytail: webUiService is constructed further below the fields it's assigned in — fine,

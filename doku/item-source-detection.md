@@ -1,5 +1,33 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Item detail inline (no more separate window) + Universalis prices in the web UI (1.0.17.0)
+
+Two ImGui/web parity gaps, both live-reported:
+
+- **"kein extra Fenster"**: `ItemDetailWindow` used to be its own floating `WindowSystem` window —
+  every item click popped a SEPARATE draggable window next to the shell, unlike the web UI's
+  `#chardetail`, which has always shown item detail inline in the same page. `Draw()` never called
+  `ImGui.Begin/End` itself (Dalamud's `WindowSystem` supplied that around registered windows), so
+  its content was already a plain, embeddable render method — no rewrite needed, just a different
+  caller. Now `GlamSourceShellWindow` calls `_detailWindow.Draw()` directly inside its own
+  `Begin/End`, in a side child region that appears next to the tab bar whenever an item is open (new
+  `ItemDetailWindow.CloseInline()` replaces the native title-bar X, since there isn't one anymore).
+  `Plugin.cs` no longer registers it with `WindowSystem`; the one external trigger (Examine
+  right-click, `/glamsource mount`) now also force-opens the shell itself (`shellWindow.IsOpen =
+  true`) since the detail has nowhere to render if the shell isn't up. `GlamSource.Mock` mirrors the
+  same change (`MockShellWindow`/`Program.cs`) — it used to call `itemDetailWindow.Draw()` as a
+  fully separate top-level call with no window boundary of its own at all, arguably worse than the
+  real plugin's floating-window behavior.
+- **"universalis preise fehlen im webview"**: ImGui's `ItemDetailWindow` has shown World/DC market
+  prices since early on (its own `UniversalisService` instance via `Plugin.cs`); the web UI never
+  had an equivalent call wired in at all — `WebUiService` had a comment acknowledging the gap but no
+  actual `UniversalisService` field. New `GET /api/market/{itemId}` (404 for non-marketable items,
+  matches `WebPreviewServer`'s mirror for local testing), new `annotateMarket()` in `WebUiPage.cs`
+  following the exact same "fetch after render, insert after `.header .meta`" pattern already used
+  for event status/inventory. Verified live against the real Universalis API via the mock: item 5
+  (Earth Shard) → `World: 67 Gil · DC (Raiden): 29 Gil`, non-marketable items 404 cleanly and render
+  nothing.
+
 ## Silent-failure UX: image error surfaced, duty cache prefetched on entry (1.0.16.0)
 
 Two "user gets stressed and uninstalls" scenarios, both root-caused to the same pattern: a network
