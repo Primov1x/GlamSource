@@ -522,7 +522,7 @@ public sealed class WebUiService : IDisposable
         if (method == "GET" && path.StartsWith("/api/duty/") && uint.TryParse(path["/api/duty/".Length..], out var dutyId))
         {
             var dd = _detail.GetDutyDetail(dutyId);
-            return dd == null ? ("404 Not Found", "text/plain", Encoding.UTF8.GetBytes("duty not found")) : Json(dd);
+            return dd == null ? ("404 Not Found", "text/plain", Encoding.UTF8.GetBytes("duty not found")) : Json(AnnotateUnlocks(dd));
         }
 
         // Outfit shopping list (prototype): the shown character's slots -> one best source per item,
@@ -549,7 +549,14 @@ public sealed class WebUiService : IDisposable
         if (method == "GET" && path.StartsWith("/api/item/") && uint.TryParse(path["/api/item/".Length..], out var itemId))
         {
             var detail = _detail.GetDetail(itemId);
-            return detail == null ? Json(new { error = "not found" }, "404 Not Found") : Json(detail);
+            if (detail == null) return Json(new { error = "not found" }, "404 Not Found");
+            // "hat man das schon unlocked" — only meaningful when the viewed item itself IS a
+            // mount/minion unlock item; null (omitted) for everything else, not a false "locked".
+            var unlocked = UnlockCheckService.CheckUnlocked(_detail, itemId);
+            if (unlocked is not { } u) return Json(detail);
+            var node = JsonSerializer.SerializeToNode(detail, JsonOpts)!.AsObject();
+            node["unlocked"] = u;
+            return Json(node);
         }
 
         if (method == "GET" && path.StartsWith("/api/market/") && uint.TryParse(path["/api/market/".Length..], out var marketItemId))
@@ -1309,6 +1316,28 @@ public sealed class WebUiService : IDisposable
 
     private static (string, string, byte[]) Json(object payload, string status = "200 OK")
         => (status, "application/json", Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload, JsonOpts)));
+
+    // "hat man das mount oder minion schon unlocked, überall" — only Mount/Minion-kind drops carry a
+    // native unlock check (everything else has no such concept), so only those get annotated; skips
+    // the check entirely for the rest instead of doing a pointless lookup.
+    private DutyDrop Annotate(DutyDrop d) => d.Kind is "Mount" or "Minion"
+        ? d with { Unlocked = UnlockCheckService.CheckUnlocked(_detail, d.ItemId) } : d;
+
+    private DutyDetail AnnotateUnlocks(DutyDetail dd) => dd with
+    {
+        General = dd.General.Select(Annotate).ToList(),
+        Featured = dd.Featured.Select(Annotate).ToList(),
+        Bosses = dd.Bosses.Select(b => b with
+        {
+            Drops = b.Drops.Select(Annotate).ToList(),
+            Chests = b.Chests.Select(c => c with { Items = c.Items.Select(Annotate).ToList() }).ToList(),
+        }).ToList(),
+        Exchanges = dd.Exchanges.Select(e => e with
+        {
+            Token = e.Token == null ? null : Annotate(e.Token),
+            Items = e.Items.Select(Annotate).ToList(),
+        }).ToList(),
+    };
 
     public void Dispose()
     {

@@ -123,6 +123,8 @@ public static class Loc
         ["Set"] = "Set",
         ["Rest of the set:"] = "Rest des Sets:",
         ["Can contain:"] = "Kann enthalten:",
+        ["Unlocked"] = "Freigeschaltet",
+        ["Not unlocked"] = "Nicht freigeschaltet",
         ["← Back"] = "← Zurück",
         ["Wiki"] = "Wiki",
         ["Market prices"] = "Marktpreise",

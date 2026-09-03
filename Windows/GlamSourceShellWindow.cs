@@ -19,6 +19,7 @@ using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.FFXIV.Client.UI.Misc;
 using GlamSource.Core;
+using GlamSource.Services;
 using Glamourer.Api.Enums;
 using Glamourer.Api.IpcSubscribers;
 using Lumina.Excel.Sheets;
@@ -1502,6 +1503,21 @@ private void ApplyTargetGlamourToSelf()
             _detailWindow.ShowItem(r.ItemId);
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip($"Item ID {r.ItemId} · iLvl {r.ItemLevel} — click for details");
+        // "hat man das mount oder minion schon unlocked" — only these two kinds have a concept of it
+        if (r.Kind is "Mount" or "Minion")
+        {
+            var unlocked = UnlockCheckService.CheckUnlocked(_detailWindow.DetailService, r.ItemId);
+            if (unlocked == true)
+            {
+                ImGui.SameLine();
+                ImGui.TextColored(UiStyle.Success, $"✓ {Loc.T("Unlocked")}");
+            }
+            else if (unlocked == false)
+            {
+                ImGui.SameLine();
+                ImGui.TextColored(UiStyle.Muted, Loc.T("Not unlocked"));
+            }
+        }
     }
 
     // Outfit shopping list (prototype): stops with items (owned = green), costs and materials.

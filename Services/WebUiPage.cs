@@ -295,6 +295,8 @@ const I18N={
   shopping_items:{en:'Pieces here',de:'Teile hier'},
   rest_of_set:{en:'Rest of the set',de:'Rest des Sets'},
   can_contain:{en:'Can contain',de:'Kann enthalten'},
+  unlocked_yes:{en:'Unlocked',de:'Freigeschaltet'},
+  unlocked_no:{en:'Not unlocked',de:'Nicht freigeschaltet'},
   open_craftlog:{en:'Open Crafting Log',de:'Herstellungsliste öffnen'},
   npc:{en:'NPC',de:'NPC'},
   location:{en:'Location',de:'Ort'},
@@ -787,7 +789,10 @@ function renderDutyList(){
   }
 }
 $('#dq').addEventListener('input',renderDutyList);
-const featSection=list=>`<div class="dsec" style="margin-top:0"><div class="dsech">${t('duty_featured')}</div><div class="results dgrid">${list.map(x=>`<div class="row" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${img(x.iconId,28)}<span>${esc(x.name)}<span class="ilvl">${x.kind==='Mount'?t('mount'):t('minion')}</span></span><img class="rowpreview" src="/api/itemimage/${x.itemId}" loading="lazy" onerror="this.remove()"></div>`).join('')}</div></div>`;
+// x.unlocked: true/false when it's a Mount/Minion (native PlayerState/UIState check), undefined
+// otherwise — only show the badge when we actually have an answer.
+const unlockBadge=x=>x.unlocked===undefined?'':x.unlocked?`<span class="ilvl" style="color:var(--good,#7fd97f)">✓ ${t('unlocked_yes')}</span>`:`<span class="ilvl">${t('unlocked_no')}</span>`;
+const featSection=list=>`<div class="dsec" style="margin-top:0"><div class="dsech">${t('duty_featured')}</div><div class="results dgrid">${list.map(x=>`<div class="row" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${img(x.iconId,28)}<span>${esc(x.name)}<span class="ilvl">${x.kind==='Mount'?t('mount'):t('minion')}</span>${unlockBadge(x)}</span><img class="rowpreview" src="/api/itemimage/${x.itemId}" loading="lazy" onerror="this.remove()"></div>`).join('')}</div></div>`;
 const previewRows=list=>list.map(x=>`<div class="row" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${img(x.iconId,28)}<span>${esc(x.name)}${x.itemLevel?`<span class="ilvl">iLvl ${x.itemLevel}</span>`:''}</span><img class="rowpreview" src="/api/itemimage/${x.itemId}" loading="lazy" onerror="this.remove()"></div>`).join('');
 const dropRows=list=>list.map(x=>`<div class="row" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${img(x.iconId,28)}<span>${esc(x.name)}${x.itemLevel?`<span class="ilvl">iLvl ${x.itemLevel}</span>`:''}</span></div>`).join('');
 async function selectDuty(id){
@@ -862,7 +867,7 @@ function updateOverlayCompactness(){
 // to #detail) or 'showItemPanel' (Charakter tab, writes to #chardetail). Set-member chips need to
 // call back into whichever panel is actually showing, not always the Suche one.
 function buildItemHtml(d,openFn='openItem'){
-  let h=`<div class="header">${img(d.iconId,48)}<div><h2 class="name">${esc(d.name)}</h2><div class="meta">${t('item_id')} ${d.itemId} · iLvl ${d.itemLevel}${d.isMarketable?` · ${t('marketable')}`:''}${d.setName?` · ${t('set_label')}: ${esc(d.setName)}`:''}</div>${d.isEquippable?`<button class="act" style="margin-top:4px" title="${t('apply_item_tt')}" onclick="glamourerPost('/api/action/glamourer/item/${d.itemId}',this)">${t('apply_btn')}</button>`:''}</div></div><div class="preview"><img src="/api/itemimage/${d.itemId}" loading="lazy" onerror="this.parentElement.style.display='none'"></div>`;
+  let h=`<div class="header">${img(d.iconId,48)}<div><h2 class="name">${esc(d.name)}</h2><div class="meta">${t('item_id')} ${d.itemId} · iLvl ${d.itemLevel}${d.isMarketable?` · ${t('marketable')}`:''}${d.setName?` · ${t('set_label')}: ${esc(d.setName)}`:''}${d.unlocked===true?` · ✓ ${t('unlocked_yes')}`:d.unlocked===false?` · ${t('unlocked_no')}`:''}</div>${d.isEquippable?`<button class="act" style="margin-top:4px" title="${t('apply_item_tt')}" onclick="glamourerPost('/api/action/glamourer/item/${d.itemId}',this)">${t('apply_btn')}</button>`:''}</div></div><div class="preview"><img src="/api/itemimage/${d.itemId}" loading="lazy" onerror="this.parentElement.style.display='none'"></div>`;
   if((d.setMembers??[]).length){
     h+=`<div class="tbl">${t('rest_of_set')}</div><div style="display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 14px">`;
     for(const m of d.setMembers)h+=`<div class="row" style="width:auto" onclick="${openFn}(${m.itemId})">${img(m.iconId,24)}<span>${esc(m.name)}</span></div>`;

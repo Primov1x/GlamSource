@@ -63,7 +63,10 @@ public record ItemSourceDetail(
 /// Difficulty: "Normal" / "Extreme" / "Savage" / "Unreal" / "Alliance" — the Duty Finder's sub-folders.
 public sealed record DutyInfo(uint CfcId, string Name, string Type, uint TerritoryTypeId, int DropCount, uint ImageId, int Level, int ItemLevel, string Expansion, uint TypeIconId, IReadOnlyList<string> Bosses, string Difficulty);
 /// Kind: "Mount" (item of a MountItemMap entry) / "Minion" (ItemUICategory 81) / "" — the tab lifts those to the top.
-public sealed record DutyDrop(uint ItemId, string Name, uint IconId, int ItemLevel, string Kind = "");
+/// Unlocked: null unless Kind is Mount/Minion — this record lives in GlamSource.Core (no clib access),
+/// so it's always null here; the Services layer (which CAN call PlayerState/UIState) fills it in
+/// after the fact via `with` before the data reaches a UI, see UnlockCheckService.
+public sealed record DutyDrop(uint ItemId, string Name, uint IconId, int ItemLevel, string Kind = "", bool? Unlocked = null);
 public sealed record DutyChest(int CofferNo, IReadOnlyList<DutyDrop> Items);
 public sealed record DutyBoss(int FightNo, string Name, IReadOnlyList<DutyDrop> Drops, IReadOnlyList<DutyChest> Chests);
 /// Duty Finder style detail: banner image (ContentFinderCondition.Image), per-boss drops and
@@ -94,6 +97,12 @@ public interface IItemDetailService
     uint? FindDutyByTerritory(uint territoryTypeId);
     GameData GameData { get; }
     uint? ResolveMountItemId(uint mountId);
+    /// Item -> Mount/Companion(minion) sheet RowId, resolved natively from Item.ItemAction (Action
+    /// RowId 1322 = Mount, 853 = Companion; Data[0] = the target RowId) — no external dataset needed.
+    /// Null when the item isn't a mount/minion unlock item. Feeds UnlockCheckService (Services/,
+    /// has clib access this project doesn't) to check PlayerState/UIState unlock status.
+    uint? MountRowIdForItem(uint itemId);
+    uint? CompanionRowIdForItem(uint itemId);
     string? GetEnglishName(uint itemId);
     /// Event item availability (FFXIV Collect "Event" sources + a live Lodestone news check).
     /// Null when the item isn't a known event item.
@@ -2657,6 +2666,35 @@ public sealed class ItemDetailService : IItemDetailService
     /// <summary>MountId (as read from Character.Mount.MountId natively) -> its unlock item, or null
     /// if this mount isn't in the scraped dataset.</summary>
     public uint? ResolveMountItemId(uint mountId) => _mountToItemId.TryGetValue(mountId, out var id) ? id : null;
+
+    // Item -> Mount/Companion RowId, built natively from Item.ItemAction — no external dataset.
+    // Verified live against real Item/ItemAction sheet data: Chocobo Whistle (item 6001) has
+    // ItemAction.Action.RowId 1322 (Mount), Data[0] 1 (Mount sheet row 1); Wind-up Cursor (item 6212)
+    // has Action.RowId 853 (Companion/minion), Data[0] 51 (Companion sheet row 51).
+    private const uint MountActionType = 1322;
+    private const uint CompanionActionType = 853;
+    private Dictionary<uint, uint>? _itemToMountRowId;
+    private Dictionary<uint, uint>? _itemToCompanionRowId;
+    private void EnsureUnlockMaps()
+    {
+        if (_itemToMountRowId != null) return;
+        _itemToMountRowId = new();
+        _itemToCompanionRowId = new();
+        var itemSheet = _gameData.GetExcelSheet<Item>();
+        if (itemSheet == null) return;
+        foreach (var item in itemSheet)
+        {
+            if (!item.ItemAction.IsValid) continue;
+            var ia = item.ItemAction.Value;
+            if (ia.Data.Count == 0) continue;
+            var target = ia.Data[0];
+            if (target == 0) continue;
+            if (ia.Action.RowId == MountActionType) _itemToMountRowId[item.RowId] = target;
+            else if (ia.Action.RowId == CompanionActionType) _itemToCompanionRowId[item.RowId] = target;
+        }
+    }
+    public uint? MountRowIdForItem(uint itemId) { EnsureUnlockMaps(); return _itemToMountRowId!.TryGetValue(itemId, out var id) ? id : null; }
+    public uint? CompanionRowIdForItem(uint itemId) { EnsureUnlockMaps(); return _itemToCompanionRowId!.TryGetValue(itemId, out var id) ? id : null; }
 
     // Duty and NPC display names come back lowercase from the game's own sheets ("the minstrel's
     // ballad...", "chopper") — they're written to be embedded mid-sentence elsewhere in the UI, but
