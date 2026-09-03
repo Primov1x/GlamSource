@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Globalization;
+using System.IO;
 using Newtonsoft.Json.Linq;
 
 namespace GlamSource.Core;
@@ -23,11 +24,19 @@ public sealed class GarlandInstanceService : IGarlandInstanceService
 {
     private readonly HttpClient _http;
     private readonly ConcurrentDictionary<uint, Task<IReadOnlyList<GarlandCoffer>>> _cache = new();
+    // small (a few KB per duty, ~800 duties tops) and rarely changes (patch-locked content) — a disk
+    // cache here needs no size budget, unlike the item images. Null = disk caching off.
+    private readonly string? _cacheDir;
 
-    public GarlandInstanceService(HttpClient http)
+    public GarlandInstanceService(HttpClient http, string? cacheDir = null)
     {
         _http = http ?? throw new ArgumentNullException(nameof(http));
         _http.Timeout = TimeSpan.FromSeconds(6);
+        if (cacheDir != null)
+        {
+            try { Directory.CreateDirectory(cacheDir); _cacheDir = cacheDir; }
+            catch (Exception) { _cacheDir = null; }
+        }
     }
 
     public Task<IReadOnlyList<GarlandCoffer>> GetCoffersAsync(uint instanceContentId)
@@ -35,9 +44,21 @@ public sealed class GarlandInstanceService : IGarlandInstanceService
 
     private async Task<IReadOnlyList<GarlandCoffer>> Fetch(uint id)
     {
+        var diskPath = _cacheDir == null ? null : Path.Combine(_cacheDir, $"{id}.json");
         try
         {
-            var json = await _http.GetStringAsync($"https://garlandtools.org/db/doc/instance/en/2/{id}.json").ConfigureAwait(false);
+            string json;
+            if (diskPath != null && File.Exists(diskPath))
+                json = await File.ReadAllTextAsync(diskPath).ConfigureAwait(false);
+            else
+            {
+                json = await _http.GetStringAsync($"https://garlandtools.org/db/doc/instance/en/2/{id}.json").ConfigureAwait(false);
+                if (diskPath != null)
+                {
+                    try { await File.WriteAllTextAsync(diskPath, json); }
+                    catch (Exception) { /* best-effort */ }
+                }
+            }
             var instance = JObject.Parse(json)["instance"];
             var list = new List<GarlandCoffer>();
             if (instance?["coffers"] is JArray coffers)

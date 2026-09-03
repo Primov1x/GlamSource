@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Text.RegularExpressions;
@@ -38,7 +39,15 @@ public sealed class ItemImageService : IItemImageService, IDisposable
         "<img[^>]+src=\"(?<src>/mediawiki/images/thumb/[^\"]+/(?<width>\\d+)px-(?<file>[^\"/]+))\"",
         RegexOptions.Compiled);
 
-    public ItemImageService(HttpClient httpClient)
+    // "was können wir cachen ohne unnötig groß zu werden": wiki bytes never change for an item id,
+    // but the in-memory cache above is gone on every plugin reload — persist the actual JPEG bytes
+    // to disk too, so a fresh session skips BOTH the wiki page scrape and the image download for
+    // anything already looked up before. Capped (oldest files evicted) so months of use can't grow
+    // this without bound. Null = disk caching off (e.g. unit tests).
+    private readonly string? _cacheDir;
+    private const long MaxCacheBytes = 50 * 1024 * 1024; // 50 MB — a few thousand item portraits
+
+    public ItemImageService(HttpClient httpClient, string? cacheDir = null)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         // .NET HttpClient sends NO User-Agent by default — Cloudflare-fronted wikis like this one
@@ -48,6 +57,11 @@ public sealed class ItemImageService : IItemImageService, IDisposable
         if (!_httpClient.DefaultRequestHeaders.UserAgent.Any())
             _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+        if (cacheDir != null)
+        {
+            try { Directory.CreateDirectory(cacheDir); _cacheDir = cacheDir; }
+            catch (Exception) { _cacheDir = null; } // read-only disk, permissions, ... — degrade to memory-only
+        }
     }
 
     public async Task<string?> GetPreviewImageUrlAsync(uint itemId, string itemName)
@@ -109,18 +123,53 @@ public sealed class ItemImageService : IItemImageService, IDisposable
     // ImGui needs the actual bytes. Separate rate-limited GET, same cache-key convention.
     public async Task<byte[]?> GetPreviewImageBytesAsync(uint itemId, string itemName)
     {
+        var diskPath = _cacheDir == null ? null : Path.Combine(_cacheDir, $"{itemId}.img");
+        if (diskPath != null && File.Exists(diskPath))
+        {
+            try { return await File.ReadAllBytesAsync(diskPath); }
+            catch (Exception) { /* fall through and re-fetch */ }
+        }
+
         var url = await GetPreviewImageUrlAsync(itemId, itemName);
         if (url == null) return null;
 
+        byte[] bytes;
         try
         {
             await RateLimit();
-            return await _httpClient.GetByteArrayAsync(url);
+            bytes = await _httpClient.GetByteArrayAsync(url);
         }
         catch (Exception ex)
         {
             LastError = $"{DateTime.Now:HH:mm:ss} image-fetch '{itemName}': {ex.Message}";
             return null;
+        }
+
+        if (diskPath != null)
+        {
+            try
+            {
+                await File.WriteAllBytesAsync(diskPath, bytes);
+                EvictOldestIfOverBudget(_cacheDir!, MaxCacheBytes);
+            }
+            catch (Exception) { /* best-effort — a failed write just means no disk cache for this one */ }
+        }
+        return bytes;
+    }
+
+    // public + static (not private) so ItemImageServiceCacheTests can drive it directly against a
+    // real temp directory without a network round trip.
+    public static void EvictOldestIfOverBudget(string cacheDir, long maxBytes)
+    {
+        var files = new DirectoryInfo(cacheDir).GetFiles("*.img");
+        var total = files.Sum(f => f.Length);
+        if (total <= maxBytes) return;
+        // oldest-written first, delete until back under ~80% of budget — avoids evicting on every
+        // single write once the cache is full ("thrashing" right at the boundary)
+        foreach (var f in files.OrderBy(f => f.LastWriteTimeUtc))
+        {
+            if (total <= maxBytes * 0.8) break;
+            try { total -= f.Length; f.Delete(); } catch (Exception) { /* skip, try the next one */ }
         }
     }
 

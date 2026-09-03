@@ -37,7 +37,7 @@ public sealed class WebUiService : IDisposable
     private readonly GlamourerColorIpc _glamourerColors;
     // ponytail: on-demand wiki image lookup (see ItemImageService) — self-owned HttpClient, same as
     // how UniversalisService/CraftingCostService are wired elsewhere, no need to route through Plugin.cs.
-    private readonly ItemImageService _imageService = new(new System.Net.Http.HttpClient());
+    private readonly ItemImageService _imageService;
     // ponytail: "push" an item into the web UI from a native trigger (Examine-window right-click,
     // /glamsource mount) — there's no live socket to the browser tab, so this is a one-slot mailbox
     // the page polls and clears (GET /api/pendingitem below), same shape as _webPreviewGear above.
@@ -98,6 +98,10 @@ public sealed class WebUiService : IDisposable
         // pluginConfigs/GlamSource.json -> sibling Browsingway.json
         var dir = pi.ConfigFile.DirectoryName;
         _browsingwayConfigPath = dir != null ? Path.Combine(dir, "Browsingway.json") : null;
+        // same on-disk ImageCache as Plugin.cs's own ItemImageService instance (see its comment —
+        // separate in-memory caches are fine and cheap, but both should read/write the SAME files
+        // on disk so a lookup done via one surface isn't re-fetched by the other)
+        _imageService = new ItemImageService(new System.Net.Http.HttpClient(), dir != null ? Path.Combine(dir, "ImageCache") : null);
     }
 
     // ponytail: Browsingway has no IPC and no create-overlay command; it reads its config once at

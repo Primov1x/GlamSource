@@ -27,6 +27,34 @@ what do I need and where". Prototype, deliberately small:
   included, no same-model alternatives when the best source is unobtainable, "Other" stops are
   just the source text.
 
+## Disk cache for wiki images and Garland duty data (1.0.15.0)
+
+Follow-up to 1.0.14's browser-side caching: "was können wir cachen ohne unnötig groß zu werden".
+Two things genuinely worth persisting across plugin reloads (their answer never changes for a
+given id, unlike Lodestone's live event status, which stays session-only on purpose):
+
+- **Wiki item preview images** (`ItemImageService`): bytes now written to
+  `pluginConfigs/GlamSource/ImageCache/{itemId}.img` on first fetch, read from there on every
+  later request — skips BOTH the wiki page scrape and the image download entirely, not just the
+  browser round trip. Capped at 50 MB, oldest files (by last-write time) evicted back down to 80%
+  of budget once exceeded — a few thousand item portraits, can't grow unbounded over months of
+  use. `EvictOldestIfOverBudget` is `public static` and unit-tested directly against a real temp
+  directory (`ItemImageServiceCacheTests`, no network needed). Verified live: first fetch of item
+  24599 took 1.14s (network), second took 0.001s (disk) — file `24599.img` matches the same 3695
+  bytes. WebUiService's own separate `ItemImageService` instance points at the same folder (only
+  the in-memory URL cache stays per-instance, unchanged from before).
+- **Garland Tools duty coffer data** (`GarlandInstanceService`): raw JSON written to
+  `pluginConfigs/GlamSource/GarlandCache/{instanceId}.json`, read from there before ever hitting
+  the network. No size cap needed — ~800 duties tops, a few KB each. Verified live: 277ms → 3ms
+  on a repeat request for the same duty.
+- **Deliberately NOT disk-cached**: game icons (`/api/icon/`) — free, instant, straight from local
+  Lumina data, caching to disk would only duplicate game files for no gain. Lodestone's event
+  headline list — must reflect the CURRENT moment, a disk cache would serve stale "is it running"
+  answers across sessions; stays in-memory, one fetch per plugin session, as designed.
+- Mock gets the same two folders under its own `bin/Debug/` (gitignored), so the disk-cache path
+  is exercised locally too — `WebPreviewServer` and the Mock's own `ItemDetailWindow` instance now
+  take an `imageCacheDir` param instead of a bare `new ItemImageService(...)`.
+
 ## Icon/preview images now cached by the browser (1.0.14.0)
 
 "Doof jedes mal 'neu' zu laden": every response, including `/api/icon/{id}` and

@@ -139,14 +139,21 @@ public class Plugin : IAsyncDalamudPlugin
             () => Configuration);
 
 
-        itemDetailService = new ItemDetailService(DataManager.GameData, new GarlandInstanceService(new System.Net.Http.HttpClient()), new LodestoneEventService(new System.Net.Http.HttpClient()));
+        // "was können wir cachen ohne unnötig groß zu werden": wiki images + Garland duty docs never
+        // change for a given id, but were re-fetched from the network on every plugin reload — both
+        // now persist to disk here too (WebUiService's own ItemImageService instance points at the
+        // same ImageCache folder, see its constructor).
+        var configDir = PluginInterface.ConfigFile.DirectoryName;
+        var imageCacheDir = configDir != null ? Path.Combine(configDir, "ImageCache") : null;
+        var garlandCacheDir = configDir != null ? Path.Combine(configDir, "GarlandCache") : null;
+        itemDetailService = new ItemDetailService(DataManager.GameData, new GarlandInstanceService(new System.Net.Http.HttpClient(), garlandCacheDir), new LodestoneEventService(new System.Net.Http.HttpClient()));
         var universalisHttpClient = new System.Net.Http.HttpClient();
         _universalisService = new UniversalisService(universalisHttpClient, "Shiva", "Light");
         var craftingCostService = new CraftingCostService(itemDetailService, _universalisService!);
         CraftingCostService = craftingCostService;
         // ponytail: separate instance from WebUiService's own — cheap (in-memory cache, no shared
-        // state needed), avoids reshaping WebUiService's constructor for this.
-        itemImageService = new ItemImageService(new System.Net.Http.HttpClient());
+        // state needed), avoids reshaping WebUiService's constructor for this. Same disk cache dir.
+        itemImageService = new ItemImageService(new System.Net.Http.HttpClient(), imageCacheDir);
         itemDetailWindow = new ItemDetailWindow(itemDetailService, sourceService, _universalisService, textureProvider, DataManager, itemImageService);
         itemDetailWindow.SetPlugin(this);
         WindowSystem.AddWindow(itemDetailWindow);
