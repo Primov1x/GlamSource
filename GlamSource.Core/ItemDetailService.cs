@@ -936,10 +936,18 @@ public sealed class ItemDetailService : IItemDetailService
             results.Add(Note(ItemSourceType.Other, tokenInboundNote));
         if ((tokenInboundNote != null || results.Count == 0) && TradeInUses.TryGetValue(itemId, out var tradeIns))
         {
-            foreach (var t in tradeIns.Take(3))
+            // ponytail: used to be one near-identical card PER received item (Take(3), same shop,
+            // "Open item" jumping to just one of them) — same "unübersichtlich" repeated-card problem
+            // the vendor-location grouping above already solved once. Group by shop instead: one card
+            // listing every piece it buys, no "Open item" button (ambiguous with >1 destination).
+            foreach (var group in tradeIns.GroupBy(t => t.shop).Take(3))
+            {
+                var names = string.Join(", ", group.Select(g => g.receiveName).Distinct());
+                var single = group.Count() == 1 ? group.First() : (string.Empty, 0u, string.Empty);
                 results.Add(Note(ItemSourceType.Other,
-                    $"Trade-in only — handed over at \"{t.shop}\" to receive {t.receiveName}; the item itself isn't sold there.",
-                    sourceItemId: t.receiveId));
+                    $"Trade-in only — handed over at \"{group.Key}\" to receive {names}; the item itself isn't sold there.",
+                    sourceItemId: single.Item2 > 0 ? single.Item2 : null));
+            }
         }
 
         // 8. Mogstation â€” always shown additively alongside any other detected sources. Live
