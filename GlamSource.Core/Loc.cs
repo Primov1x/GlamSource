@@ -62,7 +62,6 @@ public static class Loc
             "Jeden Slot in die normale Anprobe einreihen. Waffen werden ausgelassen.",
         ["Preview initializing..."] = "Vorschau wird initialisiert...",
         ["Waiting for texture..."] = "Warte auf Textur...",
-        ["Show Weapon/Tool"] = "Waffe/Werkzeug anzeigen",
         ["Drag: rotate · Right-drag: orbit · Wheel: zoom to cursor"] =
             "Ziehen: drehen · Rechts-Ziehen: umkreisen · Rad: zoomen",
         ["Recent"] = "Verlauf",
@@ -168,7 +167,7 @@ public static class Loc
         ["Alliance"] = "Allianz",
         ["Trials"] = "Prüfungen",
         ["Raids"] = "Raids",
-        ["Ultimates"] = "Fatale",
+        ["Ultimates"] = "Ultimates", // kept English per user request, not "Fatale"
         ["Other duties"] = "Sonstige",
         ["Back to preview"] = "Zurück zur Vorschau",
         ["stops"] = "Stationen",

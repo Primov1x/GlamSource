@@ -27,6 +27,35 @@ what do I need and where". Prototype, deliberately small:
   included, no same-model alternatives when the best source is unobtainable, "Other" stops are
   just the source text.
 
+## "Ultimates" kept English, not "Fatale" (1.0.11.0)
+
+User correction: "Fatale" (our German translation for the Ultimates duty-type folder) should stay
+English — `dtype_Ultimate` (web) and `["Ultimates"]` (ImGui `Loc.cs`) now map to `"Ultimates"` in
+German too. Checked "Dungeons" while at it: the real German game client already calls the
+Dungeon `ContentType` "Dungeons" (verified via `ContentType` sheet, `Language.German`, row 2) —
+matches what we already had, no change needed there. Also fixed a real `CS8604` nullable warning
+in the event-status endpoint (`WebUiService.cs`, a `null : new {...}` ternary) found while
+rebuilding for this change.
+
+## Missing web translations + parked weapon toggle removed (1.0.10.0)
+
+- **"Übersetzungen fehlen überall"**: a systematic sweep (`grep -noE '>[A-Z][a-zA-Z ]{2,30}<'`) of
+  `WebUiPage.cs` found literal English strings that never went through the `t()` I18N table —
+  "Item ID", "marketable", "Set:", "Rest of the set", "Open Crafting Log", "Duty Finder" (item
+  cards), "NPC"/"Location" (both the item-detail and shopping-list source tables), "Map" button,
+  "Cost"/"Materials"/"Pieces" section labels (both the item-detail cards and the shopping list),
+  "Glam" badge. All now route through new I18N keys (`item_id`, `marketable`, `set_label`,
+  `rest_of_set`, `open_craftlog`, `npc`, `location`, `cost_label`, `materials_label`,
+  `pieces_label`, `glam_badge`) or the existing `duty_open`. Verified live: DE toggle now shows
+  "Item-ID", "Kosten", "Teile hier" etc. **Still out of scope, unchanged, documented already**:
+  the item *source description* sentences themselves ("Trade-in only — handed over at...") are
+  generated dynamically in `ItemDetailService` from game data and stay English regardless of the
+  toggle — translating hundreds of composed sentences was never in scope, only the UI chrome.
+- **Parked "Waffe/Nur Waffe" toggle removed** (ImGui Character tab): the disabled "Show
+  Weapon/Tool" checkbox (dead since the weapon-preview mechanic was parked, see
+  doku/character-preview.md) is gone along with its now-dead `_weaponDrawn` field and Loc entry.
+  The parked renderer mechanic itself is untouched — only the inert UI control is gone.
+
 ## Duty names capitalized, mount wiki images fixed (1.0.9.0)
 
 Two bugs found live testing 1.0.8.0 ("the Minstrel's Ballad: Zodiark's Fall" — no image, lowercase "the"):

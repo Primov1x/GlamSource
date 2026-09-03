@@ -914,17 +914,8 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         }
 
 
-        // ponytail: deaktiviert nach 20 gescheiterten Anläufen (doku/character-preview.md) —
-        // CharaView zeigt Waffen strukturell nicht zuverlässig; Mechanik bleibt im Code für eine
-        // spätere GPose-basierte Neuauflage, nur die Bedienung ist gesperrt.
-        using (ImRaii.Disabled())
-        {
-            var dummy = _weaponDrawn;
-            ImGui.Checkbox(Loc.T("Show Weapon/Tool"), ref dummy);
-        }
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Vorübergehend deaktiviert — siehe doku/character-preview.md");
-        ImGui.SameLine();
+        // "Waffe/Nur Waffe" toggle removed (user request) — the parked mechanic itself stays in
+        // code for a possible GPose-based rebuild, see doku/character-preview.md
         ImGuiComponents.HelpMarker(Loc.T("Drag: rotate · Right-drag: orbit · Wheel: zoom to cursor"));
 
         var avail = ImGui.GetContentRegionAvail();
@@ -992,7 +983,6 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
     }
 
     private Vector2? _previewDragLast;
-    private bool _weaponDrawn = false; // parked weapon feature (doku/character-preview.md); explicit init keeps CS0649 quiet
 
     private void DrawRecentSidebar()
     {

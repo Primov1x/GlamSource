@@ -485,7 +485,7 @@ public sealed class WebUiService : IDisposable
         if (method == "GET" && path.StartsWith("/api/item/") && path.EndsWith("/event") && uint.TryParse(path["/api/item/".Length..^"/event".Length], out var eventItemId))
         {
             var ev = _detail.GetEventStatusAsync(eventItemId).GetAwaiter().GetResult(); // request thread, blocking is fine
-            return Json(ev == null ? null : new { eventName = ev.EventName, recurring = ev.Recurring, active = ev.Active });
+            return Json(ev == null ? null! : new { eventName = ev.EventName, recurring = ev.Recurring, active = ev.Active });
         }
 
         if (method == "GET" && path == "/api/jobs")

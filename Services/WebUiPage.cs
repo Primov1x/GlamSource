@@ -291,6 +291,17 @@ const I18N={
   shopping_stops:{en:'stops',de:'Stationen'},
   shopping_total:{en:'Total cost',de:'Gesamtkosten'},
   shopping_items:{en:'Pieces here',de:'Teile hier'},
+  rest_of_set:{en:'Rest of the set',de:'Rest des Sets'},
+  open_craftlog:{en:'Open Crafting Log',de:'Herstellungsliste öffnen'},
+  npc:{en:'NPC',de:'NPC'},
+  location:{en:'Location',de:'Ort'},
+  cost_label:{en:'Cost',de:'Kosten'},
+  materials_label:{en:'Materials',de:'Materialien'},
+  pieces_label:{en:'Pieces',de:'Teile'},
+  glam_badge:{en:'Glam',de:'Glam'},
+  item_id:{en:'Item ID',de:'Item-ID'},
+  marketable:{en:'marketable',de:'handelbar'},
+  set_label:{en:'Set',de:'Set'},
   bags:{en:'Bags',de:'Taschen'},
   saddlebag:{en:'Saddlebag',de:'Satteltasche'},
   apply_btn:{en:'Apply to Self',de:'Auf mich anwenden'},
@@ -305,7 +316,7 @@ const I18N={
   dtype_Dungeon:{en:'Dungeons',de:'Dungeons'},
   dtype_Trial:{en:'Trials',de:'Prüfungen'},
   dtype_Raid:{en:'Raids',de:'Raids'},
-  dtype_Ultimate:{en:'Ultimates',de:'Fatale'},
+  dtype_Ultimate:{en:'Ultimates',de:'Ultimates'}, // kept English per user request, not "Fatale"
   dtype_Duty:{en:'Other duties',de:'Sonstige'},
   duty_all:{en:'All',de:'Alle'},
   diff_Normal:{en:'Normal',de:'Normal'},
@@ -844,9 +855,9 @@ function updateOverlayCompactness(){
 // to #detail) or 'showItemPanel' (Charakter tab, writes to #chardetail). Set-member chips need to
 // call back into whichever panel is actually showing, not always the Suche one.
 function buildItemHtml(d,openFn='openItem'){
-  let h=`<div class="header">${img(d.iconId,48)}<div><h2 class="name">${esc(d.name)}</h2><div class="meta">Item ID ${d.itemId} · iLvl ${d.itemLevel}${d.isMarketable?' · marketable':''}${d.setName?` · Set: ${esc(d.setName)}`:''}</div>${d.isEquippable?`<button class="act" style="margin-top:4px" title="${t('apply_item_tt')}" onclick="glamourerPost('/api/action/glamourer/item/${d.itemId}',this)">${t('apply_btn')}</button>`:''}</div></div><div class="preview"><img src="/api/itemimage/${d.itemId}" loading="lazy" onerror="this.parentElement.style.display='none'"></div>`;
+  let h=`<div class="header">${img(d.iconId,48)}<div><h2 class="name">${esc(d.name)}</h2><div class="meta">${t('item_id')} ${d.itemId} · iLvl ${d.itemLevel}${d.isMarketable?` · ${t('marketable')}`:''}${d.setName?` · ${t('set_label')}: ${esc(d.setName)}`:''}</div>${d.isEquippable?`<button class="act" style="margin-top:4px" title="${t('apply_item_tt')}" onclick="glamourerPost('/api/action/glamourer/item/${d.itemId}',this)">${t('apply_btn')}</button>`:''}</div></div><div class="preview"><img src="/api/itemimage/${d.itemId}" loading="lazy" onerror="this.parentElement.style.display='none'"></div>`;
   if((d.setMembers??[]).length){
-    h+=`<div class="tbl">Rest of the set</div><div style="display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 14px">`;
+    h+=`<div class="tbl">${t('rest_of_set')}</div><div style="display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 14px">`;
     for(const m of d.setMembers)h+=`<div class="row" style="width:auto" onclick="${openFn}(${m.itemId})">${img(m.iconId,24)}<span>${esc(m.name)}</span></div>`;
     h+='</div>';
   }
@@ -886,11 +897,11 @@ function renderSource(group,itemId,openFn='openItem'){
   let h=`<div class="card ${cls}"><h3><span class="badge">${typeIcon(cls)} ${esc(t).toUpperCase()}</span> ${esc(s.description??'')}</h3>`;
   // same jump ImGui's ItemDetailWindow offers: coffer / "Retired — replaced by Augmented X" -> that item
   if(s.sourceItemId)h+=`<button class="act" onclick="${openFn}(${s.sourceItemId})">${I18N.open_item[lang]}</button> `;
-  if(/craft/i.test(t))h+=`<button class="act" onclick="post('/api/action/craftlog/${itemId}')">Open Crafting Log</button>`;
-  if(s.cfcRowId)h+=` <button class="act" onclick="post('/api/action/dutyfinder/${s.cfcRowId}')">Duty Finder</button>`;
+  if(/craft/i.test(t))h+=`<button class="act" onclick="post('/api/action/craftlog/${itemId}')">${t('open_craftlog')}</button>`;
+  if(s.cfcRowId)h+=` <button class="act" onclick="post('/api/action/dutyfinder/${s.cfcRowId}')">${t('duty_open')}</button>`;
   const withNpc=group.filter(g=>g.npcName);
   if(withNpc.length){
-    h+='<table><tr><th>NPC</th><th>Location</th><th></th></tr>';
+    h+=`<table><tr><th>${t('npc')}</th><th>${t('location')}</th><th></th></tr>`;
     for(const g of withNpc)h+=npcRow(g);
     h+='</table>';
   }
@@ -898,7 +909,7 @@ function renderSource(group,itemId,openFn='openItem'){
     const list=s[key];
     if(list&&list.length){
       // an "Other" card with materials is an outfit set (ItemDetailService 7f) — its rows are pieces
-      h+=`<div style="margin-top:8px;color:var(--muted);font-size:12px">${key==='materials'?(t==='Other'?'Pieces':'Materials'):'Cost'}</div>`;
+      h+=`<div style="margin-top:8px;color:var(--muted);font-size:12px">${key==='materials'?(t==='Other'?t('pieces_label'):t('materials_label')):t('cost_label')}</div>`;
       for(const m of list){
         // data-item + data-need: annotateInventory() fills in have/where AFTER this HTML lands in
         // the DOM (needs an async /api/inventory fetch per item — can't do that synchronously here).
@@ -953,7 +964,7 @@ async function annotateInventory(container){
 
 function npcRow(s){
   const loc=[s.zoneName,s.mapX!=null?`(${s.mapX.toFixed(1)}, ${s.mapY.toFixed(1)})`:null].filter(Boolean).join(' ');
-  const map=s.mapX!=null&&s.territoryTypeId?`<button class="act" onclick="post('/api/action/map?territory=${s.territoryTypeId}&map=${s.mapId}&x=${s.mapX}&y=${s.mapY}')">Map</button>`:'';
+  const map=s.mapX!=null&&s.territoryTypeId?`<button class="act" onclick="post('/api/action/map?territory=${s.territoryTypeId}&map=${s.mapId}&x=${s.mapX}&y=${s.mapY}')">${t('map')}</button>`:'';
   return`<tr><td>${esc(s.npcName)}</td><td class="muted">${esc(loc)}</td><td>${map}</td></tr>`;
 }
 
@@ -990,7 +1001,7 @@ async function loadSnapshot(force){
     const name=s.glamourItemName??s.actualItemName??'';
     const lbl=SLOT_LBL[s.slot]?.[lang]??s.slot;
     // opens the lookup in the RIGHT-SIDE panel — no tab switch, no page scroll
-    return`<div class="slot" onclick="showItemPanel(${id})">${img(s.iconId,40)}<div><div class="lbl">${esc(lbl)}</div><div class="nm">${esc(name)}</div></div>${s.isGlamoured?'<span class="glam">Glam</span>':''}</div>`;
+    return`<div class="slot" onclick="showItemPanel(${id})">${img(s.iconId,40)}<div><div class="lbl">${esc(lbl)}</div><div class="nm">${esc(name)}</div></div>${s.isGlamoured?`<span class="glam">${t('glam_badge')}</span>`:''}</div>`;
   }).join('');
   const head=d.activeRecentName?`<div class="empty">${t('viewing')}: ${esc(d.activeRecentName)}</div>`
     :(slots?'':`<div class="empty">${t('no_char_data')}</div>`);
@@ -1046,11 +1057,11 @@ async function showShoppingList(){
   for(const l of d.lines){
     const cls=l.kind==='Craft'?'crafted':l.kind==='Vendor'?'vendor':l.kind==='Duty'?'duty':'';
     h+=`<div class="card ${cls}"><h3><span class="badge">${esc(l.kind).toUpperCase()}</span> ${esc(l.title)}</h3>`;
-    if(l.npcName)h+=`<table><tr><th>NPC</th><th>Location</th><th></th></tr>${npcRow(l)}</table>`;
-    if(l.cfcRowId)h+=`<button class="act" onclick="post('/api/action/dutyfinder/${l.cfcRowId}')">Duty Finder</button>`;
+    if(l.npcName)h+=`<table><tr><th>${t('npc')}</th><th>${t('location')}</th><th></th></tr>${npcRow(l)}</table>`;
+    if(l.cfcRowId)h+=`<button class="act" onclick="post('/api/action/dutyfinder/${l.cfcRowId}')">${t('duty_open')}</button>`;
     h+=`<div style="margin-top:8px;color:var(--muted);font-size:12px">${t('shopping_items')}</div>`+l.items.map(m=>shopRow(m,'showItemPanel')).join('');
-    if(l.costs.length)h+=`<div style="margin-top:8px;color:var(--muted);font-size:12px">Cost</div>`+l.costs.map(c=>shopRow(c)).join('');
-    if(l.materials.length)h+=`<div style="margin-top:8px;color:var(--muted);font-size:12px">Materials</div>`+l.materials.map(c=>shopRow(c,'showItemPanel')).join('');
+    if(l.costs.length)h+=`<div style="margin-top:8px;color:var(--muted);font-size:12px">${t('cost_label')}</div>`+l.costs.map(c=>shopRow(c)).join('');
+    if(l.materials.length)h+=`<div style="margin-top:8px;color:var(--muted);font-size:12px">${t('materials_label')}</div>`+l.materials.map(c=>shopRow(c,'showItemPanel')).join('');
     h+='</div>';
   }
   box.innerHTML=h+'</div>';
