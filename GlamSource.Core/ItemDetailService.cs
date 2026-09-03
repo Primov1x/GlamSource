@@ -940,13 +940,30 @@ public sealed class ItemDetailService : IItemDetailService
             // "Open item" jumping to just one of them) — same "unübersichtlich" repeated-card problem
             // the vendor-location grouping above already solved once. Group by shop instead: one card
             // listing every piece it buys, no "Open item" button (ambiguous with >1 destination).
-            foreach (var group in tradeIns.GroupBy(t => t.shop).Take(3))
+            foreach (var group in tradeIns.GroupBy(t => t.shopId).Take(3))
             {
+                var shopName = group.First().shop;
                 var names = string.Join(", ", group.Select(g => g.receiveName).Distinct());
-                var single = group.Count() == 1 ? group.First() : (string.Empty, 0u, string.Empty);
-                results.Add(Note(ItemSourceType.Other,
-                    $"Trade-in only — handed over at \"{group.Key}\" to receive {names}; the item itself isn't sold there.",
-                    sourceItemId: single.Item2 > 0 ? single.Item2 : null));
+                var groupList = group.ToList();
+                uint? singleReceiveId = groupList.Count == 1 ? groupList[0].receiveId : null;
+
+                // where to actually go trade it in — same NPC lookup FindSpecialShopSources uses.
+                var npcInfos = _shopNpcLookup.GetValueOrDefault(group.Key);
+                if (npcInfos == null && _shopNpcNameOnly.TryGetValue(group.Key, out var nameOnly))
+                    npcInfos = new List<NpcLocationInfo> { new(nameOnly, "", 0, 0, 0, 0) };
+
+                var desc = $"Trade-in only — handed over at \"{shopName}\" to receive {names}; the item itself isn't sold there.";
+                if (npcInfos is { Count: > 0 })
+                {
+                    foreach (var npc in npcInfos)
+                        results.Add(new ItemSourceDetail(ItemSourceType.Other, desc,
+                            npc.NpcName, npc.ZoneName, npc.MapX, npc.MapY, npc.TerritoryTypeId, npc.MapId,
+                            null, null, null, null, null, null, null, null, null, sourceItemId: singleReceiveId));
+                }
+                else
+                {
+                    results.Add(Note(ItemSourceType.Other, desc, sourceItemId: singleReceiveId));
+                }
             }
         }
 
@@ -1561,14 +1578,18 @@ public sealed class ItemDetailService : IItemDetailService
     private HashSet<uint> FishLog => _fishLog ??=
         Safe(() => (_gameData.GetExcelSheet<FishParameter>()?.Where(f => f.IsInLog).Select(f => f.Item.RowId).Where(id => id != 0) ?? Enumerable.Empty<uint>()).ToHashSet(), new());
 
-    private Dictionary<uint, List<(string shop, uint receiveId, string receiveName)>>? _tradeInUses;
-    private Dictionary<uint, List<(string shop, uint receiveId, string receiveName)>> TradeInUses => _tradeInUses ??= Safe(BuildTradeInUses, new());
-    private Dictionary<uint, List<(string shop, uint receiveId, string receiveName)>> BuildTradeInUses()
+    private Dictionary<uint, List<(string shop, uint shopId, uint receiveId, string receiveName)>>? _tradeInUses;
+    private Dictionary<uint, List<(string shop, uint shopId, uint receiveId, string receiveName)>> TradeInUses => _tradeInUses ??= Safe(BuildTradeInUses, new());
+    private Dictionary<uint, List<(string shop, uint shopId, uint receiveId, string receiveName)>> BuildTradeInUses()
     {
-        var map = new Dictionary<uint, List<(string, uint, string)>>();
+        var map = new Dictionary<uint, List<(string, uint, uint, string)>>();
         foreach (var shop in _gameData.GetExcelSheet<SpecialShop>() ?? Enumerable.Empty<SpecialShop>())
         {
             var shopName = shop.Name.ToString();
+            // same dev/QA-leftover skip as FindSpecialShopSources — "Currency Test" et al. aren't
+            // reachable in-game (no NPC binds to them), so they shouldn't surface as a real source.
+            if (shopName.Contains("Test", StringComparison.OrdinalIgnoreCase))
+                continue;
             if (string.IsNullOrEmpty(shopName)) shopName = "Item Exchange";
             foreach (var entry in shop.Item)
             {
@@ -1581,8 +1602,8 @@ public sealed class ItemDetailService : IItemDetailService
                     var costId = cost.ItemCost.RowId;
                     if (costId == 0 || costId == 1) continue; // 1 = Gil
                     if (!map.TryGetValue(costId, out var list)) map[costId] = list = new();
-                    if (list.Count < 3 && !list.Any(x => x.Item2 == recvId))
-                        list.Add((shopName, recvId, GetItemName(recvId) ?? $"#{recvId}"));
+                    if (list.Count < 3 && !list.Any(x => x.Item3 == recvId))
+                        list.Add((shopName, shop.RowId, recvId, GetItemName(recvId) ?? $"#{recvId}"));
                 }
             }
         }
