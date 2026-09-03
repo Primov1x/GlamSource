@@ -943,8 +943,9 @@ public sealed class ItemDetailService : IItemDetailService
             foreach (var group in tradeIns.GroupBy(t => t.shopId).Take(3))
             {
                 var shopName = group.First().shop;
-                var names = string.Join(", ", group.Select(g => g.receiveName).Distinct());
-                var groupList = group.ToList();
+                var groupList = group.DistinctBy(g => g.receiveId).ToList();
+                // each piece can cost a different amount — show it per item, not just the list.
+                var names = string.Join(", ", groupList.Select(g => $"{g.receiveName} ({g.costAmount}x)"));
                 uint? singleReceiveId = groupList.Count == 1 ? groupList[0].receiveId : null;
 
                 // where to actually go trade it in — same NPC lookup FindSpecialShopSources uses.
@@ -1578,11 +1579,11 @@ public sealed class ItemDetailService : IItemDetailService
     private HashSet<uint> FishLog => _fishLog ??=
         Safe(() => (_gameData.GetExcelSheet<FishParameter>()?.Where(f => f.IsInLog).Select(f => f.Item.RowId).Where(id => id != 0) ?? Enumerable.Empty<uint>()).ToHashSet(), new());
 
-    private Dictionary<uint, List<(string shop, uint shopId, uint receiveId, string receiveName)>>? _tradeInUses;
-    private Dictionary<uint, List<(string shop, uint shopId, uint receiveId, string receiveName)>> TradeInUses => _tradeInUses ??= Safe(BuildTradeInUses, new());
-    private Dictionary<uint, List<(string shop, uint shopId, uint receiveId, string receiveName)>> BuildTradeInUses()
+    private Dictionary<uint, List<(string shop, uint shopId, uint receiveId, string receiveName, uint costAmount)>>? _tradeInUses;
+    private Dictionary<uint, List<(string shop, uint shopId, uint receiveId, string receiveName, uint costAmount)>> TradeInUses => _tradeInUses ??= Safe(BuildTradeInUses, new());
+    private Dictionary<uint, List<(string shop, uint shopId, uint receiveId, string receiveName, uint costAmount)>> BuildTradeInUses()
     {
-        var map = new Dictionary<uint, List<(string, uint, uint, string)>>();
+        var map = new Dictionary<uint, List<(string, uint, uint, string, uint)>>();
         foreach (var shop in _gameData.GetExcelSheet<SpecialShop>() ?? Enumerable.Empty<SpecialShop>())
         {
             var shopName = shop.Name.ToString();
@@ -1607,7 +1608,7 @@ public sealed class ItemDetailService : IItemDetailService
                     // same shop; only the first 3 ever made it in). Raised well past any known set
                     // size; the caller still groups these into one card per shop either way.
                     if (list.Count < 12 && !list.Any(x => x.Item3 == recvId))
-                        list.Add((shopName, shop.RowId, recvId, GetItemName(recvId) ?? $"#{recvId}"));
+                        list.Add((shopName, shop.RowId, recvId, GetItemName(recvId) ?? $"#{recvId}", (uint)cost.CurrencyCost));
                 }
             }
         }
