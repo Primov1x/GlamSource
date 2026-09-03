@@ -22,7 +22,8 @@ public record ItemDetail(
     uint IconId,
     IReadOnlyList<ItemSourceDetail> Sources,
     string? SetName = null,
-    IReadOnlyList<SetMember>? SetMembers = null);
+    IReadOnlyList<SetMember>? SetMembers = null,
+    bool IsEquippable = false);
 
 public record SetMember(uint ItemId, string Name, uint IconId);
 
@@ -53,7 +54,9 @@ public record ItemSourceDetail(
     uint? SourceItemId = null);
 
 /// One duty (ContentFinderCondition) that has at least one known drop.
-public sealed record DutyInfo(uint CfcId, string Name, string Type, uint TerritoryTypeId, int DropCount, uint ImageId, int Level, int ItemLevel, string Expansion, uint TypeIconId);
+/// Bosses: fight names in order (Susano, Titan, ...) so the tab's search finds a duty by its boss.
+/// Difficulty: "Normal" / "Extreme" / "Savage" / "Unreal" / "Alliance" — the Duty Finder's sub-folders.
+public sealed record DutyInfo(uint CfcId, string Name, string Type, uint TerritoryTypeId, int DropCount, uint ImageId, int Level, int ItemLevel, string Expansion, uint TypeIconId, IReadOnlyList<string> Bosses, string Difficulty);
 /// Kind: "Mount" (item of a MountItemMap entry) / "Minion" (ItemUICategory 81) / "" — the tab lifts those to the top.
 public sealed record DutyDrop(uint ItemId, string Name, uint IconId, int ItemLevel, string Kind = "");
 public sealed record DutyChest(int CofferNo, IReadOnlyList<DutyDrop> Items);
@@ -83,6 +86,9 @@ public interface IItemDetailService
     GameData GameData { get; }
     uint? ResolveMountItemId(uint mountId);
     string? GetEnglishName(uint itemId);
+    /// Wiki page to scrape the preview picture from: the MOUNT page for mount items ("Enbarr" has
+    /// Enbarr_Image.png, "Enbarr Whistle" only an icon), otherwise the English item name.
+    string? GetWikiPageName(uint itemId);
 }
 
 public sealed class ItemDetailService : IItemDetailService
@@ -215,7 +221,14 @@ public sealed class ItemDetailService : IItemDetailService
 
     public GameData GameData => _gameData;
 
+    // same concurrency story as LuminaItemSourceService.GetSources: web request threads + draw thread
     public ItemDetail? GetDetail(uint itemId)
+    {
+        lock (_cache)
+            return GetDetailCore(itemId);
+    }
+
+    private ItemDetail? GetDetailCore(uint itemId)
     {
         if (_cache.TryGetValue(itemId, out var cached))
             return cached;
@@ -300,7 +313,8 @@ public sealed class ItemDetailService : IItemDetailService
             // one bad row id in any of the ~40 lookups below must not take the whole window down
             sources = new[] { Note(ItemSourceType.Other, $"Source detection failed for this item ({e.GetType().Name} at {e.StackTrace?.Split(Environment.NewLine).FirstOrDefault()?.Trim()}). Please report the item ID.") };
         }
-        var detail = new ItemDetail(itemId, name, itemLevel, isMarketable, iconId, sources, setName, setMembers);
+        var detail = new ItemDetail(itemId, name, itemLevel, isMarketable, iconId, sources, setName, setMembers,
+            IsEquippable: item.EquipSlotCategory.RowId > 0); // mounts/minions/etc. get no "Apply to Self"
 
         _cache[itemId] = detail;
         return detail;
@@ -1055,15 +1069,47 @@ public sealed class ItemDetailService : IItemDetailService
             if (name.Length == 0) continue;
             list.Add(new DutyInfo(cfcId, name, GetDutyType(cfcId), cfc.Value.TerritoryType.RowId, items.Count,
                 cfc.Value.Image, cfc.Value.ClassJobLevelRequired, cfc.Value.ItemLevelRequired, ExpansionName(cfc.Value.ClassJobLevelRequired),
-                Safe(() => (uint)(cfc.Value.ContentType.ValueNullable?.Icon ?? 0), 0u))); // Duty Finder category icon (61801 dungeons, ...)
+                Safe(() => (uint)(cfc.Value.ContentType.ValueNullable?.Icon ?? 0), 0u), // Duty Finder category icon (61801 dungeons, ...)
+                BossNamesByDuty.TryGetValue(cfcId, out var bossNames) ? bossNames : Array.Empty<string>(),
+                DifficultyOf(name, Safe(() => cfc.Value.AllianceRoulette, false))));
         }
-        // grouped for the tab: content type, then expansion, then level, then name
-        return list.OrderBy(d => DutyTypeOrder(d.Type)).ThenBy(d => ExpansionOrder(d.Level)).ThenBy(d => d.Level)
-            .ThenBy(d => d.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        // grouped for the tab: content type, difficulty, expansion, level, name
+        return list.OrderBy(d => DutyTypeOrder(d.Type)).ThenBy(d => DifficultyOrder(d.Difficulty)).ThenBy(d => ExpansionOrder(d.Level))
+            .ThenBy(d => d.Level).ThenBy(d => d.Name, StringComparer.OrdinalIgnoreCase).ToList();
     }
+
+    // Duty Finder sub-folders from the name suffix; alliance raids have no suffix but sit in the
+    // alliance roulette (ContentFinderCondition.AllianceRoulette).
+    private static string DifficultyOf(string name, bool alliance) =>
+        name.EndsWith("(Extreme)", StringComparison.Ordinal) ? "Extreme"
+        : name.EndsWith("(Savage)", StringComparison.Ordinal) ? "Savage"
+        : name.EndsWith("(Unreal)", StringComparison.Ordinal) ? "Unreal"
+        : alliance ? "Alliance" : "Normal";
+    private static int DifficultyOrder(string d) => d switch { "Normal" => 0, "Extreme" => 1, "Savage" => 2, "Unreal" => 3, "Alliance" => 4, _ => 5 };
 
     private HashSet<uint>? _mountItemIds;
     private HashSet<uint> MountItemIds => _mountItemIds ??= _mountToItemId.Values.ToHashSet();
+
+    // "susano eingeben und den Trial kriegen": boss names per duty from DungeonBoss -> BNpcName
+    private Dictionary<uint, List<string>>? _bossNamesByDuty;
+    private Dictionary<uint, List<string>> BossNamesByDuty
+    {
+        get
+        {
+            if (_bossNamesByDuty != null) return _bossNamesByDuty;
+            var map = new Dictionary<uint, List<string>>();
+            var bnpc = _gameData.GetExcelSheet<BNpcName>();
+            foreach (var b in DutyTables.bosses.OrderBy(b => b.FightNo))
+            {
+                var name = bnpc?.GetRowOrDefault(b.BNpcNameId)?.Singular.ToString() ?? "";
+                if (name.Length == 0) continue;
+                name = char.ToUpperInvariant(name[0]) + name[1..];
+                if (!map.TryGetValue(b.ContentFinderConditionId, out var list)) map[b.ContentFinderConditionId] = list = new();
+                if (!list.Contains(name)) list.Add(name);
+            }
+            return _bossNamesByDuty = map;
+        }
+    }
 
     private static int DutyTypeOrder(string type) => type switch { "Dungeon" => 0, "Trial" => 1, "Raid" => 2, "Ultimate" => 3, _ => 4 };
     // Expansion from the required level (ARR ≤50, HW ≤60, SB ≤70, ShB ≤80, EW ≤90, DT ≤100): holds
@@ -2267,6 +2313,18 @@ public sealed class ItemDetailService : IItemDetailService
     /// <summary>MountId (as read from Character.Mount.MountId natively) -> its unlock item, or null
     /// if this mount isn't in the scraped dataset.</summary>
     public uint? ResolveMountItemId(uint mountId) => _mountToItemId.TryGetValue(mountId, out var id) ? id : null;
+
+    private Dictionary<uint, uint>? _itemToMountId;
+    public string? GetWikiPageName(uint itemId)
+    {
+        _itemToMountId ??= _mountToItemId.GroupBy(kv => kv.Value).ToDictionary(g => g.Key, g => g.First().Key);
+        if (_itemToMountId.TryGetValue(itemId, out var mountId))
+        {
+            var mount = Safe(() => _gameData.GetExcelSheet<Mount>(Language.English)?.GetRowOrDefault(mountId)?.Singular.ToString(), null);
+            if (!string.IsNullOrEmpty(mount)) return char.ToUpperInvariant(mount[0]) + mount[1..];
+        }
+        return GetEnglishName(itemId);
+    }
 
     private ExcelSheet<Item>? _englishItemSheet;
 

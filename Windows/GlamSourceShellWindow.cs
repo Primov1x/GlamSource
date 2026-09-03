@@ -69,7 +69,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
     // Duty Drops tab
     private string _dutyFilter = "";
     private uint _dutySelected, _lastDutyTerritory;
-    private string? _dutyNavType, _dutyNavExp; // drill-down: type → expansion → duties
+    private string? _dutyNavType, _dutyNavDiff, _dutyNavExp; // drill-down: type → difficulty → expansion → duties
     private uint? _currentDuty;
     private IReadOnlyList<DutyInfo>? _duties;
     private DutyDetail? _dutyDetail;
@@ -1286,18 +1286,28 @@ private void ApplyTargetGlamourToSelf()
         var curName = _currentDuty is { } cur ? _duties.FirstOrDefault(d => d.CfcId == cur)?.Name : null;
         ImGui.TextColored(UiStyle.Muted, curName != null ? $"{Loc.T("Current duty:")} {curName}" : Loc.T("Not inside a duty"));
         ImGui.SetNextItemWidth(ImGui.GetFontSize() * 22f);
-        ImGui.InputTextWithHint("##duty_filter", Loc.T("Search dungeon, trial, raid..."), ref _dutyFilter, 128);
+        ImGui.InputTextWithHint("##duty_filter", Loc.T("Search duty or boss (e.g. Susano)..."), ref _dutyFilter, 128);
 
         // breadcrumb of the drill-down: All › Dungeons › Heavensward
         if (ImGui.SmallButton(Loc.T("All")))
         {
             _dutyNavType = null;
+            _dutyNavDiff = null;
             _dutyNavExp = null;
         }
         if (_dutyNavType != null)
         {
             ImGui.SameLine(); ImGui.TextDisabled("›"); ImGui.SameLine();
             if (ImGui.SmallButton(Loc.T(DutyTypeLabel(_dutyNavType))))
+            {
+                _dutyNavDiff = null;
+                _dutyNavExp = null;
+            }
+        }
+        if (_dutyNavDiff != null)
+        {
+            ImGui.SameLine(); ImGui.TextDisabled("›"); ImGui.SameLine();
+            if (ImGui.SmallButton(Loc.T(_dutyNavDiff)))
                 _dutyNavExp = null;
         }
         if (_dutyNavExp != null)
@@ -1317,7 +1327,10 @@ private void ApplyTargetGlamourToSelf()
                     string lastType = "", lastExp = "";
                     foreach (var d in _duties)
                     {
-                        if (!d.Name.Contains(_dutyFilter, StringComparison.OrdinalIgnoreCase))
+                        // duty name OR boss name ("susano" -> the Pool of Tribute)
+                        var nameHit = d.Name.Contains(_dutyFilter, StringComparison.OrdinalIgnoreCase);
+                        var bossHit = nameHit ? null : d.Bosses.FirstOrDefault(b => b.Contains(_dutyFilter, StringComparison.OrdinalIgnoreCase));
+                        if (!nameHit && bossHit == null)
                             continue;
                         if (d.Type != lastType)
                         {
@@ -1330,7 +1343,7 @@ private void ApplyTargetGlamourToSelf()
                             ImGui.TextDisabled(d.Expansion);
                             lastExp = d.Expansion;
                         }
-                        if (ImGui.Selectable($"{d.Name}  (Lv.{d.Level}, {d.DropCount})##duty_{d.CfcId}", d.CfcId == _dutySelected))
+                        if (ImGui.Selectable($"{d.Name}{(bossHit != null ? $" — {bossHit}" : "")}  (Lv.{d.Level}, {d.DropCount})##duty_{d.CfcId}", d.CfcId == _dutySelected))
                             SelectDuty(d.CfcId);
                     }
                 }
@@ -1343,9 +1356,19 @@ private void ApplyTargetGlamourToSelf()
                             _dutyNavType = g.Key;
                     }
                 }
+                else if (_duties.Where(d => d.Type == _dutyNavType).Select(d => d.Difficulty).Distinct().Count() > 1 && _dutyNavDiff == null)
+                {
+                    // Duty Finder sub-folders: Trials → Normal / Extreme / Unreal, Raids → Normal / Savage / Alliance
+                    foreach (var g in _duties.Where(d => d.Type == _dutyNavType).GroupBy(d => d.Difficulty))
+                    {
+                        DrawFolderThumb(g);
+                        if (ImGui.Selectable($"{Loc.T(g.Key)}  ({g.Count()})##ddiff_{g.Key}"))
+                            _dutyNavDiff = g.Key;
+                    }
+                }
                 else if (_dutyNavExp == null)
                 {
-                    foreach (var g in _duties.Where(d => d.Type == _dutyNavType).GroupBy(d => d.Expansion))
+                    foreach (var g in _duties.Where(d => d.Type == _dutyNavType && (_dutyNavDiff == null || d.Difficulty == _dutyNavDiff)).GroupBy(d => d.Expansion))
                     {
                         DrawFolderThumb(g);
                         if (ImGui.Selectable($"{g.Key}  ({g.Count()})##dexp_{g.Key}"))
@@ -1354,7 +1377,7 @@ private void ApplyTargetGlamourToSelf()
                 }
                 else
                 {
-                    foreach (var d in _duties.Where(d => d.Type == _dutyNavType && d.Expansion == _dutyNavExp))
+                    foreach (var d in _duties.Where(d => d.Type == _dutyNavType && (_dutyNavDiff == null || d.Difficulty == _dutyNavDiff) && d.Expansion == _dutyNavExp))
                         if (ImGui.Selectable($"{d.Name}  (Lv.{d.Level}, {d.DropCount})##duty_{d.CfcId}", d.CfcId == _dutySelected))
                             SelectDuty(d.CfcId);
                 }
@@ -1542,6 +1565,7 @@ private void ApplyTargetGlamourToSelf()
         if (_duties?.FirstOrDefault(x => x.CfcId == cfcId) is { } nav) // land in the duty's own folder
         {
             _dutyNavType = nav.Type;
+            _dutyNavDiff = _duties.Where(d => d.Type == nav.Type).Select(d => d.Difficulty).Distinct().Count() > 1 ? nav.Difficulty : null;
             _dutyNavExp = nav.Expansion;
         }
         _dutyDetail = _detailWindow.DetailService.GetDutyDetail(cfcId);

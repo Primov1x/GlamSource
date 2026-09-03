@@ -269,7 +269,7 @@ const I18N={
   tab_duties:{en:'Duty Drops',de:'Duty-Drops'},
   duty_current:{en:'Current duty',de:'Aktuelle Duty'},
   duty_none:{en:'Not inside a duty — pick one from the list',de:'Nicht in einer Duty — eine aus der Liste wählen'},
-  duty_search_ph:{en:'Search dungeon, trial, raid…',de:'Dungeon, Prüfung, Raid suchen…'},
+  duty_search_ph:{en:'Search duty or boss (e.g. Susano)…',de:'Duty oder Boss suchen (z.B. Susano)…'},
   duty_pick:{en:'Pick a duty to see its drops',de:'Duty wählen, um die Drops zu sehen'},
   duty_nodrops:{en:'No drops known for this duty.',de:'Keine Drops für diese Duty bekannt.'},
   boss:{en:'Boss',de:'Boss'},
@@ -297,6 +297,11 @@ const I18N={
   dtype_Ultimate:{en:'Ultimates',de:'Fatale'},
   dtype_Duty:{en:'Other duties',de:'Sonstige'},
   duty_all:{en:'All',de:'Alle'},
+  diff_Normal:{en:'Normal',de:'Normal'},
+  diff_Extreme:{en:'Extreme',de:'Extrem'},
+  diff_Savage:{en:'Savage',de:'Episch'},
+  diff_Unreal:{en:'Unreal',de:'Fatal'},
+  diff_Alliance:{en:'Alliance',de:'Allianz'},
   duties:{en:'duties',de:'Duties'},
   map:{en:'Map',de:'Karte'},
   search_ph:{en:'Search any item… or paste an item ID',de:'Beliebiges Item suchen… oder Item-ID einfügen'},
@@ -705,41 +710,52 @@ async function loadDuties(){
 // Drill-down like the Duty Finder ("kompakter, Kacheln zum Klicken"): content type tiles →
 // expansion tiles → duty tiles → drops, with a breadcrumb back. A search term bypasses the
 // drill-down and shows the flat grouped list.
-const dutyNav={type:null,exp:null};
-function dutyNavTo(type,exp){dutyNav.type=type;dutyNav.exp=exp;renderDutyList()}
-const dutyTile=x=>`<div class="dtile${x.id===dutySelected?' active':''}" tabindex="0" role="button" onclick="selectDuty(${x.id})"><img src="/api/icon/${x.imageId}" loading="lazy" onerror="this.style.visibility='hidden'"><div><div class="nm">${esc(x.name)}</div><div class="meta">Lv.${x.level}${x.itemLevel?` · iLvl ${x.itemLevel}`:''} · ${x.drops} ${t('drops')}</div></div></div>`;
+const dutyNav={type:null,diff:null,exp:null};
+function dutyNavTo(type,diff,exp){dutyNav.type=type;dutyNav.diff=diff;dutyNav.exp=exp;renderDutyList()}
+const dutyTile=(x,boss)=>`<div class="dtile${x.id===dutySelected?' active':''}" tabindex="0" role="button" onclick="selectDuty(${x.id})"><img src="/api/icon/${x.imageId}" loading="lazy" onerror="this.style.visibility='hidden'"><div><div class="nm">${esc(x.name)}${boss?`<span class="ilvl">${esc(boss)}</span>`:''}</div><div class="meta">Lv.${x.level}${x.itemLevel?` · iLvl ${x.itemLevel}`:''} · ${x.drops} ${t('drops')}</div></div></div>`;
+// banner of the newest (highest level, then newest id) duty of a folder as the tile background
+const dutyRep=rows=>rows.reduce((a,b)=>(b.level>a.level||(b.level===a.level&&b.id>a.id))?b:a);
+const folderTile=(label,rows,onclick,icon)=>{const r=dutyRep(rows);return `<div class="ntile" tabindex="0" role="button" onclick="${onclick}" style="background-image:url(/api/icon/${r.imageId})"><div class="nshade">${icon?`<img class="ticon" src="/api/icon/${icon}" onerror="this.remove()">`:''}<div><div class="nm">${label}</div><div class="meta">${rows.length} ${t('duties')}</div></div></div></div>`};
 function renderDutyList(){
   const q=$('#dq').value.trim().toLowerCase(),all=dutyList||[],list=$('#dutylist'),crumb=$('#dutycrumb');
   if(q){
     crumb.innerHTML='';list.classList.remove('grid');
     let h='',lastType='',lastExp='';
-    for(const x of all.filter(x=>x.name.toLowerCase().includes(q))){
+    // duty name OR boss name ("susano" -> the Pool of Tribute); the matching boss is shown on the tile
+    const bossHit=x=>(x.bosses||[]).find(b=>b.toLowerCase().includes(q));
+    for(const x of all.filter(x=>x.name.toLowerCase().includes(q)||bossHit(x))){
       if(x.type!==lastType){h+=`<div class="dsech"${h?'':' style="margin-top:0"'}>${t('dtype_'+x.type)}</div>`;lastType=x.type;lastExp=''}
       if(x.expansion!==lastExp){h+=`<div class="dsub">${esc(x.expansion)}</div>`;lastExp=x.expansion}
-      h+=dutyTile(x);
+      h+=dutyTile(x,x.name.toLowerCase().includes(q)?null:bossHit(x));
     }
     list.innerHTML=h||`<div class="empty">${t('no_items')}</div>`;
     return;
   }
+  // drill-down: type -> difficulty (only when the type has more than one) -> expansion -> duties
+  const inType=all.filter(x=>x.type===dutyNav.type);
+  const diffs=[...new Set(inType.map(x=>x.difficulty))];
+  const hasDiff=diffs.length>1;
+  const inDiff=hasDiff?inType.filter(x=>x.difficulty===dutyNav.diff):inType;
   const seg=(label,fn)=>`<span class="crumb"${fn?` onclick="${fn}"`:''}>${label}</span>`;
-  let c=seg(t('duty_all'),dutyNav.type?'dutyNavTo(null,null)':null);
-  if(dutyNav.type)c+=' › '+seg(t('dtype_'+dutyNav.type),dutyNav.exp?`dutyNavTo('${dutyNav.type}',null)`:null);
+  let c=seg(t('duty_all'),dutyNav.type?'dutyNavTo(null,null,null)':null);
+  if(dutyNav.type)c+=' › '+seg(t('dtype_'+dutyNav.type),(dutyNav.diff||dutyNav.exp)?`dutyNavTo('${dutyNav.type}',null,null)`:null);
+  if(dutyNav.diff)c+=' › '+seg(t('diff_'+dutyNav.diff),dutyNav.exp?`dutyNavTo('${dutyNav.type}','${dutyNav.diff}',null)`:null);
   if(dutyNav.exp)c+=' › '+seg(esc(dutyNav.exp),null);
   crumb.innerHTML=c;
   if(!dutyNav.type){
     list.classList.add('grid');
     const types=[...new Set(all.map(x=>x.type))];
-    // banner of the newest (highest level, then newest id) duty of the folder as tile background
-    const rep=rows=>rows.reduce((a,b)=>(b.level>a.level||(b.level===a.level&&b.id>a.id))?b:a);
-    list.innerHTML=types.map(ty=>{const g=all.filter(x=>x.type===ty),r=rep(g);return `<div class="ntile" tabindex="0" role="button" onclick="dutyNavTo('${ty}',null)" style="background-image:url(/api/icon/${r.imageId})"><div class="nshade">${r.typeIcon?`<img class="ticon" src="/api/icon/${r.typeIcon}" onerror="this.remove()">`:''}<div><div class="nm">${t('dtype_'+ty)}</div><div class="meta">${g.length} ${t('duties')}</div></div></div></div>`}).join('');
+    list.innerHTML=types.map(ty=>{const g=all.filter(x=>x.type===ty);return folderTile(t('dtype_'+ty),g,`dutyNavTo('${ty}',null,null)`,dutyRep(g).typeIcon)}).join('');
+  }else if(hasDiff&&!dutyNav.diff){
+    list.classList.add('grid');
+    list.innerHTML=diffs.map(df=>folderTile(t('diff_'+df),inType.filter(x=>x.difficulty===df),`dutyNavTo('${dutyNav.type}','${df}',null)`)).join('');
   }else if(!dutyNav.exp){
     list.classList.add('grid');
-    const inType=all.filter(x=>x.type===dutyNav.type),exps=[...new Set(inType.map(x=>x.expansion))];
-    const rep=rows=>rows.reduce((a,b)=>(b.level>a.level||(b.level===a.level&&b.id>a.id))?b:a);
-    list.innerHTML=exps.map(ex=>{const g=inType.filter(x=>x.expansion===ex),r=rep(g);return `<div class="ntile" tabindex="0" role="button" onclick="dutyNavTo('${dutyNav.type}','${ex}')" style="background-image:url(/api/icon/${r.imageId})"><div class="nshade"><div><div class="nm">${esc(ex)}</div><div class="meta">${g.length} ${t('duties')}</div></div></div></div>`}).join('');
+    const exps=[...new Set(inDiff.map(x=>x.expansion))];
+    list.innerHTML=exps.map(ex=>folderTile(esc(ex),inDiff.filter(x=>x.expansion===ex),`dutyNavTo('${dutyNav.type}',${hasDiff?`'${dutyNav.diff}'`:'null'},'${ex}')`)).join('');
   }else{
     list.classList.remove('grid');
-    list.innerHTML=all.filter(x=>x.type===dutyNav.type&&x.expansion===dutyNav.exp).map(dutyTile).join('')||`<div class="empty">${t('no_items')}</div>`;
+    list.innerHTML=inDiff.filter(x=>x.expansion===dutyNav.exp).map(x=>dutyTile(x)).join('')||`<div class="empty">${t('no_items')}</div>`;
   }
 }
 $('#dq').addEventListener('input',renderDutyList);
@@ -747,7 +763,7 @@ const dropRows=list=>list.map(x=>`<div class="row" tabindex="0" role="button" on
 async function selectDuty(id){
   dutySelected=id;
   const nav=(dutyList||[]).find(y=>y.id===id);
-  if(nav&&!$('#dq').value.trim()){dutyNav.type=nav.type;dutyNav.exp=nav.expansion} // land in the duty's own folder
+  if(nav&&!$('#dq').value.trim()){dutyNav.type=nav.type;dutyNav.diff=nav.difficulty;dutyNav.exp=nav.expansion} // land in the duty's own folder
   renderDutyList();
   $('#dutydetail').innerHTML='';$('#dutyhead').innerHTML='';
   $('#dutydrops').innerHTML=`<div class="empty"><span class="spinner"></span>${t('loading')}</div>`;
@@ -803,7 +819,7 @@ function updateOverlayCompactness(){
 // to #detail) or 'showItemPanel' (Charakter tab, writes to #chardetail). Set-member chips need to
 // call back into whichever panel is actually showing, not always the Suche one.
 function buildItemHtml(d,openFn='openItem'){
-  let h=`<div class="header">${img(d.iconId,48)}<div><h2 class="name">${esc(d.name)}</h2><div class="meta">Item ID ${d.itemId} · iLvl ${d.itemLevel}${d.isMarketable?' · marketable':''}${d.setName?` · Set: ${esc(d.setName)}`:''}</div><button class="act" style="margin-top:4px" title="${t('apply_item_tt')}" onclick="glamourerPost('/api/action/glamourer/item/${d.itemId}',this)">${t('apply_btn')}</button></div></div><div class="preview"><img src="/api/itemimage/${d.itemId}" loading="lazy" onerror="this.parentElement.style.display='none'"></div>`;
+  let h=`<div class="header">${img(d.iconId,48)}<div><h2 class="name">${esc(d.name)}</h2><div class="meta">Item ID ${d.itemId} · iLvl ${d.itemLevel}${d.isMarketable?' · marketable':''}${d.setName?` · Set: ${esc(d.setName)}`:''}</div>${d.isEquippable?`<button class="act" style="margin-top:4px" title="${t('apply_item_tt')}" onclick="glamourerPost('/api/action/glamourer/item/${d.itemId}',this)">${t('apply_btn')}</button>`:''}</div></div><div class="preview"><img src="/api/itemimage/${d.itemId}" loading="lazy" onerror="this.parentElement.style.display='none'"></div>`;
   if((d.setMembers??[]).length){
     h+=`<div class="tbl">Rest of the set</div><div style="display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 14px">`;
     for(const m of d.setMembers)h+=`<div class="row" style="width:auto" onclick="${openFn}(${m.itemId})">${img(m.iconId,24)}<span>${esc(m.name)}</span></div>`;

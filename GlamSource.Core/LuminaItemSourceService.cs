@@ -73,7 +73,16 @@ public sealed class LuminaItemSourceService : IItemSourceService
         catch (Lumina.Excel.Exceptions.MismatchedColumnHashException) { }
     }
 
+    // Web request threads and the draw/framework thread both call this — the plain Dictionary
+    // cache corrupted under concurrent writes (mock crash 2026-09-03: "Operations that change
+    // non-concurrent collections must have exclusive access"). One lock, whole lookup.
     public IReadOnlyList<ItemSource> GetSources(uint itemId)
+    {
+        lock (_cache)
+            return GetSourcesCore(itemId);
+    }
+
+    private IReadOnlyList<ItemSource> GetSourcesCore(uint itemId)
     {
         if (_cache.TryGetValue(itemId, out var cached))
             return cached;

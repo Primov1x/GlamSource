@@ -455,7 +455,7 @@ public sealed class WebUiService : IDisposable
             return Json(new { status = _framework.RunOnFrameworkThread(() => _shell.ApplyItemToSelf(applyItemId)).GetAwaiter().GetResult() });
 
         if (method == "GET" && path == "/api/duties")
-            return Json(_detail.ListDutiesWithDrops().Select(d => new { id = d.CfcId, name = d.Name, type = d.Type, drops = d.DropCount, imageId = d.ImageId, level = d.Level, itemLevel = d.ItemLevel, expansion = d.Expansion, typeIcon = d.TypeIconId }).ToArray());
+            return Json(_detail.ListDutiesWithDrops().Select(d => new { id = d.CfcId, name = d.Name, type = d.Type, drops = d.DropCount, imageId = d.ImageId, level = d.Level, itemLevel = d.ItemLevel, expansion = d.Expansion, typeIcon = d.TypeIconId, bosses = d.Bosses, difficulty = d.Difficulty }).ToArray());
         if (method == "GET" && path == "/api/duty/current")
         {
             var territory = _framework.RunOnFrameworkThread(() => (uint)_clientState.TerritoryType).GetAwaiter().GetResult();
@@ -520,7 +520,7 @@ public sealed class WebUiService : IDisposable
             // the wiki has no localized page titles — a German/French/JP client name 404s there
             // ("Freiherrliche Jacke", live-confirmed via /api/debug/imageerror). English regardless
             // of client language.
-            var wikiName = _detail.GetEnglishName(imgItemId) ?? detail.Name;
+            var wikiName = _detail.GetWikiPageName(imgItemId) ?? detail.Name; // mount page for mount items
             var bytes = _imageService.GetPreviewImageBytesAsync(imgItemId, wikiName).GetAwaiter().GetResult();
             // 204 not 404: the <img onerror> already hides it, a 404 only spams the browser console (one per row)
             if (bytes == null) return ("204 No Content", "text/plain", Array.Empty<byte>());

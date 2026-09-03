@@ -65,6 +65,20 @@ what do I need and where". Prototype, deliberately small:
   web: title-bar button toggling `view-settings`, ImGui: trailing tab item drawn with
   `UiBuilder.IconFont` (`FontAwesomeIcon.Cog`, tooltip "Settings"). Gil cost rows (itemId 0) now
   show the real Gil icon (Item 1, icon 65002) in web + both ImGui row renderers.
+- **Boss search, mount previews, no Apply on mounts, cache race (1.0.6.0)**: Duty Drops search
+  matches boss names too ("susano" → the Pool of Tribute; `DutyInfo.Bosses` from `DungeonBoss` →
+  `BNpcName`, 321/364 duties have boss data), the matching boss shows on the tile / ImGui row.
+  Mount items' preview picture now comes from the wiki's MOUNT page (`GetWikiPageName`: reverse
+  `MountItemMap` → `Mount.Singular` (EN) — "Enbarr" has `Enbarr_Image.png`, "Enbarr Whistle" only
+  an icon). `ItemDetail.IsEquippable` (EquipSlotCategory > 0) gates the "Apply to Self" button in
+  both UIs — mounts, minions, materials don't get one (Glamourer can't apply them anyway).
+  `LuminaItemSourceService.GetSources` and `ItemDetailService.GetDetail` now lock their caches:
+  the mock crashed on a corrupted Dictionary when the draw thread and a web request thread wrote
+  at the same time — the plugin has the same two threads (framework + WebUiService requests).
+  Duty drill-down gained the Duty Finder's sub-folders between type and expansion — Trials →
+  Normal / Extreme / Unreal, Raids → Normal / Savage / Alliance (`DutyInfo.Difficulty`: name suffix,
+  alliance via `ContentFinderCondition.AllianceRoulette`); the level is skipped for types with a
+  single difficulty (dungeons). Both UIs.
 
 ## Duty Drops tab (0.0.0.312) — current-duty auto-detect + Duty Finder style browse
 
