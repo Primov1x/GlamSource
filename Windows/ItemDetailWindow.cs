@@ -44,6 +44,8 @@ public class ItemDetailWindow : Window, IDisposable
     private uint? _showingItemId;
     private bool _isOpen;
     private uint? _navigateToItemId;
+    private Task<EventStatus?>? _eventTask; // polled in Draw, same pattern as the shell's duty coffers
+    private EventStatus? _eventStatus;
     private int _navigateToSourceIdx = -1;
 
     private MarketInfo? _marketInfo;
@@ -249,6 +251,8 @@ public class ItemDetailWindow : Window, IDisposable
     private void LoadItemDetail(uint itemId)
     {
         _showingItemId = itemId;
+        _eventStatus = null;
+        _eventTask = _detailService.GetEventStatusAsync(itemId);
         // Reset GatherBuddy button state when showing a new item
         _lastGatherTimestamp = 0;
         _gatherOutcome = GatherOutcome.Failed;
@@ -362,6 +366,21 @@ public class ItemDetailWindow : Window, IDisposable
         if (!string.IsNullOrEmpty(detail.SetName))
             metaLine += $"  \u00b7  {Loc.T("Set")}: {detail.SetName}";
         ImGui.TextDisabled(metaLine);
+        if (_eventTask is { IsCompleted: true })
+        {
+            _eventStatus = _eventTask.IsCompletedSuccessfully ? _eventTask.Result : null;
+            _eventTask = null;
+        }
+        if (_eventStatus != null)
+        {
+            var kind = _eventStatus.Recurring ? Loc.T("Recurring event") : Loc.T("One-time event");
+            var status = _eventStatus.Active == true ? Loc.T("active now")
+                : _eventStatus.Active == false ? Loc.T(_eventStatus.Recurring ? "not running right now" : "no longer obtainable")
+                : Loc.T("live status unknown — check in-game");
+            var color = _eventStatus.Active == true ? UiStyle.Success
+                : _eventStatus.Active == false && !_eventStatus.Recurring ? UiStyle.Muted : UiStyle.Warning;
+            ImGui.TextColored(color, $"{kind}: {_eventStatus.EventName} — {status}");
+        }
         if (_applyToSelf != null && detail.IsEquippable) // mounts, minions, materials: nothing to apply
         {
             if (ImGui.SmallButton(Loc.T("Apply to Self")))

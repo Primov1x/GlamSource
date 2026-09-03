@@ -224,6 +224,7 @@ public class CraftingCostServiceTests
         public uint? ResolveMountItemId(uint mountId) => null;
         public string? GetEnglishName(uint itemId) => null;
         public string? GetWikiPageName(uint itemId) => null;
+        public System.Threading.Tasks.Task<EventStatus?> GetEventStatusAsync(uint itemId) => System.Threading.Tasks.Task.FromResult<EventStatus?>(null);
         public IReadOnlyList<DutyInfo> ListDutiesWithDrops() => Array.Empty<DutyInfo>();
         public DutyDetail? GetDutyDetail(uint cfcId) => null;
         public System.Threading.Tasks.Task<IReadOnlyList<DutyCoffer>> GetDutyCoffersAsync(uint cfcId)

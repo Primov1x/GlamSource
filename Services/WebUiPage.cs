@@ -281,6 +281,7 @@ const I18N={
   duty_garland_drops:{en:'Drops (Garland Tools)',de:'Drops (Garland Tools)'},
   duty_exchange:{en:'Exchange',de:'Tausch'},
   duty_exchange_for:{en:'Hand in:',de:'Einlösen:'},
+  duty_open:{en:'Open in Duty Finder',de:'Duty öffnen'},
   duty_garland:{en:'drops via Garland',de:'Drops via Garland'},
   mount:{en:'Mount',de:'Reittier'},
   minion:{en:'Minion',de:'Begleiter'},
@@ -295,6 +296,12 @@ const I18N={
   apply_btn:{en:'Apply to Self',de:'Auf mich anwenden'},
   apply_tt:{en:'Put the shown outfit on your own character via Glamourer (weapons skipped)',de:'Gezeigtes Outfit per Glamourer auf den eigenen Charakter legen (Waffen ausgenommen)'},
   apply_item_tt:{en:'Put this piece on your own character via Glamourer',de:'Dieses Teil per Glamourer auf den eigenen Charakter legen'},
+  ev_recurring:{en:'Recurring event',de:'Wiederkehrendes Event'},
+  ev_onetime:{en:'One-time event',de:'Einmaliges Event'},
+  ev_active:{en:'active now',de:'läuft gerade'},
+  ev_inactive:{en:'not running right now',de:'läuft gerade nicht'},
+  ev_unknown:{en:'live status unknown — check in-game',de:'Live-Status unbekannt — im Spiel prüfen'},
+  ev_gone:{en:'no longer obtainable',de:'nicht mehr erhältlich'},
   dtype_Dungeon:{en:'Dungeons',de:'Dungeons'},
   dtype_Trial:{en:'Trials',de:'Prüfungen'},
   dtype_Raid:{en:'Raids',de:'Raids'},
@@ -777,7 +784,7 @@ async function selectDuty(id){
   if(!d){$('#dutydrops').innerHTML=`<div class="empty">${t('not_found')}</div>`;return}
   // Duty Finder style header: the game's own banner image, then one section per boss (drops +
   // chests after that boss), then whatever drops anywhere in the duty
-  $('#dutyhead').innerHTML=`<div class="dutybanner"><img src="/api/icon/${d.imageId}" onerror="this.style.display='none'"><div><h2 class="name">${esc(d.name)}</h2><div class="meta">${esc(d.type)} · Lv.${d.level}${d.itemLevel?` · iLvl ${d.itemLevel}`:''}</div></div></div>`;
+  $('#dutyhead').innerHTML=`<div class="dutybanner"><img src="/api/icon/${d.imageId}" onerror="this.style.display='none'"><div><h2 class="name">${esc(d.name)}</h2><div class="meta">${esc(d.type)} · Lv.${d.level}${d.itemLevel?` · iLvl ${d.itemLevel}`:''}</div><button class="act" style="margin-top:6px" onclick="post('/api/action/dutyfinder/${d.id}')">${t('duty_open')}</button></div></div>`;
   let h='';
   // mounts / minions first, with the wiki preview picture — that's what people farm Extremes for
   if(d.featured?.length)h+=featSection(d.featured);
@@ -816,7 +823,7 @@ async function openDutyItem(id){
   $('#dutydetail').innerHTML=`<div class="empty"><span class="spinner"></span>${t('loading')}</div>`;
   const d=await fetch('/api/item/'+id).then(r=>r.ok?r.json():null);
   $('#dutydetail').innerHTML=d?buildItemHtml(d,'openDutyItem'):`<div class="empty">${t('not_found')}</div>`;
-  if(d)annotateInventory($('#dutydetail'));
+  if(d){annotateInventory($('#dutydetail'));annotateEvent($('#dutydetail'),id)}
 }
 
 // "Suchergebnisse verschwinden beim Item-Klick": list is only hidden, the back bar restores it
@@ -867,7 +874,7 @@ async function openItem(id){
   updateOverlayCompactness();
   const d=await fetch('/api/item/'+id).then(r=>r.ok?r.json():null);
   $('#detail').innerHTML=d?buildItemHtml(d):`<div class="empty">${t('not_found')}</div>`;
-  if(d)annotateInventory($('#detail'));
+  if(d){annotateInventory($('#detail'));annotateEvent($('#detail'),id)}
 }
 
 // group: one or more sources sharing the same description+cost (see buildItemHtml) — one card,
@@ -908,6 +915,20 @@ function renderSource(group,itemId,openFn='openItem'){
 // UI had neither. Runs after buildItemHtml's innerHTML lands: fetches ownership per unique item id,
 // colors the qty text like ImGui (green=enough, muted=short), retainer breakdown goes in the title
 // tooltip (same info ImGui shows on hover, no extra UI needed for it).
+// "auch events prüfen, nicht mehr erhältlich markieren, oder ob's grad läuft": one best-effort
+// badge under the item name — recurring events never say "gone", only live status (or "unknown" if
+// the Lodestone check failed); one-time events say "gone" only once we positively know it's not on.
+async function annotateEvent(container,itemId){
+  const ev=await fetch(`/api/item/${itemId}/event`).then(r=>r.ok?r.json():null).catch(()=>null);
+  if(!ev)return;
+  const kind=ev.recurring?t('ev_recurring'):t('ev_onetime');
+  let status;
+  if(ev.active===true)status=t('ev_active');
+  else if(ev.active===false)status=ev.recurring?t('ev_inactive'):t('ev_gone');
+  else status=t('ev_unknown');
+  const cls=ev.active===true?'ok':ev.active===false&&!ev.recurring?'short':'';
+  container.querySelector('.header .meta')?.insertAdjacentHTML('afterend',`<div class="meta ${cls}">${kind}: ${esc(ev.eventName)} — ${status}</div>`);
+}
 async function annotateInventory(container){
   const rows=[...container.querySelectorAll('.matrow[data-item]')];
   const ids=[...new Set(rows.map(r=>r.dataset.item).filter(id=>id!=='0'))];
@@ -999,7 +1020,7 @@ async function showItemPanel(id){
   box.innerHTML=`<div class="empty"><span class="spinner"></span>${t('loading')}</div>`;
   const d=await fetch('/api/item/'+id).then(r=>r.ok?r.json():null);
   box.innerHTML=d?buildItemHtml(d,'showItemPanel'):`<div class="empty">${t('not_found')}</div>`;
-  if(d)annotateInventory(box);
+  if(d){annotateInventory(box);annotateEvent(box,id)}
 }
 
 async function post(url){await fetch(url,{method:'POST'})}

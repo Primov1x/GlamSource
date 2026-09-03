@@ -139,7 +139,7 @@ public class Plugin : IAsyncDalamudPlugin
             () => Configuration);
 
 
-        itemDetailService = new ItemDetailService(DataManager.GameData, new GarlandInstanceService(new System.Net.Http.HttpClient()));
+        itemDetailService = new ItemDetailService(DataManager.GameData, new GarlandInstanceService(new System.Net.Http.HttpClient()), new LodestoneEventService(new System.Net.Http.HttpClient()));
         var universalisHttpClient = new System.Net.Http.HttpClient();
         _universalisService = new UniversalisService(universalisHttpClient, "Shiva", "Light");
         var craftingCostService = new CraftingCostService(itemDetailService, _universalisService!);

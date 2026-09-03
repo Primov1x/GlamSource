@@ -90,6 +90,9 @@ public interface IItemDetailService
     GameData GameData { get; }
     uint? ResolveMountItemId(uint mountId);
     string? GetEnglishName(uint itemId);
+    /// Event item availability (FFXIV Collect "Event" sources + a live Lodestone news check).
+    /// Null when the item isn't a known event item.
+    Task<EventStatus?> GetEventStatusAsync(uint itemId);
     /// Wiki page to scrape the preview picture from: the MOUNT page for mount items ("Enbarr" has
     /// Enbarr_Image.png, "Enbarr Whistle" only an icon), otherwise the English item name.
     string? GetWikiPageName(uint itemId);
@@ -187,6 +190,26 @@ public sealed class ItemDetailService : IItemDetailService
     private record CollectSource(string Kind, string SourceType, string SourceText);
     private readonly Dictionary<uint, List<CollectSource>> _collectSources = new();
 
+    // "auch prüfen ob event gerade läuft, wiederkehrende gibt's ja": FFXIV Collect's SourceText for
+    // Kind=Event carries "<event name> (<year>)" for seasonal events that recur every year, or a
+    // bare name (no year) for one-time collabs/promos. Recurring items are never "gone for good";
+    // one-time ones are, once the (very generous, months-long) window passes. The live part — is it
+    // running RIGHT NOW — has no local answer (Lumina carries no calendar), so it's a best-effort
+    // Lodestone news check with an honest "unknown" when that fails, never a guessed answer.
+    private static readonly Regex EventYearRx = new(@"^(?<name>.+?)\s*\((?<year>\d{4})\)$");
+
+    public async Task<EventStatus?> GetEventStatusAsync(uint itemId)
+    {
+        if (!_collectSources.TryGetValue(itemId, out var entries)) return null;
+        var ev = entries.FirstOrDefault(e => e.SourceType == "Event");
+        if (ev == null) return null;
+        var m = EventYearRx.Match(ev.SourceText);
+        var recurring = m.Success;
+        var eventName = recurring ? m.Groups["name"].Value : ev.SourceText;
+        bool? active = _lodestone == null ? null : await _lodestone.IsEventActiveAsync(eventName).ConfigureAwait(false);
+        return new EventStatus(eventName, recurring, active);
+    }
+
     // ponytail: MountId (the same id Character.Mount.MountId reads natively) -> unlock ItemId, from
     // the same FFXIV Collect mounts dataset as _collectSources — its "id" field IS the Mount sheet
     // RowId (same convention already verified for Triple Triad card ids matching TripleTriadCard
@@ -203,10 +226,13 @@ public sealed class ItemDetailService : IItemDetailService
 
     private readonly IGarlandInstanceService? _garland;
 
-    public ItemDetailService(GameData gameData, IGarlandInstanceService? garland = null)
+    private readonly ILodestoneEventService? _lodestone;
+
+    public ItemDetailService(GameData gameData, IGarlandInstanceService? garland = null, ILodestoneEventService? lodestone = null)
     {
         _gameData = gameData ?? throw new ArgumentNullException(nameof(gameData));
         _garland = garland;
+        _lodestone = lodestone;
 
         BuildCaches();
         BuildDutyDropCache();

@@ -1,5 +1,9 @@
 namespace GlamSource.Core;
 
+/// GetEventStatusAsync result. Recurring = the CSV text carried a year suffix (seasonal event,
+/// comes back annually); Active = a live Lodestone check (null = couldn't check, no guess).
+public sealed record EventStatus(string EventName, bool Recurring, bool? Active);
+
 public enum ItemSourceType
 {
     Unknown,

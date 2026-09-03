@@ -1397,6 +1397,8 @@ private void ApplyTargetGlamourToSelf()
             ImGui.Image(banner.Handle, new Vector2(w, w * 120f / 376f));
         }
         UiStyle.SectionHeader($"{dd.Name} — {dd.Type}, Lv.{dd.Level}{(dd.ItemLevel > 0 ? $", iLvl {dd.ItemLevel}" : "")}");
+        if (ImGui.SmallButton($"{Loc.T("Duty Finder")}##duty_open_{dd.CfcId}"))
+            ItemDetailWindow.TryOpenDutyFinder(dd.CfcId);
         var dropSize = new Vector2(ImGui.GetFontSize() * 26f, ImGui.GetFontSize() * 14f);
         using (var card = UiStyle.BeginCard("##duty_drops", dropSize))
         {

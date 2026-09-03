@@ -27,6 +27,25 @@ what do I need and where". Prototype, deliberately small:
   included, no same-model alternatives when the best source is unobtainable, "Other" stops are
   just the source text.
 
+## Duty Drops open button + event availability (1.0.8.0)
+
+- **"Duty öffnen" fehlte im Duty-Drops-Tab**: the banner header now has an "Open in Duty Finder" /
+  "Duty Finder" button (web + ImGui) calling the same `AgentContentsFinder.OpenRegularDuty` /
+  `POST /api/action/dutyfinder/{id}` the item-detail cards already used.
+- **Event item availability** (`GetEventStatusAsync`, `LodestoneEventService`): FFXIV Collect's
+  bundled `SourceType=="Event"` entries carry `"<name> (<year>)"` for seasonal events that recur
+  every year, or a bare name for one-time collabs/promos — parsed via `EventYearRx`. Live "is it
+  running right now": no Lumina sheet or bundled CSV has a calendar, so this does a best-effort
+  fetch of the Lodestone's own Atom news feed (`news.xml`, verified reachable + parseable
+  2026-09-03 — the HTML news page's CSS classes aren't documented/stable, so the feed was used
+  instead) and checks whether the event name appears in a current headline. A fetch failure or no
+  match returns an honest "unknown" / "not running", never a wrong guess. Recurring events never
+  say "gone" (they come back); one-time events say "no longer obtainable" only once confirmed not
+  currently active. Shown under the item name in web (`annotateEvent`, all three item-detail call
+  sites) and ImGui (`ItemDetailWindow`, polled `Task<EventStatus?>`, same pattern as duty coffers).
+  **Not built**: showing the actual trade NPC for a running event — no sheet reliably links event
+  content to its NPC/shop locally, would need per-event manual data.
+
 ## Round 3 after the 1.0 review (1.0.2.0)
 
 - **Inventory "where is it" inline** (web + ImGui): the per-item breakdown (bags / saddlebag /
