@@ -1602,7 +1602,11 @@ public sealed class ItemDetailService : IItemDetailService
                     var costId = cost.ItemCost.RowId;
                     if (costId == 0 || costId == 1) continue; // 1 = Gil
                     if (!map.TryGetValue(costId, out var list)) map[costId] = list = new();
-                    if (list.Count < 3 && !list.Any(x => x.Item3 == recvId))
+                    // ponytail: was capped at 3 total — cut off real sets partway through (Guardian
+                    // Scale exchanges for 5 "Hope [M]" pieces alone, plus 5 more "[F]" pieces at the
+                    // same shop; only the first 3 ever made it in). Raised well past any known set
+                    // size; the caller still groups these into one card per shop either way.
+                    if (list.Count < 12 && !list.Any(x => x.Item3 == recvId))
                         list.Add((shopName, shop.RowId, recvId, GetItemName(recvId) ?? $"#{recvId}"));
                 }
             }
