@@ -885,12 +885,20 @@ function buildItemHtml(d,openFn='openItem'){
     });
   }
   h+='<div class="cards">';
+  // ponytail: opened from inside the duty view (dutyhead banner already names this duty + has its
+  // own "Open in Duty Finder" button up top) — a source card repeating "Dungeon Drop: this same
+  // duty" + a second identical button is pure noise here ("doppelt gemobbelt"). Only drop it in that
+  // context; the standalone item-detail view (search tab) still needs it, nothing else says where
+  // the item drops there.
+  const srcList=(openFn==='openDutyItem'&&dutySelected)
+    ? (d.sources??[]).filter(s=>!(s.cfcRowId===dutySelected||(s.cfcRowIds??[]).includes(dutySelected)))
+    : (d.sources??[]);
   // ponytail: same shop/vendor sold from several NPC locations used to render as one full repeated
   // card per location ("unübersichtlich" — a shop with 3 vendor spots meant 3 near-identical cards).
   // Group by description (+ cost, in case two shops share a name but differ in price) into ONE card
   // with a multi-row NPC table instead.
   const groups=new Map();
-  for(const s of d.sources??[]){
+  for(const s of srcList){
     const key=(s.description??'')+'|'+JSON.stringify(s.costs??[]);
     if(!groups.has(key))groups.set(key,[]);
     groups.get(key).push(s);
