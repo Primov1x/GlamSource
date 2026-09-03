@@ -152,6 +152,7 @@ public static class Loc
         ["Applied."] = "Angewendet.",
         ["Dungeons"] = "Dungeons",
         ["All"] = "Alle",
+        ["Mounts & minions"] = "Reittiere & Begleiter",
         ["Trials"] = "Prüfungen",
         ["Raids"] = "Raids",
         ["Ultimates"] = "Fatale",

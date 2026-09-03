@@ -455,7 +455,7 @@ public sealed class WebUiService : IDisposable
             return Json(new { status = _framework.RunOnFrameworkThread(() => _shell.ApplyItemToSelf(applyItemId)).GetAwaiter().GetResult() });
 
         if (method == "GET" && path == "/api/duties")
-            return Json(_detail.ListDutiesWithDrops().Select(d => new { id = d.CfcId, name = d.Name, type = d.Type, drops = d.DropCount, imageId = d.ImageId, level = d.Level, itemLevel = d.ItemLevel, expansion = d.Expansion }).ToArray());
+            return Json(_detail.ListDutiesWithDrops().Select(d => new { id = d.CfcId, name = d.Name, type = d.Type, drops = d.DropCount, imageId = d.ImageId, level = d.Level, itemLevel = d.ItemLevel, expansion = d.Expansion, typeIcon = d.TypeIconId }).ToArray());
         if (method == "GET" && path == "/api/duty/current")
         {
             var territory = _framework.RunOnFrameworkThread(() => (uint)_clientState.TerritoryType).GetAwaiter().GetResult();

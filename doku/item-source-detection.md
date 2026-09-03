@@ -49,6 +49,17 @@ what do I need and where". Prototype, deliberately small:
   duty tiles → drops, breadcrumb "All › Dungeons › Heavensward" to go back up. A search term
   bypasses it (flat grouped list). Selecting a duty (click or auto-detect) lands the list in that
   duty's folder. ImGui mirrors it with Selectables per level and SmallButton breadcrumbs.
+- **Tile pictures + mounts on top (1.0.4.0)**: folder tiles carry the Duty Finder category icon
+  (`ContentType.Icon`: 61801 dungeons, 61804 trials, 61802 raids, 61832 ultimates) and the banner
+  of the folder's newest duty as background; ImGui rows get the same banner thumbnail. Mount and
+  minion drops are lifted out of the boss/chest lists into a "Mounts & minions" section at the top
+  with the wiki preview picture (`DutyDrop.Kind`, `DutyDetail.Featured`). Mount detection =
+  reverse of the bundled `MountItemMap.csv` — NOT `ItemUICategory 63`, which is the generic
+  "Other" bucket (gil, seals, whistles alike); minions = `ItemUICategory 81`. Verified on The
+  Whorleater (Extreme): Enbarr Whistle featured, Leviathan's 22 chest items stay below.
+- Glamourer note (asked): its IPC covers equipment + customize only — mounts and fashion
+  accessories (e.g. Wings of Resolve) can't be applied; the game itself has no mount glamour.
+  Possible later: "open in the Mount Guide" button for mount items.
 
 ## Duty Drops tab (0.0.0.312) — current-duty auto-detect + Duty Finder style browse
 

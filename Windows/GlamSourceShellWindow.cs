@@ -1325,14 +1325,20 @@ private void ApplyTargetGlamourToSelf()
                 else if (_dutyNavType == null)
                 {
                     foreach (var g in _duties.GroupBy(d => d.Type))
+                    {
+                        DrawFolderThumb(g);
                         if (ImGui.Selectable($"{Loc.T(DutyTypeLabel(g.Key))}  ({g.Count()})##dtype_{g.Key}"))
                             _dutyNavType = g.Key;
+                    }
                 }
                 else if (_dutyNavExp == null)
                 {
                     foreach (var g in _duties.Where(d => d.Type == _dutyNavType).GroupBy(d => d.Expansion))
+                    {
+                        DrawFolderThumb(g);
                         if (ImGui.Selectable($"{g.Key}  ({g.Count()})##dexp_{g.Key}"))
                             _dutyNavExp = g.Key;
+                    }
                 }
                 else
                 {
@@ -1361,8 +1367,13 @@ private void ApplyTargetGlamourToSelf()
         {
             if (!card.Opened)
                 return;
-            if (dd.Bosses.Count == 0 && dd.General.Count == 0)
+            if (dd.Bosses.Count == 0 && dd.General.Count == 0 && dd.Featured.Count == 0)
                 ImGui.TextColored(UiStyle.Muted, Loc.T("No drops known for this duty."));
+            if (dd.Featured.Count > 0)
+            {
+                UiStyle.SectionHeader(Loc.T("Mounts & minions"));
+                foreach (var r in dd.Featured) DrawDutyDropRow(r);
+            }
             foreach (var b in dd.Bosses)
             {
                 UiStyle.SectionHeader($"{Loc.T("Boss")} {b.FightNo + 1}{(b.Name.Length > 0 ? $" — {b.Name}" : "")}");
@@ -1490,6 +1501,18 @@ private void ApplyTargetGlamourToSelf()
         {
             ImGui.TextColored(ok ? UiStyle.Success : UiStyle.Muted, $"{e.Name} x{e.Count:N0}");
         }
+    }
+
+    // folder row thumbnail: the newest duty's banner (highest level, then newest id) — same
+    // picture the web tiles use as background
+    private void DrawFolderThumb(IEnumerable<DutyInfo> group)
+    {
+        var rep = group.OrderByDescending(d => d.Level).ThenByDescending(d => d.CfcId).First();
+        if (rep.ImageId == 0) return;
+        var tex = _textures.GetFromGameIcon(new GameIconLookup(rep.ImageId)).GetWrapOrEmpty();
+        var w = ImGui.GetFontSize() * 5f;
+        ImGui.Image(tex.Handle, new Vector2(w, w * 120f / 376f));
+        ImGui.SameLine();
     }
 
     private static string DutyTypeLabel(string type) => type switch

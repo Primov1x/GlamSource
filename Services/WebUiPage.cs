@@ -61,8 +61,11 @@ input[type=search]:focus{border-color:var(--accent)}
 #dutylist.grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 #dutycrumb{margin:8px 0 6px;font-size:12px;color:var(--muted)}
 .crumb[onclick]{color:var(--gold);cursor:pointer}
-.ntile{background:linear-gradient(180deg,#28251f,#1c1a16);border:1px solid var(--border);border-radius:8px;padding:12px 14px;cursor:pointer;transition:.12s}
+/* folder tiles: a representative duty banner as background, darkened on the text side */
+.ntile{background:#1c1a16 center/cover no-repeat;border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:.12s;min-height:66px;overflow:hidden}
 .ntile:hover,.ntile:focus{border-color:var(--gold);box-shadow:0 0 8px rgba(200,167,94,.3);outline:none}
+.ntile .nshade{display:flex;align-items:center;gap:10px;height:100%;min-height:64px;padding:10px 14px;background:linear-gradient(90deg,rgba(20,19,18,.93) 0%,rgba(20,19,18,.75) 55%,rgba(20,19,18,.25) 100%)}
+.ntile .ticon{width:30px;height:30px;flex-shrink:0}
 .ntile .nm{font-size:14px;color:var(--gold)}
 .ntile .meta{color:var(--muted);font-size:11px}
 #dutymain{flex:1;min-width:0}
@@ -274,6 +277,9 @@ const I18N={
   duty_general:{en:'Elsewhere in the duty (chests & mobs)',de:'Unterwegs in der Duty (Truhen & Gegner)'},
   drops:{en:'drops',de:'Drops'},
   duty_coffers:{en:'Treasure chests along the way (Garland Tools)',de:'Truhen unterwegs (Garland Tools)'},
+  duty_featured:{en:'Mounts & minions',de:'Reittiere & Begleiter'},
+  mount:{en:'Mount',de:'Reittier'},
+  minion:{en:'Minion',de:'Begleiter'},
   shopping_btn:{en:'Shopping list',de:'Einkaufsliste'},
   shopping_tt:{en:'Everything needed for the shown outfit: best source per piece, grouped by NPC / craft / duty, with what you already own',de:'Alles für das gezeigte Outfit: beste Quelle je Teil, gruppiert nach NPC / Craft / Duty, mit dem, was du schon hast'},
   shopping_title:{en:'Outfit shopping list',de:'Outfit-Einkaufsliste'},
@@ -721,11 +727,14 @@ function renderDutyList(){
   if(!dutyNav.type){
     list.classList.add('grid');
     const types=[...new Set(all.map(x=>x.type))];
-    list.innerHTML=types.map(ty=>`<div class="ntile" tabindex="0" role="button" onclick="dutyNavTo('${ty}',null)"><div class="nm">${t('dtype_'+ty)}</div><div class="meta">${all.filter(x=>x.type===ty).length} ${t('duties')}</div></div>`).join('');
+    // banner of the newest (highest level, then newest id) duty of the folder as tile background
+    const rep=rows=>rows.reduce((a,b)=>(b.level>a.level||(b.level===a.level&&b.id>a.id))?b:a);
+    list.innerHTML=types.map(ty=>{const g=all.filter(x=>x.type===ty),r=rep(g);return `<div class="ntile" tabindex="0" role="button" onclick="dutyNavTo('${ty}',null)" style="background-image:url(/api/icon/${r.imageId})"><div class="nshade">${r.typeIcon?`<img class="ticon" src="/api/icon/${r.typeIcon}" onerror="this.remove()">`:''}<div><div class="nm">${t('dtype_'+ty)}</div><div class="meta">${g.length} ${t('duties')}</div></div></div></div>`}).join('');
   }else if(!dutyNav.exp){
     list.classList.add('grid');
     const inType=all.filter(x=>x.type===dutyNav.type),exps=[...new Set(inType.map(x=>x.expansion))];
-    list.innerHTML=exps.map(ex=>`<div class="ntile" tabindex="0" role="button" onclick="dutyNavTo('${dutyNav.type}','${ex}')"><div class="nm">${esc(ex)}</div><div class="meta">${inType.filter(x=>x.expansion===ex).length} ${t('duties')}</div></div>`).join('');
+    const rep=rows=>rows.reduce((a,b)=>(b.level>a.level||(b.level===a.level&&b.id>a.id))?b:a);
+    list.innerHTML=exps.map(ex=>{const g=inType.filter(x=>x.expansion===ex),r=rep(g);return `<div class="ntile" tabindex="0" role="button" onclick="dutyNavTo('${dutyNav.type}','${ex}')" style="background-image:url(/api/icon/${r.imageId})"><div class="nshade"><div><div class="nm">${esc(ex)}</div><div class="meta">${g.length} ${t('duties')}</div></div></div></div>`}).join('');
   }else{
     list.classList.remove('grid');
     list.innerHTML=all.filter(x=>x.type===dutyNav.type&&x.expansion===dutyNav.exp).map(dutyTile).join('')||`<div class="empty">${t('no_items')}</div>`;
@@ -746,6 +755,8 @@ async function selectDuty(id){
   // chests after that boss), then whatever drops anywhere in the duty
   $('#dutyhead').innerHTML=`<div class="dutybanner"><img src="/api/icon/${d.imageId}" onerror="this.style.display='none'"><div><h2 class="name">${esc(d.name)}</h2><div class="meta">${esc(d.type)} · Lv.${d.level}${d.itemLevel?` · iLvl ${d.itemLevel}`:''}</div></div></div>`;
   let h='';
+  // mounts / minions first, with the wiki preview picture — that's what people farm Extremes for
+  if(d.featured?.length)h+=`<div class="dsec" style="margin-top:0"><div class="dsech">${t('duty_featured')}</div><div class="results dgrid">${d.featured.map(x=>`<div class="row" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${img(x.iconId,28)}<span>${esc(x.name)}<span class="ilvl">${x.kind==='Mount'?t('mount'):t('minion')}</span></span><img class="rowpreview" src="/api/itemimage/${x.itemId}" loading="lazy" onerror="this.remove()"></div>`).join('')}</div></div>`;
   for(const b of d.bosses){
     h+=`<div class="dsec"><div class="dsech">${t('boss')} ${b.fightNo+1}${b.name?` — ${esc(b.name)}`:''}</div>`;
     if(b.drops.length)h+=`<div class="results dgrid">${dropRows(b.drops)}</div>`;

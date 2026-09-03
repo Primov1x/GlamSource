@@ -53,15 +53,17 @@ public record ItemSourceDetail(
     uint? SourceItemId = null);
 
 /// One duty (ContentFinderCondition) that has at least one known drop.
-public sealed record DutyInfo(uint CfcId, string Name, string Type, uint TerritoryTypeId, int DropCount, uint ImageId, int Level, int ItemLevel, string Expansion);
-public sealed record DutyDrop(uint ItemId, string Name, uint IconId, int ItemLevel);
+public sealed record DutyInfo(uint CfcId, string Name, string Type, uint TerritoryTypeId, int DropCount, uint ImageId, int Level, int ItemLevel, string Expansion, uint TypeIconId);
+/// Kind: "Mount" (item of a MountItemMap entry) / "Minion" (ItemUICategory 81) / "" — the tab lifts those to the top.
+public sealed record DutyDrop(uint ItemId, string Name, uint IconId, int ItemLevel, string Kind = "");
 public sealed record DutyChest(int CofferNo, IReadOnlyList<DutyDrop> Items);
 public sealed record DutyBoss(int FightNo, string Name, IReadOnlyList<DutyDrop> Drops, IReadOnlyList<DutyChest> Chests);
 /// Duty Finder style detail: banner image (ContentFinderCondition.Image), per-boss drops and
 /// chests (LuminaSupplemental DungeonBoss / DungeonBossDrop / DungeonBossChest), plus the
 /// duty-wide DungeonDrop list.
 public sealed record DutyDetail(uint CfcId, string Name, string Type, uint ImageId, int Level, int ItemLevel,
-    IReadOnlyList<DutyBoss> Bosses, IReadOnlyList<DutyDrop> General, uint TerritoryTypeId, uint MapId);
+    IReadOnlyList<DutyBoss> Bosses, IReadOnlyList<DutyDrop> General, uint TerritoryTypeId, uint MapId,
+    IReadOnlyList<DutyDrop> Featured);
 /// A treasure coffer along the way (Garland Tools), with its map coordinates.
 public sealed record DutyCoffer(float X, float Y, IReadOnlyList<DutyDrop> Items);
 
@@ -1052,12 +1054,16 @@ public sealed class ItemDetailService : IItemDetailService
             var name = cfc.Value.Name.ToString();
             if (name.Length == 0) continue;
             list.Add(new DutyInfo(cfcId, name, GetDutyType(cfcId), cfc.Value.TerritoryType.RowId, items.Count,
-                cfc.Value.Image, cfc.Value.ClassJobLevelRequired, cfc.Value.ItemLevelRequired, ExpansionName(cfc.Value.ClassJobLevelRequired)));
+                cfc.Value.Image, cfc.Value.ClassJobLevelRequired, cfc.Value.ItemLevelRequired, ExpansionName(cfc.Value.ClassJobLevelRequired),
+                Safe(() => (uint)(cfc.Value.ContentType.ValueNullable?.Icon ?? 0), 0u))); // Duty Finder category icon (61801 dungeons, ...)
         }
         // grouped for the tab: content type, then expansion, then level, then name
         return list.OrderBy(d => DutyTypeOrder(d.Type)).ThenBy(d => ExpansionOrder(d.Level)).ThenBy(d => d.Level)
             .ThenBy(d => d.Name, StringComparer.OrdinalIgnoreCase).ToList();
     }
+
+    private HashSet<uint>? _mountItemIds;
+    private HashSet<uint> MountItemIds => _mountItemIds ??= _mountToItemId.Values.ToHashSet();
 
     private static int DutyTypeOrder(string type) => type switch { "Dungeon" => 0, "Trial" => 1, "Raid" => 2, "Ultimate" => 3, _ => 4 };
     // Expansion from the required level (ARR ≤50, HW ≤60, SB ≤70, ShB ≤80, EW ≤90, DT ≤100): holds
@@ -1092,7 +1098,10 @@ public sealed class ItemDetailService : IItemDetailService
             {
                 var row = itemSheet?.GetRowOrDefault(id);
                 if (row == null) continue;
-                list.Add(new DutyDrop(id, row.Value.Name.ToString(), row.Value.Icon, (int)row.Value.LevelItem.RowId));
+                // mount = item of a MountItemMap entry (ItemUICategory 63 is the generic "Other" bucket — gil,
+                // seals, whistles all share it), minion = ItemUICategory 81 (verified: Wind-up Cursor)
+                var kind = MountItemIds.Contains(id) ? "Mount" : row.Value.ItemUICategory.RowId == 81 ? "Minion" : "";
+                list.Add(new DutyDrop(id, row.Value.Name.ToString(), row.Value.Icon, (int)row.Value.LevelItem.RowId, kind));
             }
             return list.OrderByDescending(d => d.ItemLevel).ThenBy(d => d.Name, StringComparer.OrdinalIgnoreCase).ToList();
         }
@@ -1117,10 +1126,23 @@ public sealed class ItemDetailService : IItemDetailService
             bossList.Add(new DutyBoss(f, name, drops, chestList));
         }
         var generalDrops = Drops(general.Where(d => d.ContentFinderConditionId == cfcId).Select(d => d.ItemId));
+        // "Mounts nach oben": mount and minion drops get their own section at the top instead of
+        // hiding inside a boss chest list (the whole point of most Extreme trials)
+        var featured = bossList.SelectMany(b => b.Drops.Concat(b.Chests.SelectMany(c => c.Items))).Concat(generalDrops)
+            .Where(d => d.Kind.Length > 0).DistinctBy(d => d.ItemId)
+            .OrderBy(d => d.Kind, StringComparer.Ordinal).ThenBy(d => d.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        if (featured.Count > 0)
+        {
+            bossList = bossList.Select(b => new DutyBoss(b.FightNo, b.Name, b.Drops.Where(d => d.Kind.Length == 0).ToList(),
+                    b.Chests.Select(c => new DutyChest(c.CofferNo, c.Items.Where(d => d.Kind.Length == 0).ToList())).Where(c => c.Items.Count > 0).ToList()))
+                .Where(b => b.Drops.Count > 0 || b.Chests.Count > 0).ToList();
+            generalDrops = generalDrops.Where(d => d.Kind.Length == 0).ToList();
+        }
         return new DutyDetail(cfcId, cfc.Value.Name.ToString(), GetDutyType(cfcId), cfc.Value.Image,
             cfc.Value.ClassJobLevelRequired, cfc.Value.ItemLevelRequired, bossList, generalDrops,
             cfc.Value.TerritoryType.RowId,
-            Safe(() => cfc.Value.TerritoryType.ValueNullable?.Map.RowId ?? 0, 0u)); // TerritoryType sheet mismatches under DalaMock
+            Safe(() => cfc.Value.TerritoryType.ValueNullable?.Map.RowId ?? 0, 0u), // TerritoryType sheet mismatches under DalaMock
+            featured);
     }
 
     public async Task<IReadOnlyList<DutyCoffer>> GetDutyCoffersAsync(uint cfcId)
