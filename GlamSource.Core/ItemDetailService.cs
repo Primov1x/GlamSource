@@ -1346,7 +1346,7 @@ public sealed class ItemDetailService : IItemDetailService
 
         var costs = new List<CostEntry>
         {
-            new CostEntry(0, "Gil", price, 800)
+            new CostEntry(0, "Gil", price, 65002) // Gil item icon (was 800, a speech bubble)
         };
 
         var allSources = new List<ItemSourceDetail>();
@@ -2694,7 +2694,7 @@ public sealed class ItemDetailService : IItemDetailService
     private uint GetItemIconId(uint itemId)
     {
         if (itemId == 0)
-            return 0;
+            return 65002; // gil rows use itemId 0 — Gil's own icon, not Item row 0's speech bubble (800)
 
         var itemSheet = _gameData.GetExcelSheet<Item>();
         if (itemSheet == null || !itemSheet.TryGetRow(itemId, out var item))

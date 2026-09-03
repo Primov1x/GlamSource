@@ -60,6 +60,11 @@ what do I need and where". Prototype, deliberately small:
 - Glamourer note (asked): its IPC covers equipment + customize only — mounts and fashion
   accessories (e.g. Wings of Resolve) can't be applied; the game itself has no mount glamour.
   Possible later: "open in the Mount Guide" button for mount items.
+- **Tab order + cog (1.0.5.0)**: Character is the landing tab (web `showTab('character')` on load,
+  ImGui first tab), then Item Search, then Duty Drops; Settings left the nav and became a cog —
+  web: title-bar button toggling `view-settings`, ImGui: trailing tab item drawn with
+  `UiBuilder.IconFont` (`FontAwesomeIcon.Cog`, tooltip "Settings"). Gil cost rows (itemId 0) now
+  show the real Gil icon (Item 1, icon 65002) in web + both ImGui row renderers.
 
 ## Duty Drops tab (0.0.0.312) — current-duty auto-detect + Duty Finder style browse
 

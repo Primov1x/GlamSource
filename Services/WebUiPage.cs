@@ -166,19 +166,19 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
   <span class="spacer"></span>
   <button id="btn-lang-en" onclick="setLang('en')" style="width:auto;padding:0 6px;font-size:11px">EN</button>
   <button id="btn-lang-de" onclick="setLang('de')" style="width:auto;padding:0 6px;font-size:11px">DE</button>
+  <button id="btn-settings" data-i18n-title="tab_settings" onclick="showTab(currentTab==='settings'?'character':'settings')"><svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg></button>
   <button id="btn-min" data-i18n-title="min" onclick="toggleMinimize()">–</button>
   <button id="btn-lock" data-i18n-title="lock" onclick="toggleLock()"><svg viewBox="0 0 24 24"><path d="M12 2a5 5 0 0 0-5 5h2a3 3 0 0 1 6 0v3H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5z"/></svg></button>
   <button data-i18n-title="hide" onclick="post('/api/action/overlay/hide')">×</button>
 </div>
 <div id="app">
 <nav>
-  <button id="tab-lookup" class="active" data-i18n="tab_lookup" onclick="showTab('lookup')"></button>
-  <button id="tab-character" data-i18n="tab_character" onclick="showTab('character')"></button>
+  <button id="tab-character" class="active" data-i18n="tab_character" onclick="showTab('character')"></button>
+  <button id="tab-lookup" data-i18n="tab_lookup" onclick="showTab('lookup')"></button>
   <button id="tab-duties" data-i18n="tab_duties" onclick="showTab('duties')"></button>
-  <button id="tab-settings" data-i18n="tab_settings" onclick="showTab('settings')"></button>
 </nav>
 
-<section id="view-lookup">
+<section id="view-lookup" style="display:none">
   <input type="search" id="q" data-i18n-ph="search_ph" autofocus>
   <div id="filters">
     <select id="f-slot"></select>
@@ -191,7 +191,7 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
   <div id="detail"></div>
 </section>
 
-<section id="view-character" style="display:none">
+<section id="view-character">
   <!-- three columns like the in-game character sheet: gear slots | live model | item lookup panel.
        Clicking a slot opens the lookup RIGHT THERE (no tab switch, panel scrolls internally, the
        page itself never scrolls). -->
@@ -366,17 +366,19 @@ function setLang(l){
 // icons come from the plugin's own /api/icon (game data via Lumina) — xivapi's CDN is frozen
 // and 404s on anything newer than its snapshot
 const icon=id=>id?`/api/icon/${id}`:'';
+const GIL_ICON=65002; // Item 1 "Gil" — cost rows carry itemId 0 / iconId 0
 const esc=t=>(t??'').toString().replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const img=(id,size)=>`<img src="${icon(id)}" width="${size}" height="${size}" loading="lazy" onerror="this.style.visibility='hidden'">`;
 function typeIcon(cls){return ''} // emoji render as empty boxes in Browsingway — the text badge is enough
 
-let currentTab='lookup';
+let currentTab='character';
 function showTab(t){
   currentTab=t;
   for(const x of['lookup','character','duties','settings']){
     $('#view-'+x).style.display=x===t?'':'none';
-    $('#tab-'+x).classList.toggle('active',x===t);
+    $('#tab-'+x)?.classList.toggle('active',x===t); // settings has no nav tab, only the title-bar cog
   }
+  $('#btn-settings').classList.toggle('active',t==='settings');
   if(t==='character'){loadSnapshot(true);loadRecents();startPreview3D()}else{stopPreview3D()}
   if(t==='settings')loadSettings();
   if(t==='duties')loadDuties();
@@ -861,7 +863,7 @@ function renderSource(group,itemId,openFn='openItem'){
         // the DOM (needs an async /api/inventory fetch per item — can't do that synchronously here).
         // rows with a real item id open that item (piece / material / currency source)
         const click=m.itemId?` style="cursor:pointer" onclick="${openFn}(${m.itemId})"`:'';
-        h+=`<div class="matrow" data-item="${m.itemId}" data-need="${m.count}"${click}>${img(m.iconId,22)}<span class="matqty">${esc(m.name)||(m.itemId===0?'Gil':'#'+m.itemId)} × ${m.count.toLocaleString()}</span></div>`;
+        h+=`<div class="matrow" data-item="${m.itemId}" data-need="${m.count}"${click}>${img(m.itemId===0?GIL_ICON:m.iconId,22)}<span class="matqty">${esc(m.name)||(m.itemId===0?'Gil':'#'+m.itemId)} × ${m.count.toLocaleString()}</span></div>`;
       }
     }
   }
@@ -977,7 +979,7 @@ async function glamourerPost(url,btn){
 
 // Outfit shopping list (prototype, see doku): one best source per shown slot, merged into stops.
 // Rows are .matrow[data-item] so annotateInventory() marks owned pieces green for free.
-const shopRow=(m,openFn)=>`<div class="matrow" data-item="${m.itemId}" data-need="${m.count}"${m.itemId&&openFn?` style="cursor:pointer" onclick="${openFn}(${m.itemId})"`:''}>${img(m.iconId,22)}<span class="matqty">${esc(m.name)||(m.itemId===0?'Gil':'#'+m.itemId)}${m.count>1?` × ${m.count.toLocaleString()}`:''}</span></div>`;
+const shopRow=(m,openFn)=>`<div class="matrow" data-item="${m.itemId}" data-need="${m.count}"${m.itemId&&openFn?` style="cursor:pointer" onclick="${openFn}(${m.itemId})"`:''}>${img(m.itemId===0?GIL_ICON:m.iconId,22)}<span class="matqty">${esc(m.name)||(m.itemId===0?'Gil':'#'+m.itemId)}${m.count>1?` × ${m.count.toLocaleString()}`:''}</span></div>`;
 async function showShoppingList(){
   const box=$('#chardetail');
   box.innerHTML=`<div class="empty"><span class="spinner"></span>${t('loading')}</div>`;
@@ -1015,6 +1017,7 @@ function toggleLock(){
   post('/api/action/overlay/lock?locked='+overlayLocked);
 }
 applyI18n();
+showTab('character'); // Character is the landing tab: starts snapshot polling + preview stream
 updateOverlayCompactness(); // initial load starts on the Suche tab, empty
 </script>
 </body>

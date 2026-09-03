@@ -249,10 +249,11 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
 
         if (ImGui.BeginTabBar("##GlamSourceShellTabs", ImGuiTabBarFlags.None))
         {
-            DrawTab(Loc.T("Lookup"),    TabId.Lookup,    DrawLookupTab);
-            DrawTab(Loc.T("Character"), TabId.Character, DrawCharacterTab);
+            // Character first (the plugin's reason to exist), Settings as a trailing cog
+            DrawTab(Loc.T("Character"),  TabId.Character, DrawCharacterTab);
+            DrawTab(Loc.T("Lookup"),     TabId.Lookup,    DrawLookupTab);
             DrawTab(Loc.T("Duty Drops"), TabId.Duties,    DrawDutiesTab);
-            DrawTab(Loc.T("Settings"),  TabId.Settings,  DrawSettingsTab);
+            DrawTab(FontAwesomeIcon.Cog.ToIconString(), TabId.Settings, DrawSettingsTab, iconFont: true, trailing: true, tooltip: Loc.T("Settings"));
             ImGui.EndTabBar();
         }
     }
@@ -276,15 +277,26 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
             ImGui.SetTooltip(_configuration.Language == "de" ? "Switch to English" : "Auf Deutsch umschalten");
     }
 
-    private void DrawTab(string label, TabId id, System.Action body)
+    private void DrawTab(string label, TabId id, System.Action body, bool iconFont = false, bool trailing = false, string? tooltip = null)
     {
         var flags = ImGuiTabItemFlags.None;
+        if (trailing) flags |= ImGuiTabItemFlags.Trailing;
         if (_pendingTab == (int)id)
         {
             flags |= ImGuiTabItemFlags.SetSelected;
             _pendingTab = -1;
         }
-        if (ImGui.BeginTabItem(label, flags))
+        bool open;
+        if (iconFont)
+        {
+            using (ImRaii.PushFont(UiBuilder.IconFont))
+                open = ImGui.BeginTabItem(label, flags);
+        }
+        else
+            open = ImGui.BeginTabItem(label, flags);
+        if (tooltip != null && ImGui.IsItemHovered())
+            ImGui.SetTooltip(tooltip);
+        if (open)
         {
             body();
             ImGui.EndTabItem();
@@ -1462,6 +1474,10 @@ private void ApplyTargetGlamourToSelf()
     {
         if (e.ItemId == 0)
         {
+            var gil = _textures.GetFromGameIcon(new GameIconLookup(65002)).GetWrapOrEmpty(); // Item 1 "Gil"
+            var edge = ImGui.GetFontSize() * 1.2f;
+            ImGui.Image(gil.Handle, new Vector2(edge, edge));
+            ImGui.SameLine();
             ImGui.TextColored(new Vector4(1f, 0.84f, 0f, 1f), $"{e.Count:N0} Gil");
             return;
         }

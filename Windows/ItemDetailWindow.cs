@@ -860,6 +860,13 @@ public class ItemDetailWindow : Window, IDisposable
     {
         if (entry.ItemId == 0)
         {
+            if (_textureProvider != null)
+            {
+                // cost rows carry itemId 0 for gil — show the real Gil icon (Item 1, icon 65002)
+                var gil = _textureProvider.GetFromGameIcon(new GameIconLookup(65002)).GetWrapOrEmpty();
+                ImGui.Image(gil.Handle, new Vector2(RowIconSize, RowIconSize));
+                ImGui.SameLine();
+            }
             ImGui.TextColored(new Vector4(1f, 0.84f, 0f, 1f), $"{FormatNumber(entry.Count)} Gil");
             return;
         }
