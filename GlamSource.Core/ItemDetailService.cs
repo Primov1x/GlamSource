@@ -884,7 +884,24 @@ public sealed class ItemDetailService : IItemDetailService
             else if (((_englishItemSheet ??= _gameData.GetExcelSheet<Item>(Language.English))?.GetRowOrDefault(itemId)?.Description.ToString() ?? "").StartsWith("Eureka gear", StringComparison.Ordinal))
                 results.Add(Note(ItemSourceType.Other, "Eureka (The Forbidden Land) — Eureka-only gear, exchanged with Gerolt / the Expedition Artisan inside Eureka; not obtainable outside it."));
         }
-        if (results.Count == 0 && TradeInUses.TryGetValue(itemId, out var tradeIns))
+
+        // 7n. Deep Dungeon / Bozja-Zadnor / Occult Crescent trade-in currencies — the block above
+        // only ever explains where these SPEND (via TradeInUses below), never where they're EARNED.
+        // Verified live 2026-09-03 (audit): Aetherpool Grip/Fragment items across all 3 real Deep
+        // Dungeons, Resistance Token, and Enlightenment Silver Piece all showed only the outbound
+        // exchange with no acquisition note. Additive — falls through to TradeInUses right after,
+        // doesn't set results.Count so the outbound trade-in note still appears alongside this.
+        var tokenInboundNote =
+            Regex.IsMatch(enName, @"^(Palace|Yggdrasil|Orthos) Aetherpool (Fragment|Grip|Core)$")
+                ? "Deep Dungeon currency — earned as a reward for clearing that Deep Dungeon's floors (progression reward, not a drop or purchase)."
+            : enName == "Resistance Token"
+                ? "Bozja/Zadnor Resistance relic currency — earned from Critical Engagements and Duels in Bozja/Zadnor, and from Save the Queen relic quest steps."
+            : enName == "Enlightenment Silver Piece"
+                ? "Occult Crescent currency — earned from combat participation (Critical Engagements/duels) in the Occult Crescent (South Horn)."
+            : null;
+        if (results.Count == 0 && tokenInboundNote != null)
+            results.Add(Note(ItemSourceType.Other, tokenInboundNote));
+        if ((tokenInboundNote != null || results.Count == 0) && TradeInUses.TryGetValue(itemId, out var tradeIns))
         {
             foreach (var t in tradeIns.Take(3))
                 results.Add(Note(ItemSourceType.Other,
@@ -1098,9 +1115,16 @@ public sealed class ItemDetailService : IItemDetailService
         // genuinely have no current recipe/vendor/duty-drop entry.
         if (results.Count == 0)
         {
+            // ponytail: this fallback used to always say "old gear rotated out of its vendor" —
+            // technically true for equipment, but nonsensical when applied to non-equippable event
+            // currencies/points (Mettle, Phantom EXP): those are earned by participating in current
+            // content (Bozja/Zadnor Critical Engagements, Occult Crescent combat), not "old gear".
+            var isEquipment = item.EquipSlotCategory.RowId > 0;
             results.Add(new ItemSourceDetail(
                 ItemSourceType.Other,
-                "No known current source. Often old gear that's been rotated out of its vendor over patches — may still be a rare drop, achievement, or account-bound reward we don't track.",
+                isEquipment
+                    ? "No known current source. Often old gear that's been rotated out of its vendor over patches — may still be a rare drop, achievement, or account-bound reward we don't track."
+                    : "No known current source. Likely an instance-bound currency/point earned by participating in specific content (e.g. combat engagements, event objectives) rather than bought, crafted, or dropped — we don't track those individually.",
                 null, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
         }
 
@@ -1666,6 +1690,14 @@ public sealed class ItemDetailService : IItemDetailService
             // Antiquated AF, Ryumyaku... all live in nameless SpecialShop rows. Skipping them sent
             // ~1000 gear/arms to the generic fallback (full-sheet audit 2026-09-02).
             var shopName = shop.Name.ToString();
+
+            // "Currency Test" (and similarly-named rows) are leftover dev/QA SpecialShop entries —
+            // no NPC in the game ever binds to them, so they're unreachable in-game but still sit in
+            // the client's own SpecialShop sheet. Verified live: Bozjan Cluster (31135) surfaced as
+            // "buyable for MGP" from this shop, which isn't how Zadnor currency actually works
+            // (earned via Critical Engagements/Duels, not bought). Skip anything named like a test row.
+            if (shopName.Contains("Test", StringComparison.OrdinalIgnoreCase))
+                continue;
 
             foreach (var itemStruct in shop.Item)
             {
