@@ -1,5 +1,31 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Fix: same fast-click race in ImGui (market price + crafting savings) (1.0.22.0)
+
+"Test ImGui with the same scenarios" — can't click-drive the native window, so this was static
+analysis instead of a live repro, but the code shape is identical to the web bugs found and fixed
+in 1.0.20.0/1.0.21.0:
+
+- `_marketInfo`/`_marketItemId` (Universalis price, `LoadItemDetail`): click item A then B before
+  A's price fetch resolves — A's `Task.Run` continuation writes `_marketInfo` unconditionally, and
+  by the time it runs, `_marketItemId` already points at B (set synchronously when B was clicked).
+  Render check `_marketItemId == detail.ItemId` then passes for B while showing A's price. Made
+  MORE likely by `UniversalisService`'s own 1 req/sec rate limit — overlapping in-flight requests
+  on fast clicks are the common case, not an edge case.
+- `_craftingResult` (`ShowItem`/`Open`): same shape, but had NO id guard at render time at all —
+  any two craftable items clicked in quick succession would very plausibly show the wrong item's
+  crafting savings, not just under adversarial timing.
+- Checked for the same pattern elsewhere: `_previewTextureCache` is a per-itemId Dictionary (safe
+  by construction), `_eventTask`/`_cofferTask` poll the CURRENT task reference directly rather than
+  writing to a separate shared field from a background continuation (also safe) — only the two
+  above use the vulnerable "background write to a shared field, id-checked only at render" shape.
+
+Fix: new `_craftingItemId` field (mirrors `_marketItemId`'s existing one), both `Task.Run`
+continuations now check their own itemId is still the current one before writing the shared result
+field; `_craftingResult`'s render check gained the `_craftingItemId == detail.ItemId` guard it
+never had. `dotnet build` 0/0, `dotnet test` 54/54 — **not live-verified** (no native-window
+automation available); flagged for the user to click-confirm in-game or via Mock.
+
 ## Fix: same fast-click race in Duty Drops duty-switching (1.0.21.0)
 
 Same "dumb user" scenario testing pass, one duty-tab pattern over: `selectDuty` already had a race

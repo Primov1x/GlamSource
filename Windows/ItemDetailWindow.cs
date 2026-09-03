@@ -53,6 +53,11 @@ public class ItemDetailWindow : Window, IDisposable
     private uint _marketItemId;
     private Action<string, string, float, float>? _onOpenMap;
     private CraftingCostResult? _craftingResult;
+    // ponytail: same fast-click race as the web UI's annotateMarket/annotateEvent (found and fixed
+    // there first, 1.0.20.0/1.0.21.0) — click item A, then B before A's async fetch resolves, A's
+    // result overwrites the shared field after _marketItemId/_craftingItemId already point at B.
+    // Renders under B's header. _craftingItemId didn't even have the market path's partial guard.
+    private uint _craftingItemId;
 
     // Gather button debouncing and feedback state
     private enum GatherOutcome
@@ -188,10 +193,12 @@ public class ItemDetailWindow : Window, IDisposable
         _history.Clear();
         LoadItemDetail(itemId);
         _craftingResult = null;
+        _craftingItemId = itemId;
         Task.Run(async () =>
         {
             var service = _plugin?.CraftingCostService;
-            _craftingResult = service != null ? await service.GetCostBreakdownAsync(itemId) : null;
+            var result = service != null ? await service.GetCostBreakdownAsync(itemId) : null;
+            if (_craftingItemId == itemId) _craftingResult = result; // still the shown item? see field comment
         });
     }
 
@@ -202,10 +209,12 @@ public class ItemDetailWindow : Window, IDisposable
         _slotContext = slot;
         LoadItemDetail(itemId);
         _craftingResult = null;
+        _craftingItemId = itemId;
         Task.Run(async () =>
         {
             var service = _plugin?.CraftingCostService;
-            _craftingResult = service != null ? await service.GetCostBreakdownAsync(itemId) : null;
+            var result = service != null ? await service.GetCostBreakdownAsync(itemId) : null;
+            if (_craftingItemId == itemId) _craftingResult = result; // still the shown item? see field comment
         });
     }
 
@@ -285,7 +294,8 @@ public class ItemDetailWindow : Window, IDisposable
                 _marketInfo = null;
                 _ = Task.Run(async () =>
                 {
-                    _marketInfo = await _universalisService.GetMarketInfoAsync(itemId);
+                    var result = await _universalisService.GetMarketInfoAsync(itemId);
+                    if (_marketItemId == itemId) _marketInfo = result; // still the shown item? see field comment
                     _marketLoading = false;
                 });
             }
@@ -346,7 +356,7 @@ public class ItemDetailWindow : Window, IDisposable
         DrawSourceCards(detail);
         DrawGatheringActionButton(detail);
 
-        if (_plugin?.Configuration?.ShowCraftingSavings == true && _craftingResult != null)
+        if (_plugin?.Configuration?.ShowCraftingSavings == true && _craftingResult != null && _craftingItemId == detail.ItemId)
         {
             SectionHeader(Loc.T("CRAFTING SAVINGS"));
             ImGui.Spacing();
@@ -1572,10 +1582,12 @@ public class ItemDetailWindow : Window, IDisposable
     private void QueryCraftingSavings(uint itemId)
     {
         _craftingResult = null;
+        _craftingItemId = itemId;
         Task.Run(async () =>
         {
             var service = _plugin?.CraftingCostService;
-            _craftingResult = service != null ? await service.GetCostBreakdownAsync(itemId) : null;
+            var result = service != null ? await service.GetCostBreakdownAsync(itemId) : null;
+            if (_craftingItemId == itemId) _craftingResult = result; // still the shown item? see field comment
         });
     }
 
