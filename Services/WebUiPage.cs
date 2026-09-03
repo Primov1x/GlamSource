@@ -292,6 +292,7 @@ const I18N={
   shopping_total:{en:'Total cost',de:'Gesamtkosten'},
   shopping_items:{en:'Pieces here',de:'Teile hier'},
   rest_of_set:{en:'Rest of the set',de:'Rest des Sets'},
+  can_contain:{en:'Can contain',de:'Kann enthalten'},
   open_craftlog:{en:'Open Crafting Log',de:'Herstellungsliste öffnen'},
   npc:{en:'NPC',de:'NPC'},
   location:{en:'Location',de:'Ort'},
@@ -863,6 +864,11 @@ function buildItemHtml(d,openFn='openItem'){
   if((d.setMembers??[]).length){
     h+=`<div class="tbl">${t('rest_of_set')}</div><div style="display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 14px">`;
     for(const m of d.setMembers)h+=`<div class="row" style="width:auto" onclick="${openFn}(${m.itemId})">${img(m.iconId,24)}<span>${esc(m.name)}</span></div>`;
+    h+='</div>';
+  }
+  if((d.contents??[]).length){
+    h+=`<div class="tbl">${t('can_contain')}</div><div style="display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 14px">`;
+    for(const m of d.contents)h+=`<div class="row" style="width:auto" onclick="${openFn}(${m.itemId})">${img(m.iconId,24)}<span>${esc(m.name)}</span></div>`;
     h+='</div>';
   }
   h+='<div class="cards">';

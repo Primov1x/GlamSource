@@ -122,6 +122,7 @@ public static class Loc
         ["iLvl"] = "iLvl",
         ["Set"] = "Set",
         ["Rest of the set:"] = "Rest des Sets:",
+        ["Can contain:"] = "Kann enthalten:",
         ["← Back"] = "← Zurück",
         ["Wiki"] = "Wiki",
         ["Market prices"] = "Marktpreise",

@@ -23,7 +23,8 @@ public record ItemDetail(
     IReadOnlyList<ItemSourceDetail> Sources,
     string? SetName = null,
     IReadOnlyList<SetMember>? SetMembers = null,
-    bool IsEquippable = false);
+    bool IsEquippable = false,
+    IReadOnlyList<SetMember>? Contents = null); // this item IS a coffer/sack — what it can contain
 
 public record SetMember(uint ItemId, string Name, uint IconId);
 
@@ -352,8 +353,23 @@ public sealed class ItemDetailService : IItemDetailService
             // one bad row id in any of the ~40 lookups below must not take the whole window down
             sources = new[] { Note(ItemSourceType.Other, $"Source detection failed for this item ({e.GetType().Name} at {e.StackTrace?.Split(Environment.NewLine).FirstOrDefault()?.Trim()}). Please report the item ID.") };
         }
+        IReadOnlyList<SetMember>? contents = null;
+        if (_cofferToItemsMap != null && _cofferToItemsMap.TryGetValue(itemId, out var containedIds) && containedIds.Count > 0)
+        {
+            contents = containedIds
+                .Select(id =>
+                {
+                    var row = itemSheet.GetRowOrDefault(id);
+                    return row == null ? null : new SetMember(id, row.Value.Name.ToString(), row.Value.Icon);
+                })
+                .Where(m => m != null)
+                .Select(m => m!)
+                .ToList();
+        }
+
         var detail = new ItemDetail(itemId, name, itemLevel, isMarketable, iconId, sources, setName, setMembers,
-            IsEquippable: item.EquipSlotCategory.RowId > 0); // mounts/minions/etc. get no "Apply to Self"
+            IsEquippable: item.EquipSlotCategory.RowId > 0, // mounts/minions/etc. get no "Apply to Self"
+            Contents: contents);
 
         _cache[itemId] = detail;
         return detail;

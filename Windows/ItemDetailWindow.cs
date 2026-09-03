@@ -441,6 +441,28 @@ public class ItemDetailWindow : Window, IDisposable
             ImGui.Spacing();
         }
 
+        if (detail.Contents is { Count: > 0 })
+        {
+            ImGui.TextDisabled(Loc.T("Can contain:"));
+            for (var i = 0; i < detail.Contents.Count; i++)
+            {
+                var member = detail.Contents[i];
+                if (i > 0) ImGui.SameLine();
+                using (ImRaii.PushId($"content_{member.ItemId}"))
+                {
+                    if (_textureProvider != null && member.IconId > 0)
+                    {
+                        var tex = _textureProvider.GetFromGameIcon(new GameIconLookup(member.IconId)).GetWrapOrEmpty();
+                        ImGui.Image(tex.Handle, new Vector2(RowIconSize, RowIconSize));
+                        ImGui.SameLine();
+                    }
+                    if (ImGui.SmallButton(member.Name))
+                        NavigateToItem(member.ItemId);
+                }
+            }
+            ImGui.Spacing();
+        }
+
         if (_history.Count > 0)
         {
             if (ImGui.SmallButton(Loc.T("← Back")))
