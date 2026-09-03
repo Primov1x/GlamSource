@@ -20,6 +20,7 @@
     <EmbeddedResource Include="LuminaSupplemental\TripleTriadCardNpcs.csv" />
     <EmbeddedResource Include="LuminaSupplemental\CollectSources.csv" />
     <EmbeddedResource Include="LuminaSupplemental\MountItemMap.csv" />
+    <EmbeddedResource Include="LuminaSupplemental\HoardSackContents.csv" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="Lumina">

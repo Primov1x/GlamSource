@@ -217,6 +217,15 @@ public sealed class ItemDetailService : IItemDetailService
     // RowIds). Lets "who's mount is this" resolve straight into the existing item-detail pipeline.
     private readonly Dictionary<uint, uint> _mountToItemId = new();
 
+    // Accursed Hoard sack (Palace of the Dead / Heaven-on-High / Eureka Orthos "-trimmed/-haloed/
+    // -tinged Sack") -> the flat pool of items it can yield when opened. Not in any Lumina sheet —
+    // this reward table is server-side, undocumented in client Excel data (checked ffxiv-datamining
+    // directly). Hand-compiled from garlandtools.org's per-item `loot` array (Palace/Heaven-on-High,
+    // direct) and consolegameswiki's item-level category lists resolved to real IDs via garlandtools'
+    // search API (Eureka Orthos, whose garlandtools loot array is still incomplete). No drop-rate
+    // weights exist anywhere — this is the possible pool, not odds.
+    private readonly Dictionary<uint, List<uint>> _hoardSackContents = new();
+
     // Name-only fallback for NPCs with no location data
     private readonly Dictionary<uint, string> _shopNpcNameOnly = new();
 
@@ -354,8 +363,11 @@ public sealed class ItemDetailService : IItemDetailService
             sources = new[] { Note(ItemSourceType.Other, $"Source detection failed for this item ({e.GetType().Name} at {e.StackTrace?.Split(Environment.NewLine).FirstOrDefault()?.Trim()}). Please report the item ID.") };
         }
         IReadOnlyList<SetMember>? contents = null;
-        if (_cofferToItemsMap != null && _cofferToItemsMap.TryGetValue(itemId, out var containedIds) && containedIds.Count > 0)
+        var cofferHit = _cofferToItemsMap != null && _cofferToItemsMap.TryGetValue(itemId, out var cofferIds2) && cofferIds2.Count > 0;
+        var hoardHit = !cofferHit && _hoardSackContents.TryGetValue(itemId, out var hoardIds) && hoardIds.Count > 0;
+        if (cofferHit || hoardHit)
         {
+            var containedIds = cofferHit ? cofferIds2! : hoardIds!;
             contents = containedIds
                 .Select(id =>
                 {
@@ -2353,6 +2365,34 @@ public sealed class ItemDetailService : IItemDetailService
         BuildTriadCardNpcCache();
         BuildCollectSourceCache();
         BuildMountItemMapCache();
+        BuildHoardSackContentsCache();
+    }
+
+    private void BuildHoardSackContentsCache()
+    {
+        var assembly = typeof(ItemDetailService).Assembly;
+        using var stream = assembly.GetManifestResourceStream(
+            "GlamSource.Core.LuminaSupplemental.HoardSackContents.csv");
+        if (stream == null)
+            return;
+
+        using var reader = new StreamReader(stream);
+        reader.ReadLine(); // header
+        string? line;
+        while ((line = reader.ReadLine()) != null)
+        {
+            var parts = line.Split(',');
+            if (parts.Length < 2)
+                continue;
+            if (!uint.TryParse(parts[0], out var sackId))
+                continue;
+            if (!uint.TryParse(parts[1], out var containedId))
+                continue;
+
+            if (!_hoardSackContents.TryGetValue(sackId, out var list))
+                _hoardSackContents[sackId] = list = new();
+            list.Add(containedId);
+        }
     }
 
     // ponytail: MogstationItems.csv is our own static scrape, not a LuminaSupplemental package
