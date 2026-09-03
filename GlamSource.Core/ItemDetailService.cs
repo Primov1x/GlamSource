@@ -363,8 +363,10 @@ public sealed class ItemDetailService : IItemDetailService
             sources = new[] { Note(ItemSourceType.Other, $"Source detection failed for this item ({e.GetType().Name} at {e.StackTrace?.Split(Environment.NewLine).FirstOrDefault()?.Trim()}). Please report the item ID.") };
         }
         IReadOnlyList<SetMember>? contents = null;
-        var cofferHit = _cofferToItemsMap != null && _cofferToItemsMap.TryGetValue(itemId, out var cofferIds2) && cofferIds2.Count > 0;
-        var hoardHit = !cofferHit && _hoardSackContents.TryGetValue(itemId, out var hoardIds) && hoardIds.Count > 0;
+        List<uint>? cofferIds2 = null;
+        List<uint>? hoardIds = null;
+        var cofferHit = _cofferToItemsMap != null && _cofferToItemsMap.TryGetValue(itemId, out cofferIds2) && cofferIds2.Count > 0;
+        var hoardHit = !cofferHit && _hoardSackContents.TryGetValue(itemId, out hoardIds) && hoardIds.Count > 0;
         if (cofferHit || hoardHit)
         {
             var containedIds = cofferHit ? cofferIds2! : hoardIds!;
