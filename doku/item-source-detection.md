@@ -27,6 +27,18 @@ what do I need and where". Prototype, deliberately small:
   included, no same-model alternatives when the best source is unobtainable, "Other" stops are
   just the source text.
 
+## Icon/preview images now cached by the browser (1.0.14.0)
+
+"Doof jedes mal 'neu' zu laden": every response, including `/api/icon/{id}` and
+`/api/itemimage/{id}`, sent `Cache-Control: no-store` — deliberately, per the existing comment,
+because Browsingway's CEF page is long-lived and the HTML/JS itself must never go stale across a
+plugin update. But that blanket rule also hit icon/preview bytes, which ARE safe to cache: the
+same numeric id always returns the same bytes (a search re-render, duty tiles, the same item
+opened twice — all refetched the identical image every time). Icon/itemimage responses now send
+`Cache-Control: public, max-age=604800, immutable` (one week); every other route (the page itself,
+all JSON APIs) keeps `no-store` unchanged. Same split in the mock server. Verified via response
+headers: icon endpoint cacheable, `/api/search` and `/` still `no-store`.
+
 ## Fix: item panel hung forever on "Lädt..." (1.0.13.0)
 
 Live regression from the 1.0.11 translation sweep, caught by the user clicking a real slot

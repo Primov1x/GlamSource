@@ -270,9 +270,15 @@ public sealed class WebUiService : IDisposable
         }
 
         var (status, contentType, body) = Route(method, path, query);
-        // ponytail: no-store — Browsingway's CEF page is long-lived and any caching here means an
-        // update ships but the overlay silently keeps serving the old HTML/JS.
-        var head = $"HTTP/1.1 {status}\r\nContent-Type: {contentType}\r\nContent-Length: {body.Length}\r\nCache-Control: no-store\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n";
+        // ponytail: no-store by default — Browsingway's CEF page is long-lived and any caching here
+        // means an update ships but the overlay silently keeps serving the old HTML/JS. Icon/item
+        // preview bytes are the one exception: content-addressed by a numeric id that never changes
+        // for that id, so every re-render (search results, duty tiles, ...) was refetching the exact
+        // same bytes every time ("doof jedes mal 'neu' zu laden") — cache those aggressively instead.
+        var cacheControl = path.StartsWith("/api/icon/", StringComparison.Ordinal) || path.StartsWith("/api/itemimage/", StringComparison.Ordinal)
+            ? "public, max-age=604800, immutable"
+            : "no-store";
+        var head = $"HTTP/1.1 {status}\r\nContent-Type: {contentType}\r\nContent-Length: {body.Length}\r\nCache-Control: {cacheControl}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n";
         stream.Write(Encoding.ASCII.GetBytes(head));
         stream.Write(body);
         stream.Flush();
