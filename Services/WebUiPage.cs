@@ -97,6 +97,8 @@ tr:nth-child(even) td{background:rgba(255,255,255,.025)}
 td.muted{color:var(--muted)}
 .matrow{display:flex;align-items:center;gap:8px;padding:3px 0}
 .matrow img{width:22px;height:22px;border-radius:3px}
+.matrow-lg{padding:5px 0;font-size:14px}
+.matrow-lg img{width:32px;height:32px}
 .matrow .where{color:var(--muted);font-size:11px;margin-left:8px}
 .applystatus{color:var(--muted);font-size:11px;margin-left:6px}
 .ok{color:var(--success)}.short{color:var(--muted)}
@@ -943,13 +945,18 @@ function renderSource(group,itemId,openFn='openItem'){
     if(list&&list.length){
       // an "Other" card with materials is an outfit set (ItemDetailService 7f) — its rows are pieces
       h+=`<div style="margin-top:8px;color:var(--muted);font-size:12px">${key==='materials'?(srcType==='Other'?t('pieces_label'):t('materials_label')):t('cost_label')}</div>`;
+      // used to be one-per-line at the base 22px/13px sizing — on a wide card that's a wall of empty
+      // space next to short text ("soviel platz und ich brauch ne lupe"). Grid instead of a single
+      // column, bigger icon+text so it's actually readable at a glance.
+      h+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:4px 12px">';
       for(const m of list){
         // data-item + data-need: annotateInventory() fills in have/where AFTER this HTML lands in
         // the DOM (needs an async /api/inventory fetch per item — can't do that synchronously here).
         // rows with a real item id open that item (piece / material / currency source)
         const click=m.itemId?` style="cursor:pointer" onclick="${openFn}(${m.itemId})"`:'';
-        h+=`<div class="matrow" data-item="${m.itemId}" data-need="${m.count}"${click}>${img(m.itemId===0?GIL_ICON:m.iconId,22)}<span class="matqty">${esc(m.name)||(m.itemId===0?'Gil':'#'+m.itemId)} × ${m.count.toLocaleString()}</span></div>`;
+        h+=`<div class="matrow matrow-lg" data-item="${m.itemId}" data-need="${m.count}"${click}>${img(m.itemId===0?GIL_ICON:m.iconId,32)}<span class="matqty">${esc(m.name)||(m.itemId===0?'Gil':'#'+m.itemId)} × ${m.count.toLocaleString()}</span></div>`;
       }
+      h+='</div>';
     }
   }
   return h+'</div>';

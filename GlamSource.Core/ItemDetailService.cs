@@ -1252,9 +1252,25 @@ public sealed class ItemDetailService : IItemDetailService
                 BossNamesByDuty.TryGetValue(cfcId, out var bossNames) ? bossNames : Array.Empty<string>(),
                 DifficultyOf(name, Safe(() => cfc.AllianceRoulette, false))));
         }
+        // Deep Dungeons split into one CFC row PER 10-floor set (Palace of the Dead alone is 12 rows)
+        // — the browsable list showed one tile per floor range instead of one per dungeon. Live
+        // report: "soviel platz und ich brauch ne lupe" was about item-detail cards, but the same
+        // "jedes deep dungeon zusammenfassen" ask applies here too — verified live, this picker
+        // showed 10 separate "Heaven-on-High (Floors X-Y)" tiles. Group by base name, merge into one.
+        var merged = new List<DutyInfo>();
+        foreach (var group in list.GroupBy(d => d.Type == "Deep Dungeon" ? Regex.Replace(d.Name, @"\s*\(Floors? \d+-\d+\)\s*$", "") : d.Name))
+        {
+            var groupList = group.ToList();
+            if (groupList.Count == 1) { merged.Add(groupList[0]); continue; }
+            var first = groupList.OrderBy(d => d.CfcId).First();
+            var allDrops = groupList.SelectMany(d => DutyToItems.TryGetValue(d.CfcId, out var i) ? i : Enumerable.Empty<uint>()).Distinct().Count();
+            var allBosses = groupList.SelectMany(d => d.Bosses).Distinct().ToList();
+            merged.Add(first with { Name = group.Key, DropCount = allDrops, Bosses = allBosses });
+        }
+
         // grouped for the tab: content type, difficulty, expansion — and inside that in RELEASE
         // order ("nach Release sortieren"): ContentFinderCondition row ids grow with the patches
-        return list.OrderBy(d => DutyTypeOrder(d.Type)).ThenBy(d => DifficultyOrder(d.Difficulty)).ThenBy(d => ExpansionOrder(d.Level))
+        return merged.OrderBy(d => DutyTypeOrder(d.Type)).ThenBy(d => DifficultyOrder(d.Difficulty)).ThenBy(d => ExpansionOrder(d.Level))
             .ThenBy(d => d.CfcId).ToList();
     }
 
@@ -1318,6 +1334,22 @@ public sealed class ItemDetailService : IItemDetailService
         var itemSheet = _gameData.GetExcelSheet<Item>();
         var bnpc = _gameData.GetExcelSheet<BNpcName>();
 
+        // Deep Dungeons split into one CFC row per 10-floor set — ListDutiesWithDrops now merges
+        // those into one browsable tile per dungeon, so opening that tile must pull drops from every
+        // floor's CFC row, not just the representative one it was called with (would've silently
+        // shown only floors 1-10 of a 100-floor dungeon otherwise).
+        var siblingCfcIds = new HashSet<uint> { cfcId };
+        if (cfc.Value.ContentType.RowId == 21)
+        {
+            var baseName = Regex.Replace(CapitalizeFirst(cfc.Value.Name.ToString()), @"\s*\(Floors? \d+-\d+\)\s*$", "");
+            foreach (var other in _gameData.GetExcelSheet<ContentFinderCondition>() ?? Enumerable.Empty<ContentFinderCondition>())
+            {
+                if (other.ContentType.RowId != 21 || other.Name.IsEmpty) continue;
+                if (Regex.Replace(CapitalizeFirst(other.Name.ToString()), @"\s*\(Floors? \d+-\d+\)\s*$", "") == baseName)
+                    siblingCfcIds.Add(other.RowId);
+            }
+        }
+
         List<DutyDrop> Drops(IEnumerable<uint> ids)
         {
             var list = new List<DutyDrop>();
@@ -1330,26 +1362,26 @@ public sealed class ItemDetailService : IItemDetailService
             return list.OrderByDescending(d => d.ItemLevel).ThenBy(d => d.Name, StringComparer.OrdinalIgnoreCase).ToList();
         }
 
-        var fights = bosses.Where(b => b.ContentFinderConditionId == cfcId).Select(b => (int)b.FightNo)
-            .Concat(bossDrops.Where(d => d.ContentFinderConditionId == cfcId).Select(d => (int)d.FightNo))
-            .Concat(chests.Where(c => c.ContentFinderConditionId == cfcId).Select(c => (int)c.FightNo))
+        var fights = bosses.Where(b => siblingCfcIds.Contains(b.ContentFinderConditionId)).Select(b => (int)b.FightNo)
+            .Concat(bossDrops.Where(d => siblingCfcIds.Contains(d.ContentFinderConditionId)).Select(d => (int)d.FightNo))
+            .Concat(chests.Where(c => siblingCfcIds.Contains(c.ContentFinderConditionId)).Select(c => (int)c.FightNo))
             .Distinct().OrderBy(f => f).ToList();
         var bossList = new List<DutyBoss>();
         foreach (var f in fights)
         {
-            var boss = bosses.Where(b => b.ContentFinderConditionId == cfcId && b.FightNo == f).ToList();
+            var boss = bosses.Where(b => siblingCfcIds.Contains(b.ContentFinderConditionId) && b.FightNo == f).ToList();
             // BNpcName.Singular is lowercase in the English sheet ("chopper") — capitalise for display
             var name = boss.Count == 0 ? "" : bnpc?.GetRowOrDefault(boss[0].BNpcNameId)?.Singular.ToString() ?? "";
             if (name.Length > 0) name = CapitalizeFirst(name);
-            var drops = Drops(bossDrops.Where(d => d.ContentFinderConditionId == cfcId && d.FightNo == f).Select(d => d.ItemId));
+            var drops = Drops(bossDrops.Where(d => siblingCfcIds.Contains(d.ContentFinderConditionId) && d.FightNo == f).Select(d => d.ItemId));
             // one merged chest per boss: the data splits savage/extreme loot into coffer 1/2/3 with the
             // same pool ("es gibt nur eine, wo alles drin ist") — the split means nothing to a player
-            var chestItems = Drops(chests.Where(c => c.ContentFinderConditionId == cfcId && c.FightNo == f).Select(c => c.ItemId));
+            var chestItems = Drops(chests.Where(c => siblingCfcIds.Contains(c.ContentFinderConditionId) && c.FightNo == f).Select(c => c.ItemId));
             var chestList = chestItems.Count > 0 ? new List<DutyChest> { new(0, chestItems) } : new List<DutyChest>();
             if (drops.Count == 0 && chestList.Count == 0) continue;
             bossList.Add(new DutyBoss(f, name, drops, chestList));
         }
-        var generalDrops = Drops(general.Where(d => d.ContentFinderConditionId == cfcId).Select(d => d.ItemId));
+        var generalDrops = Drops(general.Where(d => siblingCfcIds.Contains(d.ContentFinderConditionId)).Select(d => d.ItemId));
         // "Mounts nach oben": mount and minion drops get their own section at the top instead of
         // hiding inside a boss chest list (the whole point of most Extreme trials)
         var featured = bossList.SelectMany(b => b.Drops.Concat(b.Chests.SelectMany(c => c.Items))).Concat(generalDrops)
