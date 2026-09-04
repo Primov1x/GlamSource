@@ -1,5 +1,28 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Duty-drops: Triple Triad cards join the top "Mounts & minions" section (1.0.73.0)
+
+"bei dungeons bitte 'karten + minions' nach oben schieben, boss unspezifisch - also maybe einfach
+highlighten oben, bevor der erste boss kommt". Mounts/minions already got pulled out of their boss's
+drop list into a dedicated top section (`DutyDrop.Kind` non-empty = "featured", see the "Mounts nach
+oben" comment in `ItemDetailService.MakeDrop`/`GetDutyDrops`) — which boss happens to drop a mount
+is irrelevant, people farm the whole duty for it. Same logic applies to cards: which boss drops a
+given card is equally irrelevant noise, so `MakeDrop` now also tags `Kind = "TripleTriadCard"` (same
+ItemUICategory check the existing card source-lookup already used, no dedicated Action RowId like
+Mount/Companion have). Section renamed "Mounts & minions" → "Mounts, minions & cards" (all three
+render surfaces: Web UI, `GlamSourceShellWindow`, `MockShellWindow`) — cards no longer sit wherever
+they're nested under a specific boss's `dgrid`.
+
+Also extended the unlock-badge gate everywhere it existed (`WebUiService.Annotate`,
+`GlamSourceShellWindow.DrawDutyDropRow`) from `Mount/Minion` to include `TripleTriadCard`, so a
+featured card gets the same green/red owned badge a featured mount/minion already did — ties
+together with the unlock-check entry above.
+
+Verified live (Mock, Web UI): The Wanderer's Palace (cfcRowId 10) → "Reittiere, Begleiter & Karten"
+section now shows "Tonberry Card · Triple Triad Karte" alongside "Bite-sized Pudding · Begleiter",
+right after the duty header and before Boss 1 — confirmed via screenshot, not just the API JSON.
+`dotnet build` 0/0, `dotnet test` 54/54.
+
 ## Triple Triad Card unlock badge in "can contain" lists (1.0.72.0)
 
 "im dungeon tab: karten sind nicht 'hab ich die schon'" — the Web UI's `contentsSummary` category

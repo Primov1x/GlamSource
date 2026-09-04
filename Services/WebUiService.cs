@@ -1387,10 +1387,11 @@ public sealed class WebUiService : IDisposable
     private static (string, string, byte[]) Json(object payload, string status = "200 OK")
         => (status, "application/json", Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload, JsonOpts)));
 
-    // "hat man das mount oder minion schon unlocked, überall" — only Mount/Minion-kind drops carry a
-    // native unlock check (everything else has no such concept), so only those get annotated; skips
-    // the check entirely for the rest instead of doing a pointless lookup.
-    private DutyDrop Annotate(DutyDrop d) => d.Kind is "Mount" or "Minion"
+    // "hat man das mount oder minion schon unlocked, überall" — only kinds with a native unlock
+    // check get annotated (everything else has no such concept), skips the check entirely for the
+    // rest instead of doing a pointless lookup. TripleTriadCard joined Mount/Minion here once cards
+    // started showing up in this same "featured" list.
+    private DutyDrop Annotate(DutyDrop d) => d.Kind is "Mount" or "Minion" or "TripleTriadCard"
         ? d with { Unlocked = UnlockCheckService.CheckUnlocked(_detail, d.ItemId) } : d;
 
     private DutyDetail AnnotateUnlocks(DutyDetail dd) => dd with

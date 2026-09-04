@@ -1520,7 +1520,7 @@ private void ApplyTargetGlamourToSelf()
                 : _dutyCoffers?.SelectMany(c => c.Items).Where(i => i.Kind.Length > 0).DistinctBy(i => i.ItemId).ToList() ?? new List<DutyDrop>();
             if (featured.Count > 0)
             {
-                UiStyle.SectionHeader(Loc.T("Mounts & minions"));
+                UiStyle.SectionHeader(Loc.T("Mounts, minions & cards"));
                 foreach (var r in featured) DrawDutyDropRow(r);
             }
             foreach (var ex in dd.Exchanges)
@@ -1585,8 +1585,8 @@ private void ApplyTargetGlamourToSelf()
             _detailWindow.ShowItem(r.ItemId);
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip($"Item ID {r.ItemId} · iLvl {r.ItemLevel} — click for details");
-        // "hat man das mount oder minion schon unlocked" — only these two kinds have a concept of it
-        if (r.Kind is "Mount" or "Minion")
+        // "hat man das mount oder minion schon unlocked" — only these kinds have a concept of it
+        if (r.Kind is "Mount" or "Minion" or "TripleTriadCard")
         {
             var unlocked = UnlockCheckService.CheckUnlocked(_detailWindow.DetailService, r.ItemId);
             if (unlocked == true)

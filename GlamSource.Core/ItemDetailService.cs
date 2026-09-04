@@ -1664,8 +1664,16 @@ public sealed class ItemDetailService : IItemDetailService
     private DutyDrop MakeDrop(uint id, Item row)
     {
         // mount = item of a MountItemMap entry (ItemUICategory 63 is the generic "Other" bucket — gil,
-        // seals, whistles all share it), minion = ItemUICategory 81 (verified: Wind-up Cursor)
-        var kind = MountItemIds.Contains(id) ? "Mount" : row.ItemUICategory.RowId == 81 ? "Minion" : "";
+        // seals, whistles all share it), minion = ItemUICategory 81 (verified: Wind-up Cursor).
+        // Triple Triad card: no dedicated RowId handy here (see EnsureUnlockMaps' comment), gated on
+        // ItemUICategory.Name same as the rest of the card handling. "karten + minions nach oben,
+        // boss unspezifisch" — cards get pulled into the same top "featured" section as mounts/
+        // minions (Kind.Length > 0 is what promotes a drop there), instead of sitting wherever they
+        // happen to be nested under a specific boss even though which boss drops a card is noise.
+        var kind = MountItemIds.Contains(id) ? "Mount"
+            : row.ItemUICategory.RowId == 81 ? "Minion"
+            : row.ItemUICategory.IsValid && row.ItemUICategory.Value.Name.ToString() == "Triple Triad Card" ? "TripleTriadCard"
+            : "";
         return new DutyDrop(id, row.Name.ToString(), row.Icon, (int)row.LevelItem.RowId, kind);
     }
 

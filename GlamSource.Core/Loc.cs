@@ -173,7 +173,7 @@ public static class Loc
         ["Applied."] = "Angewendet.",
         ["Dungeons"] = "Dungeons",
         ["All"] = "Alle",
-        ["Mounts & minions"] = "Reittiere & Begleiter",
+        ["Mounts, minions & cards"] = "Reittiere, Begleiter & Karten",
         ["Drops (Garland Tools)"] = "Drops (Garland Tools)",
         ["Exchange"] = "Tausch",
         ["Hand in:"] = "Einlösen:",

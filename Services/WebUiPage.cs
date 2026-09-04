@@ -120,7 +120,12 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 .preview:empty{display:none}
 .preview img{max-width:280px;max-height:280px;border-radius:8px;border:1px solid var(--border);margin-bottom:10px}
 /* Charakter tab: every preview image landing in #chardetail (slot click, set-member chips) —
-   centered, a touch smaller than the Suche tab's left-aligned one. */
+   centered, a touch smaller than the Suche tab's left-aligned one. Regressed when .itembody
+   became a flex row (see below): .preview started hugging the left edge of its own line instead
+   of centering in the panel once .itemside wrapped below it — "Bild + Buttons wieder mittig".
+   justify-content on the row itself is what actually centers it; text-align only affects content
+   *inside* .preview's own box. */
+#chardetail .itembody{justify-content:center}
 #chardetail .preview{text-align:center}
 #chardetail .preview img{max-width:220px;max-height:220px;margin-left:auto;margin-right:auto}
 /* "kompakter... neben das vorschau bild... nicht so gepresst" — preview stays its own fixed-ish
@@ -294,7 +299,8 @@ const I18N={
   duty_general:{en:'Elsewhere in the duty (chests & mobs)',de:'Unterwegs in der Duty (Truhen & Gegner)'},
   drops:{en:'drops',de:'Drops'},
   duty_coffers:{en:'Treasure chests along the way (Garland Tools)',de:'Truhen unterwegs (Garland Tools)'},
-  duty_featured:{en:'Mounts & minions',de:'Reittiere & Begleiter'},
+  duty_featured:{en:'Mounts, minions & cards',de:'Reittiere, Begleiter & Karten'},
+  triad_card:{en:'Triple Triad card',de:'Triple Triad Karte'},
   duty_garland_drops:{en:'Drops (Garland Tools)',de:'Drops (Garland Tools)'},
   duty_exchange:{en:'Exchange',de:'Tausch'},
   duty_exchange_for:{en:'Hand in:',de:'Einlösen:'},
@@ -829,7 +835,8 @@ const rowPrice=id=>`<div class="rowprice" data-item="${id}"></div>`;
 const rowText=(nameHtml,id)=>`<div class="rowtext"><div class="rowname">${nameHtml}</div>${rowPrice(id)}</div>`;
 // empty placeholder, filled in by annotateBulkUnlocks() — see that function's own comment.
 const unlockSlot=id=>`<span class="unlockslot" data-item="${id}"></span>`;
-const featSection=list=>`<div class="dsec" style="margin-top:0"><div class="dsech">${t('duty_featured')}</div><div class="results dgrid">${list.map(x=>`<div class="row" data-item="${x.itemId}" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${unlockBadge(x)}${img(x.iconId,28)}${rowText(`${esc(x.name)}<span class="ilvl">${x.kind==='Mount'?t('mount'):t('minion')}</span>`,x.itemId)}<img class="rowpreview" src="/api/itemimage/${x.itemId}" loading="lazy" onerror="this.remove()"></div>`).join('')}</div></div>`;
+const featKindLabel=k=>k==='Mount'?t('mount'):k==='TripleTriadCard'?t('triad_card'):t('minion');
+const featSection=list=>`<div class="dsec" style="margin-top:0"><div class="dsech">${t('duty_featured')}</div><div class="results dgrid">${list.map(x=>`<div class="row" data-item="${x.itemId}" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${unlockBadge(x)}${img(x.iconId,28)}${rowText(`${esc(x.name)}<span class="ilvl">${featKindLabel(x.kind)}</span>`,x.itemId)}<img class="rowpreview" src="/api/itemimage/${x.itemId}" loading="lazy" onerror="this.remove()"></div>`).join('')}</div></div>`;
 const previewRows=list=>list.map(x=>`<div class="row" data-item="${x.itemId}" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${img(x.iconId,28)}${rowText(`${esc(x.name)}${x.itemLevel>1?`<span class="ilvl">iLvl ${x.itemLevel}</span>`:''}`,x.itemId)}<img class="rowpreview" src="/api/itemimage/${x.itemId}" loading="lazy" onerror="this.remove()"></div>`).join('');
 const dropRows=list=>list.map(x=>`<div class="row" data-item="${x.itemId}" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${img(x.iconId,28)}${rowText(`${esc(x.name)}${x.itemLevel>1?`<span class="ilvl">iLvl ${x.itemLevel}</span>`:''}`,x.itemId)}</div>`).join('');
 async function selectDuty(id){
