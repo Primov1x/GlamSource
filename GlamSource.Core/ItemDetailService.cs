@@ -749,14 +749,20 @@ public sealed class ItemDetailService : IItemDetailService
                     ItemSupplementSource.Loot => $"Obtained from: {sourceItemName}",
                     _ => $"{supp.ItemSupplementSource}: {sourceItemName}"
                 };
-                // "könnte man hier auch kacheln machen wie dungeon, fates, deep dungeon" — every
-                // ItemSupplementSource value here (Loot, Gardening, PalaceOfTheDead, EurekaOrthos,
-                // PilgrimsTraverse, ...) means "you get this by opening/interacting with another
-                // concrete item" (SourceItemId is always set below) — exactly what the ImGui side's
-                // already-built TreasureHunt badge (teal, "TREASURE HUNT") was made for; it just
-                // never had anything routed to it before now.
+                // "heaven on high 'treasure hunt' ist nicht das gleiche" — routing EVERY
+                // ItemSupplementSource value here to TreasureHunt was wrong: that label specifically
+                // means the Timeworn Map mechanic (Loot case, "Obtained from: X Map"), not "any
+                // container you interact with". Deep Dungeon hoard sacks (PalaceOfTheDead,
+                // HeavenOnHigh, EurekaOrthos, PilgrimsTraverse, Oizys, Auxesia) are literal in-dungeon
+                // containers — same concept as the Coffer type already used for boss chests/field-op
+                // coffers a few lines below, not a treasure hunt. Gardening/SkybuilderHandIn/
+                // CardPacks/Logogram/Anemos/Pagos/Pyros/Hydatos/Bozja stay TreasureHunt for now
+                // (not reported wrong, not re-litigated here) alongside Loot itself.
+                var isDeepDungeonSack = supp.ItemSupplementSource is ItemSupplementSource.PalaceOfTheDead
+                    or ItemSupplementSource.HeavenOnHigh or ItemSupplementSource.EurekaOrthos
+                    or ItemSupplementSource.PilgrimsTraverse or ItemSupplementSource.Oizys or ItemSupplementSource.Auxesia;
                 results.Add(new ItemSourceDetail(
-                    ItemSourceType.TreasureHunt, desc,
+                    isDeepDungeonSack ? ItemSourceType.Coffer : ItemSourceType.TreasureHunt, desc,
                     null, null, null, null, null, null,
                     null, null, null, null, null, null, null, null, null, SourceItemId: supp.SourceItemId));
             }
@@ -1071,18 +1077,20 @@ public sealed class ItemDetailService : IItemDetailService
         }
 
         // 8b. Minion/mount/orchestrion sources (FFXIV Collect, non-commercial use, attribution
-        // appreciated) — additive fallback for items we have no other lead on. For Orchestrion
-        // rolls specifically this CSV (1028 of its ~2300 rows) overlaps heavily with the structural
-        // Dungeon/TreasureHunt detection above (LuminaSupplemental's own bundled dataset already
-        // covers most Deep Dungeon sacks/Timeworn Maps) — skip it once we already have a concrete,
-        // clickable lead, so "A Better Tomorrow Orchestrion Roll" doesn't show its own dungeon drop
-        // and map/sack sources a second and third time as vague "(via FFXIV Collect)" text.
-        var hasConcreteLead = results.Any(s => s.Type is ItemSourceType.Dungeon or ItemSourceType.TreasureHunt);
+        // appreciated) — additive fallback for items we have no other lead on. This CSV overlaps
+        // heavily with the structural Dungeon/TreasureHunt/Coffer detection above (LuminaSupplemental's
+        // own bundled dataset already covers most Deep Dungeon sacks/Timeworn Maps/Field Op coffers)
+        // — skip it once we already have a concrete, clickable lead, so an item doesn't show its own
+        // dungeon drop / map/sack / field-op-coffer sources a second time as vague "(via FFXIV
+        // Collect)" text. Was scoped to Kind=="Orchestrion" only at first; a live minion example
+        // ("unübersichtlich af") showed the exact same duplication for Minion/Coffer leads too — not
+        // actually orchestrion-specific, generalized to every kind.
+        var hasConcreteLead = results.Any(s => s.Type is ItemSourceType.Dungeon or ItemSourceType.TreasureHunt or ItemSourceType.Coffer);
         if (_collectSources.TryGetValue(itemId, out var collectEntries))
         {
             foreach (var c in collectEntries)
             {
-                if (hasConcreteLead && c.Kind == "Orchestrion") continue;
+                if (hasConcreteLead) continue;
                 results.Add(new ItemSourceDetail(
                     ItemSourceType.Other,
                     $"{c.Kind}: {c.SourceType} - {c.SourceText} (via FFXIV Collect)",

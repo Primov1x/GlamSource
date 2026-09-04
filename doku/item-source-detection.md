@@ -1,5 +1,46 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Category grouping, Deep Dungeon sacks correctly typed as Coffer not TreasureHunt (1.0.63.0)
+
+Three fixes from one live testing round (a minion with 10 near-duplicate source cards):
+
+- **"unübersichtlich af, kann man safe unter Kategoriekacheln packen und dann nacheinander
+  auflisten"**: `buildItemHtml`'s flat `.cards` grid (all sources, any type, mixed together) split
+  into one small section per source TYPE (reuses the `.tbl` header style "REST OF THE SET"/"CAN
+  CONTAIN" already use — no new CSS), in a fixed sensible order (Dungeon/Trial/Raid first, then
+  TreasureHunt/Coffer/Vendor/..., catch-alls last), each type's own `.cards` grid underneath. No
+  collapsing — just grouped instead of one undifferentiated pile.
+- **8b's CollectSources dedupe (1.0.58.0) was scoped to `Kind=="Orchestrion"` only** — a live minion
+  example showed the exact same "same source shown twice" duplication for Minion-kind entries too
+  (dungeon drop + 2 Deep Dungeon sacks + a Field Op coffer, EACH also repeated as vague "Minion: ...
+  (via FFXIV Collect)" text). Not actually orchestrion-specific — generalized the skip to every kind,
+  and widened the "do we already have a concrete lead" check to include `Coffer` (previously only
+  `Dungeon`/`TreasureHunt`), catching the Field Op coffer duplicate too.
+- **"heaven on high 'treasure hunt' ist nicht das gleiche.. was das fürn käse?"** — 1.0.58.0's
+  TreasureHunt reclassification (see that entry) was too broad: it routed EVERY
+  `ItemSupplementSource` value to `ItemSourceType.TreasureHunt`, but that label specifically means
+  the Timeworn Map mechanic (the `Loot` case, "Obtained from: X Map") — Deep Dungeon hoard sacks
+  (`PalaceOfTheDead`/`HeavenOnHigh`/`EurekaOrthos`/`PilgrimsTraverse`/`Oizys`/`Auxesia`) are a
+  completely different mechanic (an in-dungeon container), correctly `ItemSourceType.Coffer`
+  instead — same concept the existing "Boss Chest:"/"Field Op Coffer:" cards already use. Turned up
+  a second, pre-existing gap while fixing this: `Coffer` had NO entry in ImGui's `SourceStyles` dict
+  at all (silently fell through `GetValueOrDefault`'s white/"UNKNOWN" fallback) despite being an
+  actively-used type elsewhere in the codebase — added a proper style (brown, "COFFER"), plus the
+  matching Web CSS bucket that didn't exist either. `Gardening`/`SkybuilderHandIn`/`CardPacks`/
+  `Logogram`/`Anemos`/`Pagos`/`Pyros`/`Hydatos`/`Bozja` left as TreasureHunt for now — not reported
+  wrong, not re-litigated speculatively here.
+
+Also, separately: "Dungeon Karte braucht man nicht, nur wenn man ein item explizit anklickt" — the
+existing in-duty-context Dungeon-card filter (1.0.20.0-ish, `openFn==='openDutyItem'`) only dropped
+the card matching the currently-selected duty's own cfcRowId; widened to drop EVERY Dungeon-type
+card in that context, since a sack can legitimately span a whole floor-range of sub-duties that
+don't individually match `dutySelected`, and any "Dungeon Drop: X" card is redundant noise once
+you're already browsing inside a specific duty's own contents.
+
+Verified: `dotnet build` 0/0, `dotnet test` 54/54. All three (grouping, dedupe, Coffer
+reclassification) + the Dungeon-card filter widening screenshot-confirmed live via the Browser pane
+against the rebuilt Mock.
+
 ## Web UI: actually clickable Mog Station link (1.0.62.0)
 
 "Mogstation items sollen nen korrekt shop link haben nicht nur 'ist mog'" — the `shopUrl` field was

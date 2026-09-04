@@ -140,6 +140,15 @@ public class ItemDetailWindow : Window, IDisposable
             new Vector4(0.85f, 0.55f, 0.2f, 1f),
             new Vector4(0.22f, 0.14f, 0.05f, 1f),
             "TRIPLE TRIAD"),
+        // "heaven on high 'treasure hunt' ist nicht das gleiche" — Deep Dungeon hoard sacks/dungeon
+        // boss chests/field-op coffers were never in this dict (fell through GetValueOrDefault's
+        // white/"UNKNOWN" fallback) even though ItemSourceType.Coffer itself has existed and been
+        // used for a while — added now that the ItemSupplement reclassification below actually
+        // routes Deep Dungeon sacks here instead of the wrong "TREASURE HUNT" bucket.
+        [ItemSourceType.Coffer] = (
+            new Vector4(0.55f, 0.35f, 0.15f, 1f),
+            new Vector4(0.16f, 0.11f, 0.04f, 1f),
+            "COFFER"),
     };
 
     public ItemDetailWindow(IItemDetailService detailService, IItemSourceService sourceService, IUniversalisService universalisService, ITextureProvider? textureProvider = null, IDataManager? data = null, IItemImageService? imageService = null)

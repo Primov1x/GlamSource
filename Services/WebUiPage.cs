@@ -99,6 +99,7 @@ input[type=search]:focus{border-color:var(--accent)}
 .card.quest{border-left-color:#4ecb5e}.card.quest .badge{background:#1c5a24}
 .card.duty{border-left-color:#e05555}.card.duty .badge{background:#5c1c1c}
 .card.treasure{border-left-color:#33cccc}.card.treasure .badge{background:#0d3333}
+.card.coffer{border-left-color:#8c5926}.card.coffer .badge{background:#291d0a}
 table{width:100%;border-collapse:collapse;margin-top:6px}
 td,th{padding:5px 8px;text-align:left;font-size:13px}
 tr:nth-child(even) td{background:rgba(255,255,255,.025)}
@@ -946,14 +947,15 @@ function buildItemHtml(d,openFn='openItem'){
       h+='</div>';
     });
   }
-  h+='<div class="cards">';
   // ponytail: opened from inside the duty view (dutyhead banner already names this duty + has its
-  // own "Open in Duty Finder" button up top) — a source card repeating "Dungeon Drop: this same
-  // duty" + a second identical button is pure noise here ("doppelt gemobbelt"). Only drop it in that
-  // context; the standalone item-detail view (search tab) still needs it, nothing else says where
-  // the item drops there.
-  const srcList=(openFn==='openDutyItem'&&dutySelected)
-    ? (d.sources??[]).filter(s=>!(s.cfcRowId===dutySelected||(s.cfcRowIds??[]).includes(dutySelected)))
+  // own "Open in Duty Finder" button up top) — a Dungeon-type source card is pure noise here
+  // ("Dungeon Karte braucht man nicht, nur wenn man ein item explizit anklickt") no matter which
+  // duty it points at, not just the currently-selected one (a sack can legitimately drop across a
+  // whole floor-range's worth of sub-duties). Only drop it in this in-duty-browsing context; the
+  // standalone item-detail view (search tab) still needs it, nothing else says where the item drops
+  // there.
+  const srcList=openFn==='openDutyItem'
+    ? (d.sources??[]).filter(s=>s.type!=='Dungeon')
     : (d.sources??[]);
   // ponytail: same shop/vendor sold from several NPC locations used to render as one full repeated
   // card per location ("unübersichtlich" — a shop with 3 vendor spots meant 3 near-identical cards).
@@ -965,8 +967,27 @@ function buildItemHtml(d,openFn='openItem'){
     if(!groups.has(key))groups.set(key,[]);
     groups.get(key).push(s);
   }
-  for(const group of groups.values())h+=renderSource(group,d.itemId,openFn);
-  h+='</div>';
+  // "unübersichtlich af, kann man safe unter Kategoriekacheln packen und dann nacheinander
+  // auflisten" — flat pile of same-looking cards was hard to scan once an item has 5+ sources of
+  // mixed types. One small header (reusing .tbl, same style "REST OF THE SET"/"CAN CONTAIN"
+  // already use) per source TYPE, in a fixed sensible order, sections listed one after another —
+  // no collapsing, this is just about scanning what kind of source you're looking at before
+  // reading the individual cards.
+  const catOrder=['Dungeon','Trial','Raid','TreasureHunt','Coffer','Vendor','Shop','MogStation','Craft','Quest','Fate','Mob','Gathering','Achievement','PvP','TripleTriad','Retainer','Airship','Submarine','Relic','Unknown','Other'];
+  const byType=new Map();
+  for(const group of groups.values()){
+    const ty=group[0].type??'Other';
+    if(!byType.has(ty))byType.set(ty,[]);
+    byType.get(ty).push(group);
+  }
+  const sortedTypes=[...byType.keys()].sort((a,b)=>{const ia=catOrder.indexOf(a),ib=catOrder.indexOf(b);return(ia<0?99:ia)-(ib<0?99:ib)});
+  for(const ty of sortedTypes){
+    const catLabel=ty.replace(/([a-z])([A-Z])/g,'$1 $2');
+    if(sortedTypes.length>1)h+=`<div class="tbl" style="margin-top:12px">${esc(catLabel)}</div>`;
+    h+='<div class="cards">';
+    for(const group of byType.get(ty))h+=renderSource(group,d.itemId,openFn);
+    h+='</div>';
+  }
   if(!(d.sources??[]).length)h+=`<div class="empty">${t('no_sources')}</div>`;
   return h;
 }
@@ -998,7 +1019,7 @@ function renderSource(group,itemId,openFn='openItem'){
   // ponytail: named srcType, not t — a local "t" here shadows the global t() i18n function used
   // below (live crash: "TypeError: t is not a function" the moment any t('key') call ran)
   const srcType=(s.type??'').toString();
-  const cls=/craft/i.test(srcType)?'crafted':/vendor|shop/i.test(srcType)?'vendor':/quest/i.test(srcType)?'quest':/trial|raid|dungeon/i.test(srcType)?'duty':/treasurehunt/i.test(srcType)?'treasure':'';
+  const cls=/craft/i.test(srcType)?'crafted':/vendor|shop/i.test(srcType)?'vendor':/quest/i.test(srcType)?'quest':/trial|raid|dungeon/i.test(srcType)?'duty':/treasurehunt/i.test(srcType)?'treasure':/coffer/i.test(srcType)?'coffer':'';
   // "TreasureHunt" etc. are PascalCase enum names — space them out before uppercasing so the badge
   // reads "TREASURE HUNT", not "TREASUREHUNT".
   const typeLabel=srcType.replace(/([a-z])([A-Z])/g,'$1 $2');
