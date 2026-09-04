@@ -886,7 +886,7 @@ async function openDutyItem(id){
   const el=$('#dutydetail');
   const myToken=(el._reqToken=(el._reqToken||0)+1);
   el.innerHTML=`<div class="empty"><span class="spinner"></span>${t('loading')}</div>`;
-  const d=await fetch('/api/item/'+id).then(r=>r.ok?r.json():null);
+  const d=await fetch('/api/item/'+id+'?lang='+lang).then(r=>r.ok?r.json():null);
   if(el._reqToken!==myToken)return;
   el.innerHTML=d?buildItemHtml(d,'openDutyItem'):`<div class="empty">${t('not_found')}</div>`;
   if(d){annotateInventory(el);annotateEvent(el,id,myToken);annotateMarket(el,id,d.isMarketable,myToken)}
@@ -1021,7 +1021,7 @@ async function openItem(id){
   if(n){$('#results').style.display='none';$('#resback').style.display='';$('#resback').textContent=`${t('back_results')} (${n})`}
   el.innerHTML=`<div class="empty"><span class="spinner"></span>${t('loading')}</div>`;
   updateOverlayCompactness();
-  const d=await fetch('/api/item/'+id).then(r=>r.ok?r.json():null);
+  const d=await fetch('/api/item/'+id+'?lang='+lang).then(r=>r.ok?r.json():null);
   if(el._reqToken!==myToken)return; // a newer click already superseded this one
   el.innerHTML=d?buildItemHtml(d):`<div class="empty">${t('not_found')}</div>`;
   if(d){annotateInventory(el);annotateEvent(el,id,myToken);annotateMarket(el,id,d.isMarketable,myToken)}
@@ -1218,7 +1218,7 @@ async function showItemPanel(id){
   const box=$('#chardetail');
   const myToken=(box._reqToken=(box._reqToken||0)+1); // same race guard as openItem — see its comment
   box.innerHTML=`<div class="empty"><span class="spinner"></span>${t('loading')}</div>`;
-  const d=await fetch('/api/item/'+id).then(r=>r.ok?r.json():null);
+  const d=await fetch('/api/item/'+id+'?lang='+lang).then(r=>r.ok?r.json():null);
   if(box._reqToken!==myToken)return;
   box.innerHTML=d?buildItemHtml(d,'showItemPanel'):`<div class="empty">${t('not_found')}</div>`;
   if(d){annotateInventory(box);annotateEvent(box,id,myToken);annotateMarket(box,id,d.isMarketable,myToken)}
@@ -1239,7 +1239,7 @@ const shopRow=(m,openFn)=>`<div class="matrow" data-item="${m.itemId}" data-need
 async function showShoppingList(){
   const box=$('#chardetail');
   box.innerHTML=`<div class="empty"><span class="spinner"></span>${t('loading')}</div>`;
-  const d=await fetch('/api/shoppinglist').then(r=>r.ok?r.json():null);
+  const d=await fetch('/api/shoppinglist?lang='+lang).then(r=>r.ok?r.json():null);
   if(!d){box.innerHTML=`<div class="empty">${t('not_found')}</div>`;return}
   let h=`<div class="header"><div><h2 class="name">${t('shopping_title')}</h2><div class="meta">${d.lines.length} ${t('shopping_stops')}</div></div></div>`;
   if(d.totals.length)h+=`<div class="tbl">${t('shopping_total')}</div>`+d.totals.map(c=>shopRow(c)).join('');

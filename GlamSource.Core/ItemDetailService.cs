@@ -84,7 +84,11 @@ public sealed record DutyCoffer(float X, float Y, IReadOnlyList<DutyDrop> Items,
 
 public interface IItemDetailService
 {
-    ItemDetail? GetDetail(uint itemId);
+    /// lang: "en" (default) or "de" — controls ItemSourceDetail.Description text only (item/NPC/
+    /// duty names inside those descriptions are already client-language via Lumina, unaffected by
+    /// this). ImGui passes Loc.Language (its own ambient toggle); the web UI passes its own
+    /// localStorage gs_lang toggle explicitly per request — see Loc.T(string,string)'s doc comment.
+    ItemDetail? GetDetail(uint itemId, string lang = "en");
     /// Duty Drops tab: every duty with a known drop table, sorted by type then name.
     IReadOnlyList<DutyInfo> ListDutiesWithDrops();
     /// Duty Drops tab: one duty's banner, bosses, chests and drops (iLvl descending inside each list).
@@ -123,7 +127,10 @@ public interface IItemDetailService
 public sealed class ItemDetailService : IItemDetailService
 {
     private readonly GameData _gameData;
-    private readonly Dictionary<uint, ItemDetail?> _cache = new();
+    // (ItemId, lang) — Description text is lang-dependent now (see GetDetail's doc comment), so the
+    // same item id needs a separate cache entry per language, or an "en" lookup would wrongly hand
+    // back a "de" request's cached result (or vice versa) once both have been requested once.
+    private readonly Dictionary<(uint ItemId, string Lang), ItemDetail?> _cache = new();
 
     private readonly Dictionary<uint, string> _npcNameCache = new();
     private readonly Dictionary<uint, List<NpcLocationInfo>> _shopNpcLookup = new();
@@ -305,21 +312,22 @@ public sealed class ItemDetailService : IItemDetailService
     public GameData GameData => _gameData;
 
     // same concurrency story as LuminaItemSourceService.GetSources: web request threads + draw thread
-    public ItemDetail? GetDetail(uint itemId)
+    public ItemDetail? GetDetail(uint itemId, string lang = "en")
     {
         lock (_cache)
-            return GetDetailCore(itemId);
+            return GetDetailCore(itemId, lang);
     }
 
-    private ItemDetail? GetDetailCore(uint itemId)
+    private ItemDetail? GetDetailCore(uint itemId, string lang)
     {
-        if (_cache.TryGetValue(itemId, out var cached))
+        var cacheKey = (itemId, lang);
+        if (_cache.TryGetValue(cacheKey, out var cached))
             return cached;
 
         var itemSheet = _gameData.GetExcelSheet<Item>();
         if (itemSheet == null || !itemSheet.TryGetRow(itemId, out var item))
         {
-            _cache[itemId] = null;
+            _cache[cacheKey] = null;
             return null;
         }
         var name = item.Name.ToString()!;
@@ -399,7 +407,7 @@ public sealed class ItemDetailService : IItemDetailService
         }
 
         IReadOnlyList<ItemSourceDetail> sources;
-        try { sources = BuildSources(itemId, item); }
+        try { sources = BuildSources(itemId, item, lang); }
         catch (Exception e)
         {
             // one bad row id in any of the ~40 lookups below must not take the whole window down
@@ -463,12 +471,15 @@ public sealed class ItemDetailService : IItemDetailService
         // available. Once the live service HAS completed (success or failure) every answer is stable
         // and safe to cache normally again.
         if (_mogstationLive.HasCompletedFirstRefresh)
-            _cache[itemId] = detail;
+            _cache[cacheKey] = detail;
         return detail;
     }
 
-    private IReadOnlyList<ItemSourceDetail> BuildSources(uint itemId, Item item)
+    private IReadOnlyList<ItemSourceDetail> BuildSources(uint itemId, Item item, string lang)
     {
+        // local shorthand — every description-prefix literal below goes through this instead of a
+        // bare string, e.g. $"{Tr("Duty Drop")}: {name}" not $"Duty Drop: {name}".
+        string Tr(string en) => Loc.T(en, lang);
         var results = new List<ItemSourceDetail>();
 
         // 1. Crafted â€” from Recipe sheet (grouped by material set)
@@ -482,7 +493,7 @@ public sealed class ItemDetailService : IItemDetailService
                 var jobNames = group.Select(r => GetClassJobAbbreviation(r.CraftType.RowId)).Distinct();
                 var jobList = string.Join(", ", jobNames);
                 var crafterLevel = group.First().RecipeLevelTable.Value.ClassJobLevel;
-                var desc = $"Crafted Lv.{crafterLevel} ({jobList})";
+                var desc = $"{Tr("Crafted")} Lv.{crafterLevel} ({jobList})";
 
                 var ingredientArray = group.First().Ingredient.Cast<dynamic>().ToArray();
                 var amountArray = group.First().AmountIngredient.Cast<dynamic>().ToArray();
@@ -518,11 +529,11 @@ public sealed class ItemDetailService : IItemDetailService
         }
 
         // 2. GilShop â€” Vendor
-        var gilShopSources = FindGilShopSources(itemId);
+        var gilShopSources = FindGilShopSources(itemId, lang);
         results.AddRange(gilShopSources);
 
         // 3. SpecialShop â€” Vendor (tomestones etc.)
-        var specialShopSources = FindSpecialShopSources(itemId);
+        var specialShopSources = FindSpecialShopSources(itemId, lang);
         results.AddRange(specialShopSources);
 
         // 4. Duty Drop from LuminaSupplemental (DungeonDrop + BossDrop + BossChest)
@@ -576,7 +587,7 @@ public sealed class ItemDetailService : IItemDetailService
                     else displayName = name;
                     results.Add(new ItemSourceDetail(
                         sourceType,
-                        $"{dutyType} Drop: {displayName}",
+                        $"{Tr(dutyType)} {Tr("Drop")}: {displayName}",
                         null, null, null, null, null, null, null, null,
                         null, rowId, displayName, dutyType, null, null, cfcRowIds));
                 }
@@ -590,7 +601,7 @@ public sealed class ItemDetailService : IItemDetailService
             var sourceType = dutyType == "Trial" ? ItemSourceType.Trial : ItemSourceType.Dungeon;
             results.Add(new ItemSourceDetail(
                 sourceType,
-                $"{dutyType} Drop: {totemInfo.bossName} (Extreme)",
+                $"{Tr(dutyType)} {Tr("Drop")}: {totemInfo.bossName} ({Tr("Extreme")})",
                 null, null, null, null, null, null, null, null,
                 null, totemInfo.cfcRowId, totemInfo.cfcName, dutyType,
                 totemInfo.bossName, totemInfo.questId, null));
@@ -603,9 +614,9 @@ public sealed class ItemDetailService : IItemDetailService
             var displayType = exchangeType == "Savage" ? "Raid" : "Trial";
             var desc = exchangeType == "Savage"
                 ? cfcRowIds.Count > 0 && cfcRowIds[0] > 0
-                    ? $"{GetDutyType(cfcRowIds[0])} Drop: {shopName}"
-                    : $"Raid Drop: {shopName}"
-                : $"Trial Drop: {shopName}";
+                    ? $"{Tr(GetDutyType(cfcRowIds[0]))} {Tr("Drop")}: {shopName}"
+                    : $"{Tr("Raid")} {Tr("Drop")}: {shopName}"
+                : $"{Tr("Trial")} {Tr("Drop")}: {shopName}";
             var sourceType = exchangeType == "Savage" ? ItemSourceType.Raid : ItemSourceType.Trial;
             results.Add(new ItemSourceDetail(
                 sourceType,
@@ -662,7 +673,7 @@ public sealed class ItemDetailService : IItemDetailService
 
                             results.Add(new ItemSourceDetail(
                                 ItemSourceType.Quest,
-                                $"Quest Reward: {questName}",
+                                $"{Tr("Quest Reward")}: {questName}",
                                 questNpcName, questZoneName,
                                 questMapX, questMapY,
                                 questTerritoryId, questMapId,
@@ -689,7 +700,7 @@ public sealed class ItemDetailService : IItemDetailService
                 {
                     results.Add(new ItemSourceDetail(
                         ItemSourceType.Fate,
-                        $"Fate Drop: {fateName}",
+                        $"{Tr("Fate Drop")}: {fateName}",
                         null, null, null, null, null, null,
                         null, null, null, null, null, null, null, null, null));
                 }
@@ -708,7 +719,7 @@ public sealed class ItemDetailService : IItemDetailService
                 {
                     results.Add(new ItemSourceDetail(
                         ItemSourceType.Mob,
-                        $"Mob Drop: {npcName}",
+                        $"{Tr("Mob Drop")}: {npcName}",
                         null, null, null, null, null, null,
                         null, null, null, null, null, null, null, null, null));
                 }
@@ -721,7 +732,7 @@ public sealed class ItemDetailService : IItemDetailService
             var npcName = _npcNameCache.GetValueOrDefault(hvNpcs[0]);
             results.Add(new ItemSourceDetail(
                 ItemSourceType.Vendor,
-                $"House Vendor: {npcName ?? "Unknown"}",
+                $"{Tr("House Vendor")}: {npcName ?? Tr("Unknown")}",
                 npcName, null, null, null, null, null,
                 null, null, null, null, null, null, null, null, null));
         }
@@ -746,7 +757,7 @@ public sealed class ItemDetailService : IItemDetailService
                 var sourceItemName = GetItemName(supp.SourceItemId) ?? "Unknown";
                 var desc = supp.ItemSupplementSource switch
                 {
-                    ItemSupplementSource.Loot => $"Obtained from: {sourceItemName}",
+                    ItemSupplementSource.Loot => $"{Tr("Obtained from")}: {sourceItemName}",
                     _ => $"{supp.ItemSupplementSource}: {sourceItemName}"
                 };
                 // "heaven on high 'treasure hunt' ist nicht das gleiche" — routing EVERY
@@ -774,7 +785,7 @@ public sealed class ItemDetailService : IItemDetailService
             var cofferSheet = _gameData.GetExcelSheet<Item>();
             var cofferName = string.Join(", ", cofferIds.Select(id => cofferSheet?.GetRow(id).Name.ExtractText() ?? $"{id}"));
             results.Add(new ItemSourceDetail(
-                ItemSourceType.Coffer, $"Coffer: {cofferName}",
+                ItemSourceType.Coffer, $"{Tr("Coffer")}: {cofferName}",
                 null, null, null, null, null, null,
                 null, null, null, null, null, null, null, null, null));
         }
@@ -789,7 +800,7 @@ public sealed class ItemDetailService : IItemDetailService
                     return $"{aid}";
                 }).Distinct();
             results.Add(new ItemSourceDetail(
-                ItemSourceType.Achievement, $"Achievement(s): {string.Join(", ", achNames)}",
+                ItemSourceType.Achievement, $"{Tr("Achievement(s)")}: {string.Join(", ", achNames)}",
                 null, null, null, null, null, null,
                 null, null, null, null, null, null, null, null, null));
         }
@@ -799,7 +810,7 @@ public sealed class ItemDetailService : IItemDetailService
         {
             var desc = string.Join("; ", fieldOpEntries.Select(e => $"{e.Type} {e.CofferType}"));
             results.Add(new ItemSourceDetail(
-                ItemSourceType.Coffer, $"Field Op Coffer: {desc}",
+                ItemSourceType.Coffer, $"{Tr("Field Op Coffer")}: {desc}",
                 null, null, null, null, null, null,
                 null, null, null, null, null, null, null, null, null));
         }
@@ -810,7 +821,7 @@ public sealed class ItemDetailService : IItemDetailService
             if (_pvpVendorItems.Contains(itemId))
             {
                 results.Add(new ItemSourceDetail(
-                    ItemSourceType.PvP, "PvP Vendor Reward",
+                    ItemSourceType.PvP, Tr("PvP Vendor Reward"),
                     null, null, null, null, null, null,
                     null, null, null, null, null, null, null, null, null));
             }
@@ -819,8 +830,8 @@ public sealed class ItemDetailService : IItemDetailService
                 results.Add(new ItemSourceDetail(
                     ItemSourceType.PvP,
                     seasonId == _currentPvpSeasonId
-                    ? $"PvP Season {seasonId} (currently available)"
-                    : $"PvP Season {seasonId} (series ended)",
+                    ? $"{Tr("PvP Season")} {seasonId} ({Tr("currently available")})"
+                    : $"{Tr("PvP Season")} {seasonId} ({Tr("series ended")})",
                     null, null, null, null, null, null,
                     null, null, null, null, null, null, null, null, null));
             }
@@ -831,14 +842,14 @@ public sealed class ItemDetailService : IItemDetailService
         {
             foreach (var g in gatheringNodes)
             {
-                var nodeTypeName = g.GatheringType switch
+                var nodeTypeName = Tr(g.GatheringType switch
                 {
                     0 => "Miner",
                     1 => "Miner",
                     2 => "Botanist",
                     3 => "Botanist",
                     _ => "Unknown"
-                };
+                });
                 var zoneSuffix = string.IsNullOrEmpty(g.ZoneName) ? "" : $" ({g.ZoneName})";
                 var desc = $"{nodeTypeName} Lv.{g.GatheringLevel}{zoneSuffix}";
                 results.Add(new ItemSourceDetail(
@@ -859,7 +870,7 @@ public sealed class ItemDetailService : IItemDetailService
                 var zoneSuffix = string.IsNullOrEmpty(f.ZoneName) ? "" : $" ({f.ZoneName})";
                 results.Add(new ItemSourceDetail(
                     ItemSourceType.Gathering,
-                    $"Fisher Lv.{f.GatheringLevel}{zoneSuffix}",
+                    $"{Tr("Fisher")} Lv.{f.GatheringLevel}{zoneSuffix}",
                     null, null,
                     f.MapX, f.MapY,
                     f.TerritoryTypeId, f.MapId,
@@ -881,7 +892,7 @@ public sealed class ItemDetailService : IItemDetailService
                 {
                     results.Add(new ItemSourceDetail(
                         ItemSourceType.TripleTriad,
-                        "Won from an NPC in a Triple Triad match",
+                        Tr("Won from an NPC in a Triple Triad match"),
                         n.NpcName, n.ZoneName,
                         n.MapX, n.MapY,
                         null, null,
@@ -903,8 +914,8 @@ public sealed class ItemDetailService : IItemDetailService
                     : new List<CostEntry> { new(sealItemId, GetItemName(sealItemId) ?? "Company Seals", g.seals, GetItemIconId(sealItemId)) };
                 results.Add(new ItemSourceDetail(
                     ItemSourceType.Vendor,
-                    $"Grand Company Quartermaster: {g.gcName} (rank {g.rank})",
-                    "Quartermaster", null, null, null, null, null,
+                    $"{Tr("Grand Company Quartermaster")}: {g.gcName} ({Tr("rank")} {g.rank})",
+                    Tr("Quartermaster"), null, null, null, null, null,
                     costs, null, null, null, null, null, null, null, null));
             }
         }
@@ -917,7 +928,7 @@ public sealed class ItemDetailService : IItemDetailService
         if (results.Count == 0 && OutfitPieces.TryGetValue(itemId, out var pieces) && pieces.Count > 0)
         {
             results.Add(Note(ItemSourceType.Other,
-                "Outfit — a glamour set made up of the pieces below. The outfit itself isn't sold or dropped; each piece has its own source.",
+                Tr("Outfit — a glamour set made up of the pieces below. The outfit itself isn't sold or dropped; each piece has its own source."),
                 pieces.Select(x => new CostEntry(x.itemId, x.name, 1, x.icon)).ToList(),
                 pieces[0].itemId));
         }
@@ -926,19 +937,19 @@ public sealed class ItemDetailService : IItemDetailService
         // Grade 2 Wheel of Productivity). Airship/submersible parts, FC wheels, workshop furniture.
         if (results.Count == 0 && WorkshopResults.Contains(itemId))
         {
-            results.Add(Note(ItemSourceType.Other, "Company Workshop — crafted as a Free Company workshop project (Company Crafting Log), not by a single crafter."));
+            results.Add(Note(ItemSourceType.Other, Tr("Company Workshop — crafted as a Free Company workshop project (Company Crafting Log), not by a single crafter.")));
         }
         else if (results.Count == 0 && enName.StartsWith("Primed ", StringComparison.Ordinal)
                  && FindItemIdByExactName(enName["Primed ".Length..]) is { } baseWheel)
         {
-            results.Add(Note(ItemSourceType.Other, "Company Workshop — primed from its base wheel in the Free Company workshop.", sourceItemId: baseWheel));
+            results.Add(Note(ItemSourceType.Other, Tr("Company Workshop — primed from its base wheel in the Free Company workshop."), sourceItemId: baseWheel));
         }
 
         // 7h. Cosmic Exploration — WKSItemInfo lists every item that exists on the Sinus Ardorum
         // site (fish, tackle, cosmotools, materials). ~360 audit leftovers.
         if (results.Count == 0 && CosmicItems.Contains(itemId))
         {
-            results.Add(Note(ItemSourceType.Other, "Cosmic Exploration (Sinus Ardorum) — obtained on the Cosmic Exploration site through its missions, gathering or fishing."));
+            results.Add(Note(ItemSourceType.Other, Tr("Cosmic Exploration (Sinus Ardorum) — obtained on the Cosmic Exploration site through its missions, gathering or fishing.")));
         }
 
         // 7i. Spearfishing — SpearfishingItem carries item, level and territory directly
@@ -948,7 +959,7 @@ public sealed class ItemDetailService : IItemDetailService
             foreach (var sp in spearSpots)
             {
                 var zoneSuffix = string.IsNullOrEmpty(sp.zone) ? "" : $" ({sp.zone})";
-                results.Add(new ItemSourceDetail(ItemSourceType.Gathering, $"Spearfishing Lv.{sp.level}{zoneSuffix}",
+                results.Add(new ItemSourceDetail(ItemSourceType.Gathering, $"{Tr("Spearfishing")} Lv.{sp.level}{zoneSuffix}",
                     null, null, null, null, sp.territory == 0 ? null : sp.territory, null,
                     null, null, null, null, null, null, null, null, null));
             }
@@ -959,21 +970,21 @@ public sealed class ItemDetailService : IItemDetailService
         if (results.Count == 0 && (IslandPouch.Contains(itemId)
             || Regex.IsMatch(enName, @"^(Isleworks |Islekeep's |Islander's |Island |Islewort|Isleberry|Islefish|Isleshroom)")))
         {
-            results.Add(Note(ItemSourceType.Other, "Island Sanctuary — gathered, grown or crafted on your island (Isleworks); island items can't be taken off the island."));
+            results.Add(Note(ItemSourceType.Other, Tr("Island Sanctuary — gathered, grown or crafted on your island (Isleworks); island items can't be taken off the island.")));
         }
 
         // 7k. Hidden gathering yields — in GatheringItem but referenced by no GatheringPointBase
         // node (verified: 6688 Timeworn Leather Map, GatheringItem 10121, zero node references).
         if (!results.Any(s => s.Type == ItemSourceType.Gathering) && GatheringItemLevels.TryGetValue(itemId, out var hiddenLevel))
         {
-            results.Add(Note(ItemSourceType.Gathering, $"Gathering Lv.{hiddenLevel} — random/hidden yield at Miner or Botanist nodes of that level (Timeworn maps and the like), not tied to one specific node."));
+            results.Add(Note(ItemSourceType.Gathering, $"{Tr("Gathering")} Lv.{hiddenLevel} — {Tr("random/hidden yield at Miner or Botanist nodes of that level (Timeworn maps and the like), not tied to one specific node.")}"));
         }
 
         // 7l. Fish that are in the fishing log (FishParameter) but whose spot isn't in FishingSpot:
         // ocean fishing, the Diadem, event spots. Say what it is instead of shrugging.
         if (results.Count == 0 && FishLog.Contains(itemId))
         {
-            results.Add(Note(ItemSourceType.Gathering, "Fish — listed in the fishing log, but its spot isn't in the game's FishingSpot table (ocean fishing, the Diadem, or an event/special spot)."));
+            results.Add(Note(ItemSourceType.Gathering, Tr("Fish — listed in the fishing log, but its spot isn't in the game's FishingSpot table (ocean fishing, the Diadem, or an event/special spot).")));
         }
 
         // 7m. Trade-in-only items — the item appears as a COST in a SpecialShop entry, never as
@@ -985,16 +996,16 @@ public sealed class ItemDetailService : IItemDetailService
         if (results.Count == 0)
         {
             if (enName.StartsWith("Antiquated ", StringComparison.Ordinal))
-                results.Add(Note(ItemSourceType.Quest, "Artifact gear — awarded by that job's level-cap job quests, not sold anywhere."));
+                results.Add(Note(ItemSourceType.Quest, Tr("Artifact gear — awarded by that job's level-cap job quests, not sold anywhere.")));
             else if (enName.StartsWith("Irregular Tomestone of ", StringComparison.Ordinal))
-                results.Add(Note(ItemSourceType.Other, "Moogle Treasure Trove event currency — earned from the event's selected duties while it ran; retired afterward."));
+                results.Add(Note(ItemSourceType.Other, Tr("Moogle Treasure Trove event currency — earned from the event's selected duties while it ran; retired afterward.")));
             else if (Regex.IsMatch(enName, @"^(Manderville|Amazing Manderville|Majestic Manderville|Mandervillous) "))
-                results.Add(Note(ItemSourceType.Quest, "Manderville relic weapon step — obtained by progressing the Endwalker relic quest line (Hildibrand / House Manderville), never sold."));
+                results.Add(Note(ItemSourceType.Quest, Tr("Manderville relic weapon step — obtained by progressing the Endwalker relic quest line (Hildibrand / House Manderville), never sold.")));
             else if (Regex.IsMatch(enName, @"^(Animated|Awoken|Hyperconductive|Sharpened) "))
-                results.Add(Note(ItemSourceType.Quest, "Anima relic weapon step — obtained by progressing the Heavensward relic quest line (Ardashir, Azys Lla), never sold."));
+                results.Add(Note(ItemSourceType.Quest, Tr("Anima relic weapon step — obtained by progressing the Heavensward relic quest line (Ardashir, Azys Lla), never sold.")));
             // the game's own item text: "Eureka gear." (Anemos/Pagos/Pyros/Hydatos weapons and armor)
             else if (((_englishItemSheet ??= _gameData.GetExcelSheet<Item>(Language.English))?.GetRowOrDefault(itemId)?.Description.ToString() ?? "").StartsWith("Eureka gear", StringComparison.Ordinal))
-                results.Add(Note(ItemSourceType.Other, "Eureka (The Forbidden Land) — Eureka-only gear, exchanged with Gerolt / the Expedition Artisan inside Eureka; not obtainable outside it."));
+                results.Add(Note(ItemSourceType.Other, Tr("Eureka (The Forbidden Land) — Eureka-only gear, exchanged with Gerolt / the Expedition Artisan inside Eureka; not obtainable outside it.")));
         }
 
         // 7n. Deep Dungeon / Bozja-Zadnor / Occult Crescent trade-in currencies — the block above
@@ -1005,13 +1016,13 @@ public sealed class ItemDetailService : IItemDetailService
         // doesn't set results.Count so the outbound trade-in note still appears alongside this.
         var tokenInboundNote =
             Regex.IsMatch(enName, @"^(Palace|Yggdrasil|Orthos) Aetherpool (Fragment|Grip|Core)$")
-                ? "Deep Dungeon currency — earned as a reward for clearing that Deep Dungeon's floors (progression reward, not a drop or purchase)."
+                ? Tr("Deep Dungeon currency — earned as a reward for clearing that Deep Dungeon's floors (progression reward, not a drop or purchase).")
             : enName == "Resistance Token"
-                ? "Bozja/Zadnor Resistance relic currency — earned from Critical Engagements and Duels in Bozja/Zadnor, and from Save the Queen relic quest steps."
+                ? Tr("Bozja/Zadnor Resistance relic currency — earned from Critical Engagements and Duels in Bozja/Zadnor, and from Save the Queen relic quest steps.")
             : enName == "Bozjan Cluster"
-                ? "Bozja/Zadnor field currency — earned from Critical Engagements, Duels, and general activity in the Bozjan Southern Front/Zadnor."
+                ? Tr("Bozja/Zadnor field currency — earned from Critical Engagements, Duels, and general activity in the Bozjan Southern Front/Zadnor.")
             : enName == "Enlightenment Silver Piece"
-                ? "Occult Crescent currency — earned from combat participation (Critical Engagements/duels) in the Occult Crescent (South Horn)."
+                ? Tr("Occult Crescent currency — earned from combat participation (Critical Engagements/duels) in the Occult Crescent (South Horn).")
             : null;
         if (results.Count == 0 && tokenInboundNote != null)
             results.Add(Note(ItemSourceType.Other, tokenInboundNote));
@@ -1040,7 +1051,7 @@ public sealed class ItemDetailService : IItemDetailService
                 if (npcInfos == null && _shopNpcNameOnly.TryGetValue(group.Key, out var nameOnly))
                     npcInfos = new List<NpcLocationInfo> { new(nameOnly, "", 0, 0, 0, 0) };
 
-                var desc = $"Trade-in only — handed over at \"{shopName}\"; the item itself isn't sold there.";
+                var desc = $"{Tr("Trade-in only")} — {Tr("handed over at")} \"{shopName}\"; {Tr("the item itself isn't sold there.")}";
                 if (npcInfos is { Count: > 0 })
                 {
                     foreach (var npc in npcInfos)
@@ -1063,7 +1074,7 @@ public sealed class ItemDetailService : IItemDetailService
         {
             results.Add(new ItemSourceDetail(
                 ItemSourceType.MogStation,
-                "Available for purchase on the Mog Station.",
+                Tr("Available for purchase on the Mog Station."),
                 null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
                 ShopUrl: liveShopUrl));
         }
@@ -1071,7 +1082,7 @@ public sealed class ItemDetailService : IItemDetailService
         {
             results.Add(new ItemSourceDetail(
                 ItemSourceType.MogStation,
-                "Available for purchase on the Mog Station.",
+                Tr("Available for purchase on the Mog Station."),
                 null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
                 ShopUrl: shopUrl));
         }
@@ -1107,7 +1118,7 @@ public sealed class ItemDetailService : IItemDetailService
         {
             results.Add(new ItemSourceDetail(
                 ItemSourceType.Other,
-                "Unobtainable — the game itself classifies this item as no longer acquirable (e.g. gear for a since-removed equipment slot, such as belts after Stormblood).",
+                Tr("Unobtainable — the game itself classifies this item as no longer acquirable (e.g. gear for a since-removed equipment slot, such as belts after Stormblood)."),
                 null, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
         }
 
@@ -1120,7 +1131,7 @@ public sealed class ItemDetailService : IItemDetailService
         {
             results.Add(new ItemSourceDetail(
                 ItemSourceType.Other,
-                "Retired dye — patch 7.5 consolidated most named dyes into the Spectrum Dye system. Exchange it for a current dye at a Calamity Salvager.",
+                Tr("Retired dye — patch 7.5 consolidated most named dyes into the Spectrum Dye system. Exchange it for a current dye at a Calamity Salvager."),
                 null, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
         }
 
@@ -1134,14 +1145,14 @@ public sealed class ItemDetailService : IItemDetailService
             {
                 results.Add(new ItemSourceDetail(
                     ItemSourceType.Other,
-                    "Materia — converted from fully spiritbonded (100%) equipment, not purchased or dropped directly.",
+                    Tr("Materia — converted from fully spiritbonded (100%) equipment, not purchased or dropped directly."),
                     null, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
             }
             else if (uiCat == "Gardening")
             {
                 results.Add(new ItemSourceDetail(
                     ItemSourceType.Other,
-                    "Garden seed — obtained by cross-breeding compatible seeds in a garden plot, not purchased directly.",
+                    Tr("Garden seed — obtained by cross-breeding compatible seeds in a garden plot, not purchased directly."),
                     null, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
             }
         }
@@ -1158,7 +1169,7 @@ public sealed class ItemDetailService : IItemDetailService
             {
                 results.Add(new ItemSourceDetail(
                     ItemSourceType.Other,
-                    "Legacy 1.0 item — predates patch 1.19. Only players who transferred a character from the original FFXIV 1.0 have this; permanently unobtainable otherwise.",
+                    Tr("Legacy 1.0 item — predates patch 1.19. Only players who transferred a character from the original FFXIV 1.0 have this; permanently unobtainable otherwise."),
                     null, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
             }
             // ponytail: "Aetherial X" gear (untradable, randomly-rolled bonus stat) drops from ARR
@@ -1169,7 +1180,7 @@ public sealed class ItemDetailService : IItemDetailService
             {
                 results.Add(new ItemSourceDetail(
                     ItemSourceType.Other,
-                    "Aetherial gear — dropped from ARR-era dungeon treasure chests or awarded from Battlecraft Leves. Random loot pool, not tied to one specific dungeon/leve.",
+                    Tr("Aetherial gear — dropped from ARR-era dungeon treasure chests or awarded from Battlecraft Leves. Random loot pool, not tied to one specific dungeon/leve."),
                     null, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
             }
         }
@@ -1184,10 +1195,10 @@ public sealed class ItemDetailService : IItemDetailService
             var augmentedId = FindItemIdByExactName("Augmented " + item.Name.ToString());
             if (augmentedId is { } augId)
             {
-                var augName = GetItemName(augId) ?? "its augmented upgrade";
+                var augName = GetItemName(augId) ?? Tr("its augmented upgrade");
                 results.Add(new ItemSourceDetail(
                     ItemSourceType.Other,
-                    $"Retired — replaced by {augName}. No longer obtainable itself; the augmented upgrade is still purchasable.",
+                    $"{Tr("Retired")} — {Tr("replaced by")} {augName}. {Tr("No longer obtainable itself; the augmented upgrade is still purchasable.")}",
                     null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
                     SourceItemId: augId));
             }
@@ -1203,7 +1214,7 @@ public sealed class ItemDetailService : IItemDetailService
         // verified cross-reference; safe because a coffer with a genuinely different source would
         // show its OWN card correctly if this item ever also has a second matching duty entry.
         var exchangeIdx = results.FindIndex(s => (s.Type == ItemSourceType.Trial || s.Type == ItemSourceType.Raid) && s.CfcRowIds != null);
-        var cofferIdx = results.FindIndex(s => s.Type == ItemSourceType.TreasureHunt && s.Description.StartsWith("Obtained from: ", StringComparison.Ordinal) && s.SourceItemId != null);
+        var cofferIdx = results.FindIndex(s => s.Type == ItemSourceType.TreasureHunt && s.Description.StartsWith($"{Tr("Obtained from")}: ", StringComparison.Ordinal) && s.SourceItemId != null);
         if (exchangeIdx >= 0 && cofferIdx >= 0)
         {
             var exchange = results[exchangeIdx];
@@ -1219,7 +1230,7 @@ public sealed class ItemDetailService : IItemDetailService
         // Sunburst sets + Coven weapons, 293 items in the audit, all Diadem 3.1–3.55 loot.
         if (results.Count == 0 && item.Rarity == 7)
         {
-            results.Add(Note(ItemSourceType.Other, "Diadem (Heavensward exploratory missions, patches 3.1–3.55) random-stat loot — the original Diadem was retired with the 5.1 rework, so this is no longer obtainable."));
+            results.Add(Note(ItemSourceType.Other, Tr("Diadem (Heavensward exploratory missions, patches 3.1–3.55) random-stat loot — the original Diadem was retired with the 5.1 rework, so this is no longer obtainable.")));
         }
 
         if (results.Count == 0)
@@ -1230,40 +1241,40 @@ public sealed class ItemDetailService : IItemDetailService
             // 357 items; the item text itself says "Documentation of noteworthy accomplishments for
             // Season Four of the Feast".
             if (Regex.IsMatch(enName, @"^Season [A-Za-z-]+ .*(Wolf|Conflict|Framer's Kit|Trophy|Voucher|Chit)"))
-                results.Add(Note(ItemSourceType.Other, "PvP season reward — handed out at the end of that Feast / Crystalline Conflict season for the rank reached; not obtainable after the season ended."));
+                results.Add(Note(ItemSourceType.Other, Tr("PvP season reward — handed out at the end of that Feast / Crystalline Conflict season for the rank reached; not obtainable after the season ended.")));
             else if (Regex.IsMatch(enName, @"^(FRC|CCRC) \d{4} .*Certification$"))
-                results.Add(Note(ItemSourceType.Other, "PvP tournament reward — given to placers of that year's Feast / Crystalline Conflict regional championship."));
+                results.Add(Note(ItemSourceType.Other, Tr("PvP tournament reward — given to placers of that year's Feast / Crystalline Conflict regional championship.")));
             // 11e. Tales of Adventure — job/retainer level boosts, online store only
             else if (enName.StartsWith("Tales of Adventure:", StringComparison.Ordinal))
-                results.Add(Note(ItemSourceType.MogStation, "Mog Station — Tales of Adventure (job/retainer level boost), purchased from the online store."));
+                results.Add(Note(ItemSourceType.MogStation, Tr("Mog Station — Tales of Adventure (job/retainer level boost), purchased from the online store.")));
             // 11f. Racing chocobo registrations — produced by breeding / retiring at the Chocobo Square
             else if (Regex.IsMatch(enName, @"^(Retired|Fledgling) Chocobo Registration"))
-                results.Add(Note(ItemSourceType.Other, "Chocobo Racing (Gold Saucer) — a racing chocobo's registration, created by breeding or retiring a chocobo at the Chocobo Square; never sold."));
+                results.Add(Note(ItemSourceType.Other, Tr("Chocobo Racing (Gold Saucer) — a racing chocobo's registration, created by breeding or retiring a chocobo at the Chocobo Square; never sold.")));
             // 11g. Retired tomestones
             else if (enName.StartsWith("Allagan Tomestone of ", StringComparison.Ordinal))
-                results.Add(Note(ItemSourceType.Other, "Retired Allagan tomestone — no longer earned from any duty; each expansion rotates the older tomestone types out."));
+                results.Add(Note(ItemSourceType.Other, Tr("Retired Allagan tomestone — no longer earned from any duty; each expansion rotates the older tomestone types out.")));
             // 11h. Crafter/gatherer relic tool steps — three quest lines, all recognisable by the
             // step names on a *Primary/Secondary Tool item (327 tool items in the audit).
             else if (uiCat.EndsWith(" Tool", StringComparison.Ordinal) && Regex.IsMatch(enName, @"^(Skysteel|Dragonsung|Augmented Dragonsung|Skysung|Skybuilders'|Resplendent) "))
-                results.Add(Note(ItemSourceType.Quest, "Skysteel relic tool step — obtained by progressing the Shadowbringers crafter/gatherer relic tool quests (Denys, Foundation); never sold."));
+                results.Add(Note(ItemSourceType.Quest, Tr("Skysteel relic tool step — obtained by progressing the Shadowbringers crafter/gatherer relic tool quests (Denys, Foundation); never sold.")));
             else if (uiCat.EndsWith(" Tool", StringComparison.Ordinal) && Regex.IsMatch(enName, @"^(Splendorous|Augmented Splendorous|Crystalline|Chora-Zoi's Crystalline|Brilliant|Vrandtic Visionary's|Lodestar) "))
-                results.Add(Note(ItemSourceType.Quest, "Splendorous relic tool step — obtained by progressing the Endwalker crafter/gatherer relic tool quests (Studium, Old Sharlayan); never sold."));
+                results.Add(Note(ItemSourceType.Quest, Tr("Splendorous relic tool step — obtained by progressing the Endwalker crafter/gatherer relic tool quests (Studium, Old Sharlayan); never sold.")));
             else if (uiCat.EndsWith(" Tool", StringComparison.Ordinal) && Regex.IsMatch(enName, @"^(Cosmic|Stellar|Lunar) "))
-                results.Add(Note(ItemSourceType.Quest, "Cosmotool relic step — earned and upgraded through Cosmic Exploration (Sinus Ardorum) missions; never sold."));
+                results.Add(Note(ItemSourceType.Quest, Tr("Cosmotool relic step — earned and upgraded through Cosmic Exploration (Sinus Ardorum) missions; never sold.")));
             else if (uiCat.EndsWith(" Tool", StringComparison.Ordinal) && enName.StartsWith("Novice's ", StringComparison.Ordinal))
-                results.Add(Note(ItemSourceType.Quest, "Starter tool — handed out when unlocking the class at its guild; never sold."));
+                results.Add(Note(ItemSourceType.Quest, Tr("Starter tool — handed out when unlocking the class at its guild; never sold.")));
             else if (Regex.IsMatch(enName, @"^(Obsolete )?Resplendent .*(Material|Component) [A-Z]$"))
-                results.Add(Note(ItemSourceType.Quest, "Resplendent tool quest item — made and handed in during the final Skysteel relic tool quests; \"Obsolete\" ones are leftovers from an earlier version of that quest."));
+                results.Add(Note(ItemSourceType.Quest, Tr("Resplendent tool quest item — made and handed in during the final Skysteel relic tool quests; \"Obsolete\" ones are leftovers from an earlier version of that quest.")));
             // Save the Queen relic weapons, final "Blade's" step
             else if (enName.StartsWith("Blade's ", StringComparison.Ordinal) && (uiCat.EndsWith(" Arm", StringComparison.Ordinal) || uiCat == "Shield" || uiCat.EndsWith("Grimoire", StringComparison.Ordinal)))
-                results.Add(Note(ItemSourceType.Quest, "Resistance relic weapon step — obtained by progressing the Shadowbringers Save the Queen relic quest line (Bozja); never sold."));
+                results.Add(Note(ItemSourceType.Quest, Tr("Resistance relic weapon step — obtained by progressing the Shadowbringers Save the Queen relic quest line (Bozja); never sold.")));
             // 11i. Triple Triad cards missing from the bundled NPC table (newer cards)
             else if (uiCat == "Triple Triad Card")
-                results.Add(Note(ItemSourceType.Other, "Triple Triad card — not in the bundled NPC/drop table (newer card). Typical sources: Triple Triad NPC wins, Gold Saucer card packs, tournaments, or duty drops."));
+                results.Add(Note(ItemSourceType.Other, Tr("Triple Triad card — not in the bundled NPC/drop table (newer card). Typical sources: Triple Triad NPC wins, Gold Saucer card packs, tournaments, or duty drops.")));
             // 11j. Beast-tribe society quest items — the item text itself says so
             // ("※Only for use in Ixal society quests.")
             else if ((_englishItemSheet ??= _gameData.GetExcelSheet<Item>(Language.English))?.GetRowOrDefault(itemId)?.Description.ToString().Contains("society quests", StringComparison.Ordinal) == true)
-                results.Add(Note(ItemSourceType.Other, "Tribal (beast tribe) society quest item — handed out and used within those quests, never sold or dropped."));
+                results.Add(Note(ItemSourceType.Other, Tr("Tribal (beast tribe) society quest item — handed out and used within those quests, never sold or dropped.")));
         }
 
         // 12. Generic fallback â€” nothing found, and not a known legacy/retired/superseded item either.
@@ -1279,8 +1290,8 @@ public sealed class ItemDetailService : IItemDetailService
             results.Add(new ItemSourceDetail(
                 ItemSourceType.Other,
                 isEquipment
-                    ? "No known current source. Often old gear that's been rotated out of its vendor over patches — may still be a rare drop, achievement, or account-bound reward we don't track."
-                    : "No known current source. Likely an instance-bound currency/point earned by participating in specific content (e.g. combat engagements, event objectives) rather than bought, crafted, or dropped — we don't track those individually.",
+                    ? Tr("No known current source. Often old gear that's been rotated out of its vendor over patches — may still be a rare drop, achievement, or account-bound reward we don't track.")
+                    : Tr("No known current source. Likely an instance-bound currency/point earned by participating in specific content (e.g. combat engagements, event objectives) rather than bought, crafted, or dropped — we don't track those individually."),
                 null, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
         }
 
@@ -1794,8 +1805,9 @@ public sealed class ItemDetailService : IItemDetailService
         return _itemIdByName.TryGetValue(name, out var id) ? id : null;
     }
 
-    private IEnumerable<ItemSourceDetail> FindGilShopSources(uint itemId)
+    private IEnumerable<ItemSourceDetail> FindGilShopSources(uint itemId, string lang)
     {
+        string Tr(string en) => Loc.T(en, lang);
         var gilShopItems = _gameData.GetSubrowExcelSheet<GilShopItem>();
         if (gilShopItems == null)
             return Enumerable.Empty<ItemSourceDetail>();
@@ -1839,7 +1851,7 @@ public sealed class ItemDetailService : IItemDetailService
                 {
                     foreach (var npc in npcInfos)
                     {
-                        var desc = $"Vendor: {npc.NpcName}";
+                        var desc = $"{Tr("Vendor")}: {npc.NpcName}";
                         allSources.Add(new ItemSourceDetail(
                             ItemSourceType.Vendor,
                             desc,
@@ -1855,7 +1867,7 @@ public sealed class ItemDetailService : IItemDetailService
                     var nameOnly = _shopNpcNameOnly.GetValueOrDefault(shopId);
                     allSources.Add(new ItemSourceDetail(
                         ItemSourceType.Vendor,
-                        $"Vendor: {nameOnly ?? "Merchant"}",
+                        $"{Tr("Vendor")}: {nameOnly ?? Tr("Merchant")}",
                         nameOnly, null, null, null, null, null,
                         costs, null, null, null, null, null, null, null, null));
                 }
@@ -1905,8 +1917,9 @@ public sealed class ItemDetailService : IItemDetailService
         return costRowId;
     }
 
-    private IEnumerable<ItemSourceDetail> FindSpecialShopSources(uint itemId)
+    private IEnumerable<ItemSourceDetail> FindSpecialShopSources(uint itemId, string lang)
     {
+        string Tr(string en) => Loc.T(en, lang);
         var specialShops = _gameData.GetExcelSheet<SpecialShop>()?.ToArray() ?? Array.Empty<SpecialShop>();
         var allSources = new List<ItemSourceDetail>();
         var seenShopIds = new HashSet<uint>();
@@ -1944,7 +1957,7 @@ public sealed class ItemDetailService : IItemDetailService
                                 continue;
 
                             var resolvedId = ResolveSpecialShopCostItem(cost.ItemCost.RowId, shop.UseCurrencyType);
-                            var resolvedName = GetItemName(resolvedId) ?? "Unknown";
+                            var resolvedName = GetItemName(resolvedId) ?? Tr("Unknown");
 
                             currencyItemIds.Add(new CostEntry(
                                 resolvedId,
@@ -1955,7 +1968,7 @@ public sealed class ItemDetailService : IItemDetailService
 
                         if (currencyItemIds.Count == 0)
                         {
-                            var currencyName = GetItemName(receiveItem.Item.RowId) ?? "Unknown Currency";
+                            var currencyName = GetItemName(receiveItem.Item.RowId) ?? Tr("Unknown Currency");
                             var amount = receiveItem.ReceiveCount;
                             currencyItemIds.Add(new CostEntry(receiveItem.Item.RowId, currencyName, amount, GetItemIconId(receiveItem.Item.RowId)));
                         }
@@ -1965,8 +1978,8 @@ public sealed class ItemDetailService : IItemDetailService
 
                         var exchangeType = ClassifyExchangeShop(shopName);
                         var displayDesc = exchangeType != null
-                            ? $"{exchangeType} Exchange: {shopName}"
-                            : string.IsNullOrEmpty(shopName) ? "Item Exchange" : $"Shop: {shopName}";
+                            ? $"{exchangeType} {Tr("Exchange")}: {shopName}"
+                            : string.IsNullOrEmpty(shopName) ? Tr("Item Exchange") : $"{Tr("Shop")}: {shopName}";
 
                         var npcInfos = _shopNpcLookup.GetValueOrDefault(shopId);
                         if (npcInfos == null && _shopNpcNameOnly.TryGetValue(shopId, out var nameOnly))

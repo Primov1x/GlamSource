@@ -792,7 +792,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         {
             _shopping = _shopping != null ? null : ShoppingListBuilder.Build(
                 DebugSnapshot.Select(s => (s.GlamourItemId ?? s.ActualItemId, s.GlamourItemName ?? s.ActualItemName ?? "", GetIconId(s.GlamourItemId ?? s.ActualItemId))),
-                _detailWindow.DetailService.GetDetail);
+                id => _detailWindow.DetailService.GetDetail(id, Loc.Language));
         }
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip(Loc.T("Everything needed for the shown outfit: best source per piece, grouped by NPC / craft / duty, with what you already own"));

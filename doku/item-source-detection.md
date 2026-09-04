@@ -1,5 +1,72 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Item-source description text is now translatable — Web UI's own toggle (1.0.65.0)
+
+"übersetzung fehlt, weil umstellen ist gefühlt kaum was auf deutsch" — confirmed root cause: the
+1.0.56.0-era Localization section's "Scope, confirmed correct" note was WRONG about one thing —
+it correctly identified that item/NPC/duty *names* are free (Lumina loads them in the client's own
+language already), but conflated that with the *literal English labels wrapped around them*
+("Duty Drop:", "Obtained from:", "Coffer:", every longer prose Note() sentence) — those were
+never localized at all, in either UI, and make up the majority of what's actually on screen.
+
+**Architecture decision** (asked, not assumed — the web UI has its own independent
+`localStorage['gs_lang']` toggle, separate from ImGui's `Configuration.Language`/`Loc.Language`):
+item-source description text follows **the web UI's own toggle**, sent explicitly per request
+(`?lang=de`), not the ambient `Loc.Language` field — a request thread reading that static field
+while the ImGui Draw() thread writes it (user toggles ImGui language mid-request) would be a real,
+if narrow, race. New `Loc.T(string en, string lang)` overload takes the language explicitly;
+`Loc.T(string en)` (existing ambient-`Language` version, still used for all chrome text) now just
+calls the new overload with `Language`. Same `De` dictionary either way — one set of translations,
+two ways to select which language.
+
+**Threading**: `IItemDetailService.GetDetail(uint itemId, string lang = "en")` — optional
+parameter, so every existing caller (ImGui, `CraftingCostService`, the `CoverageAudit` tool, tests)
+keeps compiling unchanged and keeps its prior (English) behavior unless it explicitly opts in.
+ImGui's own two call sites (`ItemDetailWindow.cs`) now pass `Loc.Language` — same dictionary, ImGui
+gets the new translations for free through its own existing toggle. `BuildSources` (and the two
+methods it delegates to, `FindGilShopSources`/`FindSpecialShopSources`) all gained a `lang`
+parameter and a local `Tr(en) => Loc.T(en, lang)` shorthand; every hardcoded description prefix
+across ~70 call sites now goes through it — see `GlamSource.Core/Loc.cs`'s new entries for the
+full list. Web-side: `WebUiService.cs`'s `/api/item/{id}` and `/api/shoppinglist` read `?lang=`
+(only `"de"` opts in, anything else falls back to English — never trust an arbitrary query value),
+mirrored in `GlamSource.Mock`'s `WebPreviewServer.cs`. Client (`WebUiPage.cs`): the 3 `/api/item/`
+fetch call sites (`openItem`/`openDutyItem`/`showItemPanel`) and the 1 `/api/shoppinglist` call now
+append `&lang=${lang}`, reusing the page's own existing `lang` variable — no new client state.
+
+**Real bug caught while wiring this in, fixed before it shipped**: `GetDetail`'s per-item `_cache`
+was keyed by `uint itemId` alone — since Description is now language-dependent, an "en" request
+caching first would silently hand a "de" request the stale English text (or vice versa). Changed
+the cache key to `(uint ItemId, string Lang)`.
+
+**Second bug, same pattern, caught by grep not luck**: `BuildSources`'s own "11b" merge step
+string-matched `s.Description.StartsWith("Obtained from: ")` to detect a coffer entry worth
+merging with a trial/raid exchange note — that literal English prefix would never match once the
+description had already been translated to "Erhalten von: " earlier in the SAME method call.
+Fixed to compare against `Tr("Obtained from")` instead of the hardcoded English string.
+
+**Deliberately NOT translated in this pass** (each dutyType/word mapped to itself, i.e. shown
+unchanged either way — not a bug, a scoping choice, easy to revisit later by just changing the
+dictionary value): `"Dungeon"`, `"Raid"`, `"Duty"` (the generic content-type fallback — some
+"Dungeon Drop:" cards actually render as "Duty Drop:" because the underlying `GetDutyType()`
+classification falls through to this generic case for some CFCs, unrelated to i18n and unchanged
+from before this pass), `"Shop"`. `"Trial"→"Prüfung"`, `"Deep Dungeon"→"Tiefes Gewölbe"`,
+`"Ultimate"→"Fataler Raid"` were verified against the user's own German game data
+(`ContentType` sheet, `Language.German`) before use, not guessed — consistent with this project's
+"Fatal"/"Unreal"↔"Ultimate" mixup fix earlier in the session (confirms "Fataler Raid" is the real
+term, not a guess). Also NOT translated: the two remaining source-type BADGE labels ("DUNGEON",
+"TREASURE HUNT", ...) rendered client-side in the web UI's `renderSource()` and the section
+headers the 1.0.63.0 category-grouping pass added — those go through a completely different code
+path (raw `srcType` string, uppercased) than the description text this pass covers; flagged as a
+known remaining gap, not fixed here.
+
+Verified: `dotnet build` 0/0, `dotnet test` 54/54. Found and fixed 3 accidental duplicate
+dictionary keys in `Loc.cs` while adding ~70 new entries (`"Extreme"`/`"Exchange"` — my own,
+removed; `"Unlocked"` — pre-existing from before this session, left alone, harmless since C#'s
+`[key] = value` indexer-initializer syntax overwrites on duplicate rather than throwing, unlike
+`Add()`). Live-verified via the Browser pane against the rebuilt Mock: toggled EN→DE, item 33850
+now shows "Erhalten von: Timeworn Gliderskin Map" and "Im Mog-Station-Shop erhältlich." correctly
+translated (screenshot-confirmed, not just curl'd JSON).
+
 ## In-duty context: Coffer cards for the SAME duty also suppressed (1.0.64.0)
 
 "Bitte nur auflisten wo man es zusätzlich bekommt, nicht die Quelle die man schon öffnet, indem

@@ -215,7 +215,7 @@ public class CraftingCostServiceTests
             _detail = detail;
         }
 
-        public ItemDetail? GetDetail(uint itemId)
+        public ItemDetail? GetDetail(uint itemId, string lang = "en")
         {
             CallCount++;
             return _detail;

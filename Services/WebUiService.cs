@@ -561,12 +561,13 @@ public sealed class WebUiService : IDisposable
         // merged into stops, summed costs. Reads the shell's snapshot, no game state of its own.
         if (method == "GET" && path == "/api/shoppinglist")
         {
+            var shopLang = query["lang"] == "de" ? "de" : "en";
             var itemSheetSl = _detail.GameData.GetExcelSheet<Lumina.Excel.Sheets.Item>();
             var outfit = _shell.DebugSnapshot
                 .Select(s => (itemId: s.GlamourItemId ?? s.ActualItemId, name: s.GlamourItemName ?? s.ActualItemName ?? "",
                     iconId: (uint)(itemSheetSl?.GetRowOrDefault(s.GlamourItemId ?? s.ActualItemId)?.Icon ?? 0)))
                 .ToList();
-            return Json(ShoppingListBuilder.Build(outfit, _detail.GetDetail));
+            return Json(ShoppingListBuilder.Build(outfit, id => _detail.GetDetail(id, shopLang)));
         }
 
         if (method == "GET" && path.StartsWith("/api/item/") && path.EndsWith("/event") && uint.TryParse(path["/api/item/".Length..^"/event".Length], out var eventItemId))
@@ -580,7 +581,11 @@ public sealed class WebUiService : IDisposable
 
         if (method == "GET" && path.StartsWith("/api/item/") && uint.TryParse(path["/api/item/".Length..], out var itemId))
         {
-            var detail = _detail.GetDetail(itemId);
+            // "Web-UI eigener Toggle" — the page's own gs_lang toggle (localStorage, independent of
+            // ImGui's Configuration.Language) sent explicitly per request; only "de" opts in to
+            // German descriptions, anything else (missing, "en", garbage) is English.
+            var lang = query["lang"] == "de" ? "de" : "en";
+            var detail = _detail.GetDetail(itemId, lang);
             if (detail == null) return Json(new { error = "not found" }, "404 Not Found");
             // "hat man das schon unlocked" — only meaningful when the viewed item itself IS a
             // mount/minion unlock item; null (omitted) for everything else, not a false "locked".

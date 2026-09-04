@@ -15,7 +15,17 @@ public static class Loc
     public static string Language = "en";
 
     public static string T(string en)
-        => Language == "de" && De.TryGetValue(en, out var de) ? de : en;
+        => T(en, Language);
+
+    // "Web-UI eigener Toggle" — item-source description text (ItemDetailService.cs's "Duty Drop:",
+    // "Obtained from:" etc.) follows the web page's OWN localStorage-persisted gs_lang toggle, sent
+    // explicitly per-request (?lang=), not the ambient `Language` field above (that's the ImGui
+    // side's Configuration.Language, a different, independently-toggleable surface — see
+    // doku/item-source-detection.md's Localization section on why they're separate). Same
+    // dictionary either way: reuses `De`, just takes the language explicitly instead of reading the
+    // static field, so a request thread never races the ImGui Draw() thread's ambient `Language`.
+    public static string T(string en, string lang)
+        => lang == "de" && De.TryGetValue(en, out var de) ? de : en;
 
     private static readonly Dictionary<string, string> De = new()
     {
@@ -212,5 +222,129 @@ public static class Loc
         ["Crafted cost:"] = "Herstellungskosten:",
         ["Savings:"] = "Ersparnis:",
         ["No market price available for comparison."] = "Kein Marktpreis zum Vergleichen verfügbar.",
+
+        // "übersetzung fehlt" — item-source description text (ItemDetailService.cs), reached via
+        // Loc.T(en, lang) with an EXPLICIT language (not the ambient `Language` field above), see
+        // that overload's doc comment. Keyed by just the fixed English words each description is
+        // built from, not the full interpolated template — e.g. Tr("Duty Drop") + ": " + name, not
+        // one dictionary entry per possible name. ("Extreme"/"Exchange" already existed above.)
+        ["Drop"] = "Drop",
+        ["Raid"] = "Raid",
+        ["Trial"] = "Prüfung",
+        ["Dungeon"] = "Dungeon",
+        ["Deep Dungeon"] = "Tiefes Gewölbe",
+        ["Ultimate"] = "Fataler Raid",
+        ["Duty"] = "Duty",
+        ["Quest Reward"] = "Quest-Belohnung",
+        ["Fate Drop"] = "FATE-Drop",
+        ["Mob Drop"] = "Gegner-Drop",
+        ["House Vendor"] = "Haushändler",
+        ["Obtained from"] = "Erhalten von",
+        ["Coffer"] = "Truhe",
+        ["Achievement(s)"] = "Erfolg(e)",
+        ["Field Op Coffer"] = "Feldeinsatz-Truhe",
+        ["PvP Vendor Reward"] = "PvP-Händler-Belohnung",
+        ["PvP Season"] = "PvP-Season",
+        ["currently available"] = "aktuell verfügbar",
+        ["series ended"] = "Season beendet",
+        ["Fisher"] = "Angler",
+        ["Won from an NPC in a Triple Triad match"] = "In einem Triple-Triad-Match von einem NPC gewonnen.",
+        ["Grand Company Quartermaster"] = "Kompanie-Quartiermeister",
+        ["rank"] = "Rang",
+        ["Quartermaster"] = "Quartiermeister",
+        ["Outfit — a glamour set made up of the pieces below. The outfit itself isn't sold or dropped; each piece has its own source."] =
+            "Outfit — ein Glamour-Set aus den unten aufgeführten Teilen. Das Outfit selbst wird nicht verkauft oder droppt nicht; jedes Teil hat seine eigene Quelle.",
+        ["Company Workshop — crafted as a Free Company workshop project (Company Crafting Log), not by a single crafter."] =
+            "Kompanie-Werkstatt — als Freie-Gesellschaft-Werkstattprojekt hergestellt (Kompanie-Fertigungsbuch), nicht von einem einzelnen Handwerker.",
+        ["Company Workshop — primed from its base wheel in the Free Company workshop."] =
+            "Kompanie-Werkstatt — aus seinem Basis-Rad in der Freie-Gesellschaft-Werkstatt grundiert.",
+        ["Cosmic Exploration (Sinus Ardorum) — obtained on the Cosmic Exploration site through its missions, gathering or fishing."] =
+            "Kosmische Erkundung (Sinus Ardorum) — auf der Kosmische-Erkundung-Stätte über Missionen, Sammeln oder Angeln erhältlich.",
+        ["Spearfishing"] = "Speerfischen",
+        ["Island Sanctuary — gathered, grown or crafted on your island (Isleworks); island items can't be taken off the island."] =
+            "Eiland-Zuflucht — auf der eigenen Insel gesammelt, angebaut oder hergestellt (Eilandwerk); Inselgegenstände können die Insel nicht verlassen.",
+        ["Gathering"] = "Sammeln",
+        ["Miner"] = "Minenarbeiter",
+        ["Botanist"] = "Kräuterkundiger",
+        ["random/hidden yield at Miner or Botanist nodes of that level (Timeworn maps and the like), not tied to one specific node."] =
+            "zufälliger/versteckter Ertrag an Minen- oder Kräuterpunkten dieser Stufe (z. B. verwitterte Karten), nicht an einen bestimmten Punkt gebunden.",
+        ["Fish — listed in the fishing log, but its spot isn't in the game's FishingSpot table (ocean fishing, the Diadem, or an event/special spot)."] =
+            "Fisch — im Angeltagebuch gelistet, sein Angelplatz steht aber nicht in der FishingSpot-Tabelle des Spiels (Hochseeangeln, das Diadem oder ein Event-/Sonderplatz).",
+        ["Artifact gear — awarded by that job's level-cap job quests, not sold anywhere."] =
+            "Artefakt-Ausrüstung — Belohnung aus den Job-Quests am Levelcap dieses Jobs, wird nirgends verkauft.",
+        ["Moogle Treasure Trove event currency — earned from the event's selected duties while it ran; retired afterward."] =
+            "Moogle-Treasure-Trove-Eventwährung — während des laufenden Events aus den ausgewählten Duties verdient; danach ausgelaufen.",
+        ["Manderville relic weapon step — obtained by progressing the Endwalker relic quest line (Hildibrand / House Manderville), never sold."] =
+            "Manderville-Relikt-Waffenstufe — durch Fortschritt in der Endwalker-Relikt-Questreihe (Hildibrand / Haus Manderville) erhalten, wird nie verkauft.",
+        ["Anima relic weapon step — obtained by progressing the Heavensward relic quest line (Ardashir, Azys Lla), never sold."] =
+            "Anima-Relikt-Waffenstufe — durch Fortschritt in der Heavensward-Relikt-Questreihe (Ardashir, Azys Lla) erhalten, wird nie verkauft.",
+        ["Eureka (The Forbidden Land) — Eureka-only gear, exchanged with Gerolt / the Expedition Artisan inside Eureka; not obtainable outside it."] =
+            "Eureka (Das verbotene Land) — Ausrüstung nur in Eureka, eingetauscht bei Gerolt / dem Expeditionshandwerker in Eureka; außerhalb nicht erhältlich.",
+        ["Deep Dungeon currency — earned as a reward for clearing that Deep Dungeon's floors (progression reward, not a drop or purchase)."] =
+            "Deep-Dungeon-Währung — als Belohnung für das Durchqueren der Stockwerke dieses Deep Dungeons verdient (Fortschrittsbelohnung, kein Drop oder Kauf).",
+        ["Bozja/Zadnor Resistance relic currency — earned from Critical Engagements and Duels in Bozja/Zadnor, and from Save the Queen relic quest steps."] =
+            "Bozja/Zadnor-Widerstands-Reliktwährung — aus Kritischen Gefechten und Duellen in Bozja/Zadnor sowie aus den Save-the-Queen-Reliktquest-Schritten verdient.",
+        ["Bozja/Zadnor field currency — earned from Critical Engagements, Duels, and general activity in the Bozjan Southern Front/Zadnor."] =
+            "Bozja/Zadnor-Feldwährung — aus Kritischen Gefechten, Duellen und allgemeiner Aktivität an der Bozja-Südfront/in Zadnor verdient.",
+        ["Occult Crescent currency — earned from combat participation (Critical Engagements/duels) in the Occult Crescent (South Horn)."] =
+            "Occult-Crescent-Währung — durch Kampfteilnahme (Kritische Gefechte/Duelle) im Occult Crescent (Südhorn) verdient.",
+        ["Trade-in only"] = "Nur Eintausch",
+        ["handed over at"] = "wird abgegeben bei",
+        ["the item itself isn't sold there."] = "das Item selbst wird dort nicht verkauft.",
+        ["Available for purchase on the Mog Station."] = "Im Mog-Station-Shop erhältlich.",
+        ["Unobtainable — the game itself classifies this item as no longer acquirable (e.g. gear for a since-removed equipment slot, such as belts after Stormblood)."] =
+            "Nicht erhältlich — das Spiel selbst stuft dieses Item als nicht mehr erwerbbar ein (z. B. Ausrüstung für einen entfernten Ausrüstungsslot, wie Gürtel nach Stormblood).",
+        ["Retired dye — patch 7.5 consolidated most named dyes into the Spectrum Dye system. Exchange it for a current dye at a Calamity Salvager."] =
+            "Ausgelaufene Farbe — Patch 7.5 hat die meisten benannten Farben ins Spektralfarben-System überführt. Bei einem Katastrophen-Recycler gegen eine aktuelle Farbe eintauschen.",
+        ["Materia — converted from fully spiritbonded (100%) equipment, not purchased or dropped directly."] =
+            "Materia — aus vollständig geistgebundener (100 %) Ausrüstung gewonnen, nicht direkt gekauft oder gedroppt.",
+        ["Garden seed — obtained by cross-breeding compatible seeds in a garden plot, not purchased directly."] =
+            "Gartensamen — durch Kreuzen kompatibler Samen in einem Beet erhalten, nicht direkt kaufbar.",
+        ["Legacy 1.0 item — predates patch 1.19. Only players who transferred a character from the original FFXIV 1.0 have this; permanently unobtainable otherwise."] =
+            "1.0-Legacy-Item — stammt aus der Zeit vor Patch 1.19. Nur Spieler, die einen Charakter aus dem originalen FFXIV 1.0 übertragen haben, besitzen es; sonst dauerhaft nicht erhältlich.",
+        ["Aetherial gear — dropped from ARR-era dungeon treasure chests or awarded from Battlecraft Leves. Random loot pool, not tied to one specific dungeon/leve."] =
+            "Ätherische Ausrüstung — droppt aus Dungeon-Truhen der ARR-Ära oder als Belohnung von Kampf-Leven. Zufälliger Loot-Pool, nicht an einen bestimmten Dungeon/ein bestimmtes Leve gebunden.",
+        ["its augmented upgrade"] = "sein verbessertes Upgrade",
+        ["Retired"] = "Ausgelaufen",
+        ["replaced by"] = "ersetzt durch",
+        ["No longer obtainable itself; the augmented upgrade is still purchasable."] =
+            "Selbst nicht mehr erhältlich; das verbesserte Upgrade ist weiterhin kaufbar.",
+        ["Diadem (Heavensward exploratory missions, patches 3.1–3.55) random-stat loot — the original Diadem was retired with the 5.1 rework, so this is no longer obtainable."] =
+            "Diadem (Heavensward-Erkundungsmissionen, Patches 3.1–3.55) Zufallsstat-Loot — das ursprüngliche Diadem wurde mit dem 5.1-Rework abgeschafft, daher nicht mehr erhältlich.",
+        ["PvP season reward — handed out at the end of that Feast / Crystalline Conflict season for the rank reached; not obtainable after the season ended."] =
+            "PvP-Season-Belohnung — am Ende jener Fest-/Kristallkonflikt-Season für den erreichten Rang vergeben; nach Season-Ende nicht mehr erhältlich.",
+        ["PvP tournament reward — given to placers of that year's Feast / Crystalline Conflict regional championship."] =
+            "PvP-Turnier-Belohnung — an Platzierte der regionalen Fest-/Kristallkonflikt-Meisterschaft jenes Jahres vergeben.",
+        ["Mog Station — Tales of Adventure (job/retainer level boost), purchased from the online store."] =
+            "Mog Station — Abenteuergeschichten (Job-/Gehilfen-Levelboost), im Online-Shop gekauft.",
+        ["Chocobo Racing (Gold Saucer) — a racing chocobo's registration, created by breeding or retiring a chocobo at the Chocobo Square; never sold."] =
+            "Chocobo-Rennen (Goldener Saal) — die Anmeldung eines Rennchocobos, entsteht durch Züchten oder Pensionieren eines Chocobos am Chocobo-Platz; wird nie verkauft.",
+        ["Retired Allagan tomestone — no longer earned from any duty; each expansion rotates the older tomestone types out."] =
+            "Ausgelaufener Allagischer-Steintafel-Typ — wird aus keiner Duty mehr verdient; jede Erweiterung löst die älteren Steintafel-Typen ab.",
+        ["Skysteel relic tool step — obtained by progressing the Shadowbringers crafter/gatherer relic tool quests (Denys, Foundation); never sold."] =
+            "Himmelsstahl-Relikt-Werkzeugstufe — durch Fortschritt in den Shadowbringers-Relikt-Werkzeugquests für Handwerker/Sammler (Denys, Fundament) erhalten; wird nie verkauft.",
+        ["Splendorous relic tool step — obtained by progressing the Endwalker crafter/gatherer relic tool quests (Studium, Old Sharlayan); never sold."] =
+            "Glanzvolle Relikt-Werkzeugstufe — durch Fortschritt in den Endwalker-Relikt-Werkzeugquests für Handwerker/Sammler (Studium, Alt-Sharlayan) erhalten; wird nie verkauft.",
+        ["Cosmotool relic step — earned and upgraded through Cosmic Exploration (Sinus Ardorum) missions; never sold."] =
+            "Kosmowerkzeug-Reliktstufe — durch Missionen der Kosmischen Erkundung (Sinus Ardorum) verdient und aufgewertet; wird nie verkauft.",
+        ["Starter tool — handed out when unlocking the class at its guild; never sold."] =
+            "Starter-Werkzeug — wird beim Freischalten der Klasse an der Gilde ausgehändigt; wird nie verkauft.",
+        ["Resplendent tool quest item — made and handed in during the final Skysteel relic tool quests; \"Obsolete\" ones are leftovers from an earlier version of that quest."] =
+            "Glanzvolles Werkzeug-Questitem — im Rahmen der letzten Himmelsstahl-Relikt-Werkzeugquests hergestellt und abgegeben; „Obsolete\"-Varianten sind Überbleibsel einer früheren Version dieser Quest.",
+        ["Resistance relic weapon step — obtained by progressing the Shadowbringers Save the Queen relic quest line (Bozja); never sold."] =
+            "Widerstands-Relikt-Waffenstufe — durch Fortschritt in der Shadowbringers-Save-the-Queen-Reliktquestreihe (Bozja) erhalten; wird nie verkauft.",
+        ["Triple Triad card — not in the bundled NPC/drop table (newer card). Typical sources: Triple Triad NPC wins, Gold Saucer card packs, tournaments, or duty drops."] =
+            "Triple-Triad-Karte — nicht in der mitgelieferten NPC-/Drop-Tabelle (neuere Karte). Typische Quellen: Triple-Triad-Siege gegen NPCs, Kartenpakete im Goldenen Saal, Turniere oder Duty-Drops.",
+        ["Tribal (beast tribe) society quest item — handed out and used within those quests, never sold or dropped."] =
+            "Stammes-Questitem (Bestienstamm) — wird innerhalb dieser Quests ausgegeben und verwendet, nie verkauft oder gedroppt.",
+        ["No known current source. Often old gear that's been rotated out of its vendor over patches — may still be a rare drop, achievement, or account-bound reward we don't track."] =
+            "Keine bekannte aktuelle Quelle. Oft alte Ausrüstung, die im Laufe der Patches aus ihrem Händlerangebot verschwunden ist — kann noch ein seltener Drop, Erfolg oder eine accountgebundene Belohnung sein, die wir nicht erfassen.",
+        ["No known current source. Likely an instance-bound currency/point earned by participating in specific content (e.g. combat engagements, event objectives) rather than bought, crafted, or dropped — we don't track those individually."] =
+            "Keine bekannte aktuelle Quelle. Vermutlich eine instanzgebundene Währung/Punkte-Art, die durch Teilnahme an bestimmten Inhalten (z. B. Gefechte, Event-Ziele) verdient wird statt gekauft, hergestellt oder gedroppt zu werden — wir erfassen diese nicht einzeln.",
+        ["Vendor"] = "Händler",
+        ["Merchant"] = "Händler",
+        ["Unknown Currency"] = "Unbekannte Währung",
+        ["Item Exchange"] = "Item-Tausch",
+        ["Shop"] = "Shop",
     };
 }

@@ -290,7 +290,7 @@ public class ItemDetailWindow : Window, IDisposable
         _isOpen = true;
         IsOpen = true;
 
-        var detail = _detailService.GetDetail(itemId);
+        var detail = _detailService.GetDetail(itemId, Loc.Language);
         if (detail != null)
         {
             WindowName = $"{detail.Name} ({detail.ItemId})###ItemDetailWindow";
@@ -329,7 +329,7 @@ public class ItemDetailWindow : Window, IDisposable
             return;
         }
 
-        var detail = _detailService.GetDetail(_showingItemId.Value);
+        var detail = _detailService.GetDetail(_showingItemId.Value, Loc.Language);
         if (detail == null)
         {
             ImGui.TextDisabled(Loc.T("Item not found."));
