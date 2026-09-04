@@ -1,5 +1,24 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Sack contents round 3/3: Sack of Silvered Light — Pilgrim's Traverse complete (1.0.51.0)
+
+Last round. Item 47104, stones 1-30 — 113 items across 11 categories: consumables, fashion
+accessory, 5 fireworks, 64 glamour pieces (36 flower corsages × color + 28 others: Happiness/
+Varsity/Calfskin Rider's/Frontier/Peacelover's sets), hairstyle, materia, 16 minions, **1 mount**
+(Ornamental Shrublet Horn — the only mount across all 3 sacks), 3 orchestrion rolls, 1 Triple Triad
+card, 4 vendor items. Same verification rule as rounds 1-2: every name from the wiki, every ID
+checked against our own Item sheet via mock `/api/search`.
+
+Verified live via mock: `/api/item/47104` → 14 grouped categories, 113 items, matches CSV exactly.
+`dotnet build` 0/0, `dotnet test` 54/54.
+
+**Pilgrim's Traverse sack contents now complete** — all 3 sacks (47104/47105/47106), 361 total rows
+added across the 3 rounds (113+137+111), same "which duty drops this" pattern as the 1.0.47.0 drop-
+source data before it. Both previously-empty Deep Dungeons (Eureka Orthos since 1.0.47.0, Pilgrim's
+Traverse's own drops since 1.0.47.0, now its sack contents too) are fully covered by hand-compiled
+data, cross-checked against our own game files at every step rather than trusted blindly from the
+wiki.
+
 ## Sack contents round 2/3: Sack of Gilded Light (1.0.50.0)
 
 Item 47105, stones 31-70 — 137 items across 10 categories (bardings, consumables, dyes, 24
