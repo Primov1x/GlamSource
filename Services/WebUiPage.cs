@@ -306,6 +306,7 @@ const I18N={
   unlocked_yes:{en:'Unlocked',de:'Freigeschaltet'},
   unlocked_no:{en:'Not unlocked',de:'Nicht freigeschaltet'},
   open_craftlog:{en:'Open Crafting Log',de:'Herstellungsliste öffnen'},
+  open_mogstation:{en:'Open Mog Station',de:'Mog Station öffnen'}, // matches the ImGui side's Loc.T("Open Mog Station") wording
   npc:{en:'NPC',de:'NPC'},
   location:{en:'Location',de:'Ort'},
   cost_label:{en:'Cost',de:'Kosten'},
@@ -1004,6 +1005,12 @@ function renderSource(group,itemId,openFn='openItem'){
   let h=`<div class="card ${cls}"><h3><span class="badge">${typeIcon(cls)} ${esc(typeLabel).toUpperCase()}</span> ${esc(s.description??'')}</h3>`;
   // same jump ImGui's ItemDetailWindow offers: coffer / "Retired — replaced by Augmented X" -> that item
   if(s.sourceItemId)h+=`<button class="act" onclick="${openFn}(${s.sourceItemId})">${I18N.open_item[lang]}</button> `;
+  // "Mogstation items sollen nen korrekt shop link haben nicht nur 'ist mog'" — shopUrl was already
+  // in the JSON (ImGui's own "Open Mog Station" button reads it fine, Process.Start+UseShellExecute)
+  // but the web page never read it at all — badge + description text, no actual link anywhere.
+  // Same Process.Start pattern server-side, itemId not a raw client-supplied URL (server re-derives
+  // the URL from its own GetDetail(itemId) — no open-redirect / arbitrary-launch surface).
+  if(s.shopUrl)h+=`<button class="act" onclick="post('/api/action/openshop/${itemId}')">${t('open_mogstation')}</button> `;
   if(/craft/i.test(srcType))h+=`<button class="act" onclick="post('/api/action/craftlog/${itemId}')">${t('open_craftlog')}</button>`;
   // openFn==='openDutyItem' means we're already inside that exact duty's own view (Duty Drops tab,
   // #dutyhead has its own bigger Duty-Finder button right above) — a second small one on every

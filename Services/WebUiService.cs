@@ -528,6 +528,19 @@ public sealed class WebUiService : IDisposable
         if (method == "POST" && path.StartsWith("/api/action/tryon/item/") && uint.TryParse(path["/api/action/tryon/item/".Length..], out var previewItemId))
             return Json(new { status = _framework.RunOnFrameworkThread(() => _shell.TryOnItemToSelf(previewItemId)).GetAwaiter().GetResult() });
 
+        // "Mogstation items sollen nen korrekt shop link haben nicht nur 'ist mog'" — mirrors
+        // ItemDetailWindow's own "Open Mog Station" button (same Process.Start+UseShellExecute).
+        // itemId only, not a raw client-supplied URL — server re-derives the URL from its own
+        // GetDetail(itemId), so there's no open-redirect/arbitrary-process-launch surface here.
+        if (method == "POST" && path.StartsWith("/api/action/openshop/") && uint.TryParse(path["/api/action/openshop/".Length..], out var shopItemId))
+        {
+            var shopUrl = _detail.GetDetail(shopItemId)?.Sources.FirstOrDefault(s => s.Type == ItemSourceType.MogStation)?.ShopUrl;
+            if (shopUrl == null) return Json(new { status = "not found" }, "404 Not Found");
+            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(shopUrl) { UseShellExecute = true }); }
+            catch (Exception ex) { _log.Error(ex, $"[WebUi] failed to open shop URL {shopUrl}"); return Json(new { status = "failed" }); }
+            return Json(new { status = "ok" });
+        }
+
         if (method == "GET" && path == "/api/duties")
             return Json(_detail.ListDutiesWithDrops().Select(d => new { id = d.CfcId, name = d.Name, type = d.Type, drops = d.DropCount, imageId = d.ImageId, level = d.Level, itemLevel = d.ItemLevel, expansion = d.Expansion, typeIcon = d.TypeIconId, bosses = d.Bosses, difficulty = d.Difficulty }).ToArray());
         if (method == "GET" && path == "/api/duty/current")

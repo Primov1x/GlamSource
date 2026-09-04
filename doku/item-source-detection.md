@@ -1,5 +1,22 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Web UI: actually clickable Mog Station link (1.0.62.0)
+
+"Mogstation items sollen nen korrekt shop link haben nicht nur 'ist mog'" — the `shopUrl` field was
+already in every `/api/item/{id}` response (ImGui's own "Open Mog Station" button already reads it
+fine, `Process.Start`+`UseShellExecute`), but `WebUiPage.cs`'s `renderSource()` never read `s.shopUrl`
+at all — the web UI showed the "MOG STATION" badge and description text with no way to actually get
+to the shop, confirmed via grep (zero matches for `shopUrl` in the whole file before this).
+
+Added a button, same place the "Open item"/"Open in Duty Finder" buttons already sit. New
+`POST /api/action/openshop/{itemId}` endpoint (`WebUiService.cs`, mirrored in `GlamSource.Mock`'s
+`WebPreviewServer.cs`) does the actual `Process.Start` server-side — deliberately takes only the
+item id, not a client-supplied URL, and re-derives the shop URL itself from its own
+`GetDetail(itemId)`, so there's no open-redirect/arbitrary-process-launch surface from the web page.
+
+Verified: `dotnet build` 0/0, `dotnet test` 54/54, button click confirmed live via the Browser pane
+against the rebuilt Mock (button renders under "Far Eastern Schoolboy's Hat"'s Mog Station card).
+
 ## Mog Station live-link cache-race fix + Cloudflare 403 finding (1.0.61.0)
 
 "nochmal recherche für shop items, damit man den richtigen shopseite linkt für das item/set" — a
