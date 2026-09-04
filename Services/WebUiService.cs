@@ -559,6 +559,17 @@ public sealed class WebUiService : IDisposable
             return Json(node);
         }
 
+        if (method == "GET" && path == "/api/market/bulk")
+        {
+            // "preise fehlen mir bei items" — list rows (search results, duty drops) want a quick
+            // price badge without one Universalis round trip per row. ids as a comma-separated
+            // query param, one bulk request for the lot (Universalis' own multi-item endpoint).
+            var ids = (query["ids"] ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(s => uint.TryParse(s, out var id) ? id : 0).Where(id => id > 0).ToList();
+            var prices = _universalis.GetBulkWorldPricesAsync(ids).GetAwaiter().GetResult();
+            return Json(prices);
+        }
+
         if (method == "GET" && path.StartsWith("/api/market/") && uint.TryParse(path["/api/market/".Length..], out var marketItemId))
         {
             // same blocking-await-on-request-thread pattern as /api/itemimage/ above — fine here

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using GlamSource.Core;
 using Lumina;
@@ -247,6 +248,13 @@ public class CraftingCostServiceTests
         {
             var price = _prices.GetValueOrDefault<uint, uint>(itemId, 0);
             return Task.FromResult<MarketInfo?>(new MarketInfo(price, 0, price, 0, null));
+        }
+
+        public Task<IReadOnlyDictionary<uint, uint>> GetBulkWorldPricesAsync(IReadOnlyCollection<uint> itemIds)
+        {
+            var result = itemIds.Where(id => _prices.ContainsKey(id) && _prices[id] > 0)
+                .ToDictionary(id => id, id => _prices[id]);
+            return Task.FromResult<IReadOnlyDictionary<uint, uint>>(result);
         }
     }
 

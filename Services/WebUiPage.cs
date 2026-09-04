@@ -18,7 +18,7 @@ internal static class WebUiPage
    rendered as empty boxes (seen live). */
 :root{
   --bg:#141312; --panel:#1e1c1a; --panel2:#262320; --border:#3a352c; --gold:#c8a75e;
-  --gold-dim:#8a7443; --text:#e2dccb; --muted:#948c7a; --accent:#c8a75e; --success:#8fbf73; --warn:#e0a03c;
+  --gold-dim:#8a7443; --text:#e2dccb; --muted:#948c7a; --accent:#c8a75e; --success:#8fbf73; --warn:#e0a03c; --danger:#d9756b;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:transparent;color:var(--text);font:14px/1.5 "Segoe UI",system-ui,sans-serif;margin:0}
@@ -47,6 +47,7 @@ input[type=search]:focus{border-color:var(--accent)}
 .row img{width:28px;height:28px;border-radius:4px}
 .row img.rowpreview{width:40px;height:40px;border-radius:6px;margin-left:auto;object-fit:cover}
 .row .ilvl{color:var(--muted);font-size:11px;margin-left:6px}
+.row .rowprice{color:var(--accent);font-size:11px}
 #filters{display:flex;gap:6px;margin-top:6px;max-width:420px;flex-wrap:wrap}
 #filters select,#filters input{background:var(--panel);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:6px;font-size:12px;outline:none}
 #filters select:focus,#filters input:focus{border-color:var(--accent)}
@@ -704,8 +705,9 @@ async function runSearch(){
   box.innerHTML=`<div class="empty"><span class="spinner"></span>${t('searching')}</div>`;
   const r=await fetch('/api/search?'+p).then(r=>r.json());
   box.style.display='';$('#resback').style.display='none';
-  box.innerHTML=r.length?r.map(x=>`<div class="row" tabindex="0" role="button" onclick="openItem(${x.id})">${img(x.iconId,28)}<span>${esc(x.name)}${x.ilvl?`<span class="ilvl">iLvl ${x.ilvl}</span>`:''}</span><img class="rowpreview" src="/api/itemimage/${x.id}" loading="lazy" onerror="this.remove()"></div>`).join(''):`<div class="empty">${t('no_items')}</div>`;
+  box.innerHTML=r.length?r.map(x=>`<div class="row" data-item="${x.id}" tabindex="0" role="button" onclick="openItem(${x.id})">${img(x.iconId,28)}<span>${esc(x.name)}${x.ilvl?`<span class="ilvl">iLvl ${x.ilvl}</span>`:''}${rowPrice(x.id)}</span><img class="rowpreview" src="/api/itemimage/${x.id}" loading="lazy" onerror="this.remove()"></div>`).join(''):`<div class="empty">${t('no_items')}</div>`;
   updateOverlayCompactness();
+  if(r.length)annotateBulkPrices(box);
 }
 let deb;
 const queueSearch=()=>{clearTimeout(deb);deb=setTimeout(runSearch,250)};
@@ -790,11 +792,22 @@ function renderDutyList(){
 }
 $('#dq').addEventListener('input',renderDutyList);
 // x.unlocked: true/false when it's a Mount/Minion (native PlayerState/UIState check), undefined
-// otherwise — only show the badge when we actually have an answer.
-const unlockBadge=x=>x.unlocked===undefined?'':x.unlocked?`<span class="ilvl" style="color:var(--good,#7fd97f)">✓ ${t('unlocked_yes')}</span>`:`<span class="ilvl">${t('unlocked_no')}</span>`;
-const featSection=list=>`<div class="dsec" style="margin-top:0"><div class="dsech">${t('duty_featured')}</div><div class="results dgrid">${list.map(x=>`<div class="row" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${img(x.iconId,28)}<span>${esc(x.name)}<span class="ilvl">${x.kind==='Mount'?t('mount'):t('minion')}</span>${unlockBadge(x)}</span><img class="rowpreview" src="/api/itemimage/${x.itemId}" loading="lazy" onerror="this.remove()"></div>`).join('')}</div></div>`;
-const previewRows=list=>list.map(x=>`<div class="row" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${img(x.iconId,28)}<span>${esc(x.name)}${x.itemLevel?`<span class="ilvl">iLvl ${x.itemLevel}</span>`:''}</span><img class="rowpreview" src="/api/itemimage/${x.itemId}" loading="lazy" onerror="this.remove()"></div>`).join('');
-const dropRows=list=>list.map(x=>`<div class="row" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${img(x.iconId,28)}<span>${esc(x.name)}${x.itemLevel?`<span class="ilvl">iLvl ${x.itemLevel}</span>`:''}</span></div>`).join('');
+// otherwise — only show the badge when we actually have an answer. Small inline SVG (no external
+// asset, no game-icon round trip) instead of a text label — green check / red cross, title=
+// tooltip keeps it readable for screen readers and on hover.
+const unlockBadge=x=>{
+  if(x.unlocked===undefined)return'';
+  const ok=x.unlocked;
+  const d=ok?'M5 13l4 4L19 7':'M6 6l12 12M18 6L6 18';
+  return `<svg class="unlockicon" viewBox="0 0 24 24" width="13" height="13" style="vertical-align:-2px;margin-left:5px"><title>${ok?t('unlocked_yes'):t('unlocked_no')}</title><path fill="none" stroke="${ok?'var(--success)':'var(--danger)'}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="${d}"/></svg>`;
+};
+// "preise fehlen mir bei items" — a quiet price badge on every list row, filled in after the fact
+// by annotateBulkPrices() (one bulk Universalis call for everything currently on screen, not one
+// call per row). Empty until then, invisible either way if the item has no listings.
+const rowPrice=id=>`<span class="rowprice" data-item="${id}"></span>`;
+const featSection=list=>`<div class="dsec" style="margin-top:0"><div class="dsech">${t('duty_featured')}</div><div class="results dgrid">${list.map(x=>`<div class="row" data-item="${x.itemId}" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${img(x.iconId,28)}<span>${esc(x.name)}<span class="ilvl">${x.kind==='Mount'?t('mount'):t('minion')}</span>${unlockBadge(x)}${rowPrice(x.itemId)}</span><img class="rowpreview" src="/api/itemimage/${x.itemId}" loading="lazy" onerror="this.remove()"></div>`).join('')}</div></div>`;
+const previewRows=list=>list.map(x=>`<div class="row" data-item="${x.itemId}" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${img(x.iconId,28)}<span>${esc(x.name)}${x.itemLevel?`<span class="ilvl">iLvl ${x.itemLevel}</span>`:''}${rowPrice(x.itemId)}</span><img class="rowpreview" src="/api/itemimage/${x.itemId}" loading="lazy" onerror="this.remove()"></div>`).join('');
+const dropRows=list=>list.map(x=>`<div class="row" data-item="${x.itemId}" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${img(x.iconId,28)}<span>${esc(x.name)}${x.itemLevel?`<span class="ilvl">iLvl ${x.itemLevel}</span>`:''}${rowPrice(x.itemId)}</span></div>`).join('');
 async function selectDuty(id){
   dutySelected=id;
   const nav=(dutyList||[]).find(y=>y.id===id);
@@ -824,6 +837,7 @@ async function selectDuty(id){
   // no local table (post-7.1 content): Garland's fight coffers are the whole drop list — show a
   // spinner instead of "no drops" until they arrive
   $('#dutydrops').innerHTML=h||`<div class="empty"><span class="spinner"></span>${t('loading')}</div>`;
+  if(h)annotateBulkPrices($('#dutydrops'));
   const coffers=await fetch(`/api/duty/${id}/coffers`).then(r=>r.ok?r.json():[]).catch(()=>[]);
   if(dutySelected!==id)return;
   if(!coffers.length){if(!hasLocal)$('#dutydrops').innerHTML=`<div class="empty">${t('duty_nodrops')}</div>`;return}
@@ -841,6 +855,7 @@ async function selectDuty(id){
     c+=`<div class="dsub">${label}${map}</div><div class="results dgrid">${dropRows(cf.items)}</div>`;
   });
   $('#dutydrops').insertAdjacentHTML('beforeend',`<div class="dsec"${hasLocal?'':' style="margin-top:0"'}><div class="dsech">${hasLocal?t('duty_coffers'):t('duty_garland_drops')}</div>${c}</div>`);
+  annotateBulkPrices($('#dutydrops'));
 }
 async function openDutyItem(id){
   // same fast-click race guard as openItem/showItemPanel (1.0.20.0) — added later than those, had
@@ -880,7 +895,7 @@ function buildItemHtml(d,openFn='openItem'){
   }
   if((d.contents??[]).length){
     h+=`<div class="tbl">${t('can_contain')}</div><div style="display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 14px">`;
-    for(const m of d.contents)h+=`<div class="row" style="width:auto" onclick="${openFn}(${m.itemId})">${img(m.iconId,24)}<span>${esc(m.name)}</span></div>`;
+    for(const m of d.contents)h+=`<div class="row" data-item="${m.itemId}" style="width:auto" onclick="${openFn}(${m.itemId})">${img(m.iconId,24)}<span>${esc(m.name)}${rowPrice(m.itemId)}</span></div>`;
     h+='</div>';
   }
   if((d.contentsSummary??[]).length){
@@ -888,9 +903,11 @@ function buildItemHtml(d,openFn='openItem'){
     // click a "13x Minion" row to expand which 13 — was a dead-end count before.
     d.contentsSummary.forEach((cat,ci)=>{
       const gid=`cs_${d.itemId}_${ci}`;
-      h+=`<div class="row" style="width:auto;cursor:pointer;margin:2px 0" onclick="const e=document.getElementById('${gid}');e.style.display=e.style.display==='none'?'flex':'none'">${img(cat.iconId,24)}<span>${cat.items.length}x ${esc(cat.label)} ▾</span></div>`;
+      // price badges load lazily, only once a category is actually expanded — a sack can hold 100+
+      // items, no point bulk-fetching all of them before anyone's looked ("preise fehlen mir")
+      h+=`<div class="row" style="width:auto;cursor:pointer;margin:2px 0" onclick="const e=document.getElementById('${gid}');const show=e.style.display==='none';e.style.display=show?'flex':'none';if(show&&!e.dataset.loaded){e.dataset.loaded='1';annotateBulkPrices(e)}">${img(cat.iconId,24)}<span>${cat.items.length}x ${esc(cat.label)} ▾</span></div>`;
       h+=`<div id="${gid}" style="display:none;flex-wrap:wrap;gap:8px;margin:4px 0 10px 28px">`;
-      for(const m of cat.items)h+=`<div class="row" style="width:auto" onclick="event.stopPropagation();${openFn}(${m.itemId})">${img(m.iconId,24)}<span>${esc(m.name)}</span></div>`;
+      for(const m of cat.items)h+=`<div class="row" data-item="${m.itemId}" style="width:auto" onclick="event.stopPropagation();${openFn}(${m.itemId})">${img(m.iconId,24)}<span>${esc(m.name)}${rowPrice(m.itemId)}</span></div>`;
       h+='</div>';
     });
   }
@@ -1012,6 +1029,20 @@ async function annotateMarket(container,itemId,isMarketable,token){
   const dc=m.dcWorldName?` · ${t('market_dc')} (${esc(m.dcWorldName)}): <b style="color:var(--success)">${m.dcMinPrice.toLocaleString()} Gil</b>`:'';
   container.querySelector('.header .meta')?.insertAdjacentHTML('afterend',
     `<div class="meta">${t('market_world')} <b style="color:var(--accent)">${m.worldMinPrice.toLocaleString()} Gil</b>${dc}</div>`);
+}
+// "preise fehlen mir bei items" — fills in every .row[data-item]'s price badge (see rowPrice())
+// with ONE bulk Universalis call for whatever's currently in the container, instead of one call
+// per row like the single-item detail's annotateMarket does (fine for one item, not for a list of
+// 20+). Missing/non-marketable items just keep their empty badge — no error text needed per row.
+async function annotateBulkPrices(container){
+  const rows=[...container.querySelectorAll('.row[data-item]')];
+  const ids=[...new Set(rows.map(r=>r.dataset.item))];
+  if(!ids.length)return;
+  const prices=await fetch('/api/market/bulk?ids='+ids.join(',')).then(r=>r.ok?r.json():{}).catch(()=>({}));
+  for(const el of container.querySelectorAll('.rowprice[data-item]')){
+    const p=prices[el.dataset.item];
+    if(p)el.textContent=` · ${p.toLocaleString()} Gil`;
+  }
 }
 async function annotateInventory(container){
   const rows=[...container.querySelectorAll('.matrow[data-item]')];

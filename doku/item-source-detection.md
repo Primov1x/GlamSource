@@ -1,5 +1,31 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Web: price badges on list rows + unlock status as icons (1.0.52.0)
+
+Two live requests in one round.
+
+**"Preise fehlen mir bei Items"**: search results, Duty Drops grid rows, and item-detail contents
+lists (single small `contents` array + `contentsSummary` categories) had no price at all — only the
+single-item detail page did (1.0.20.0). New `IUniversalisService.GetBulkWorldPricesAsync` +
+`GET /api/market/bulk?ids=a,b,c` (Universalis' own multi-item endpoint, one request for up to 100
+ids instead of one per row) + a shared `annotateBulkPrices(container)` JS helper that fills in a
+`.rowprice` badge on every `.row[data-item]` in that container. Wired into search results, the Duty
+Drops tab (both the initial render and the async Garland-coffers append), and the small `contents`
+list. `contentsSummary` categories load prices LAZILY — only once a category is actually expanded
+(a sack can hold 100+ items, no point bulk-fetching a pool nobody's opened).
+
+**"Icons statt 'nicht freigeschaltet'"**: `unlockBadge` (mount/minion unlock status, already shown
+in the Duty Drops "Mounts & minions" section) was text-only, using a `var(--good,#7fd97f)` that
+was never actually defined (silently used its own fallback the whole time). Replaced with a small
+inline SVG check/cross — no external asset, embedded directly in the generated HTML — colored via
+a real new `--danger` CSS var (green `--success` / red `--danger`), with a `<title>` tooltip so the
+status stays readable, not just colored.
+
+Verified live via mock: search results and expanded sack-content categories both show real
+Universalis prices (e.g. Materia XI/XII rows, 99-1148 Gil); unlock icons confirmed rendering
+(synthetic true/false injection — Mock has no live game, so real unlock data isn't exercisable
+here, only the icon markup/coloring). `dotnet build` 0/0, `dotnet test` 54/54.
+
 ## Sack contents round 3/3: Sack of Silvered Light — Pilgrim's Traverse complete (1.0.51.0)
 
 Last round. Item 47104, stones 1-30 — 113 items across 11 categories: consumables, fashion
