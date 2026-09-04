@@ -123,6 +123,12 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
    centered, a touch smaller than the Suche tab's left-aligned one. */
 #chardetail .preview{text-align:center}
 #chardetail .preview img{max-width:220px;max-height:220px;margin-left:auto;margin-right:auto}
+/* "kompakter... neben das vorschau bild... nicht so gepresst" — preview stays its own fixed-ish
+   column (sized to its image, doesn't grow/shrink), everything else flows beside it and only
+   wraps below once the panel's too narrow for both side by side. */
+.itembody{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
+.itembody .preview{flex:0 0 auto}
+.itemside{flex:1 1 300px;min-width:280px}
 .empty{color:var(--muted);margin-top:14px;display:flex;align-items:center;gap:8px}
 .spinner{width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;display:inline-block}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -926,7 +932,13 @@ function buildItemHtml(d,openFn='openItem'){
     <button class="act" title="${t('preview_item_tt')}" onclick="glamourerPost('/api/action/tryon/item/${d.itemId}',this)">${t('preview_btn')}</button>
     <button class="act" title="${t('apply_item_tt')}" onclick="glamourerPost('/api/action/glamourer/item/${d.itemId}',this)">${t('apply_btn')}</button>
   </div>`:'';
-  let h=`<div class="header">${img(d.iconId,48)}<div><h2 class="name">${esc(d.name)}${unlockBadge(d)}</h2><div class="meta">${metaParts.join(' · ')}</div></div></div><div class="preview"><img src="/api/itemimage/${d.itemId}" loading="lazy" onerror="this.parentElement.style.display='none'">${applyRow}</div>`;
+  // "kompakter nach rechts und unten... neben das vorschau bild... nicht so gepresst" — everything
+  // used to stack in one narrow column under the preview image, wasting the space beside it. Preview
+  // stays a fixed-ish left column, everything else (set members, contents, source cards) now flows
+  // in a column beside it that only wraps below once the panel's too narrow for both — .itembody
+  // is the flex row, .itemside is the wrapping second column.
+  let h=`<div class="header">${img(d.iconId,48)}<div><h2 class="name">${esc(d.name)}${unlockBadge(d)}</h2><div class="meta">${metaParts.join(' · ')}</div></div></div>`;
+  h+=`<div class="itembody"><div class="preview"><img src="/api/itemimage/${d.itemId}" loading="lazy" onerror="this.parentElement.style.display='none'">${applyRow}</div><div class="itemside">`;
   if((d.setMembers??[]).length){
     h+=`<div class="tbl">${t('rest_of_set')}</div><div style="display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 14px">`;
     for(const m of d.setMembers)h+=`<div class="row" style="width:auto" onclick="${openFn}(${m.itemId})">${img(m.iconId,24)}<span>${esc(m.name)}</span></div>`;
@@ -1008,6 +1020,7 @@ function buildItemHtml(d,openFn='openItem'){
     h+='</div>';
   }
   if(!(d.sources??[]).length)h+=`<div class="empty">${t('no_sources')}</div>`;
+  h+='</div></div>'; // .itemside, .itembody
   return h;
 }
 

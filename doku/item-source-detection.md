@@ -1,5 +1,35 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Item detail: preview image + content side by side (1.0.68.0)
+
+"kriegen wir das eig. auch kompakter nach rechts und unten? Heißt.. maybe neben das vorschau bild?
+Und nicht so gepresst,... und ugly" — the preview image and everything below it (set members,
+coffer contents, source cards) used to stack in one narrow column, wasting the empty space beside
+the image on anything wider than a phone.
+
+New `.itembody` (flex row, wraps) / `.itemside` (the second column: everything except the preview)
+wrapper in `buildItemHtml`. `.itembody .preview{flex:0 0 auto}` keeps the image its own fixed-ish
+column (sized to itself, doesn't grow/shrink); `.itemside{flex:1 1 300px;min-width:280px}` takes
+whatever's left and only wraps below the image once the panel's too narrow for both — same
+behavior as before on a narrow Character-tab side panel, genuinely more compact on the wider
+Item Search / Duty Drops panels. No new CSS classes needed beyond these two — `.preview`/`.cards`/
+`.tbl` etc. are untouched, just reparented.
+
+Also investigated, not fixed: "mogstation richtig verlinken" — re-confirmed (not a regression,
+identical to the earlier 1.0.61.0 finding) that `MogStationLiveService`'s live per-item lookup
+still gets a `403 Forbidden` from THIS machine specifically, while a plain `curl` with the exact
+same User-Agent header still succeeds — pointing at TLS/HTTP-client fingerprinting (Cloudflare
+bot-management), not the UA string, which headers alone can't work around. Deliberately not
+pursued further — that would mean spoofing a browser's TLS fingerprint, which is bot-detection
+evasion, not a legitimate fix. The infrastructure itself (button, endpoint, cache-race fix) is
+confirmed correct and complete; whether the live link resolves depends on the viewer's own
+network/IP reputation, not on anything left to fix in this codebase.
+
+Verified: `dotnet build` 0/0, `dotnet test` 54/54. Layout change screenshot-confirmed live via the
+Browser pane at a widened (1200px, scaled to fit the pane) viewport — "Far Eastern Schoolboy's
+Hat"'s preview image, "Rest of the Set", and Mog Station card all render side by side instead of
+stacked.
+
 ## Vendor NPC world-highlight — "1:1 wie VendorLocation" (1.0.67.0)
 
 Native `GameObject.Highlight(ObjectHighlightColor)` — the same in-world red-outline effect the
