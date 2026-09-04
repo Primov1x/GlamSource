@@ -24,6 +24,20 @@ public static class UnlockCheckService
             var ui = UIState.Instance();
             return ui != null && ui->IsCompanionUnlocked(companionRowId.Value);
         }
+        var orchestrionRowId = detail.OrchestrionRowIdForItem(itemId);
+        if (orchestrionRowId.HasValue)
+        {
+            var ps = PlayerState.Instance();
+            return ps != null && ps->IsOrchestrionRollUnlocked(orchestrionRowId.Value);
+        }
+        // covers emotes and hairstyles (and a few other UnlockLink-gated unlocks) alike — same
+        // Item.ItemAction field, same native check, see UnlockLinkIdForItem's doc comment.
+        var unlockLinkId = detail.UnlockLinkIdForItem(itemId);
+        if (unlockLinkId.HasValue)
+        {
+            var ui = UIState.Instance();
+            return ui != null && ui->IsUnlockLinkUnlocked(unlockLinkId.Value);
+        }
         return null;
     }
 }

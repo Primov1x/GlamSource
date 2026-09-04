@@ -1,5 +1,47 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Unlock check extended to Orchestrion Rolls + Emotes/Hairstyles (1.0.57.0)
+
+"minion, mount, notenrollen, emote, haare" — mount/minion unlock-check already existed
+(`UnlockCheckService.CheckUnlocked`, 1.0.2x.0-ish); this rounds out the other three, reusing the
+exact same call site (all four places that call `CheckUnlocked` — ImGui item detail header, Duty
+Drops row badge, web `/api/item` and its list-annotate endpoint — pick this up automatically, no
+new wiring needed).
+
+Root-caused via Dalamud's own `Dalamud/Game/UnlockState/UnlockState.cs` (`IsItemUnlocked`) and
+CriticalCommonLib's independent `UnlockTrackerService.cs` — both implement the identical switch
+over `Item.ItemAction.Action.RowId`, confirming the mechanism rather than guessing from one source:
+
+- **Orchestrion Roll** (`Action.RowId == 25183`): the target Orchestrion row is NOT in
+  `ItemAction.Data[0]`/`[1]` (both 0 for these items — this is exactly why the earlier session's
+  probe on item 33850 came up empty). It's in a separate `Item.AdditionalData` field, a Lumina
+  `RowRef` union — `.Is<Orchestrion>()` + `.RowId`. Verified live against the user's own German
+  game data: item 33850 "A Better Tomorrow Orchestrion Roll" → `AdditionalData.RowId` 444 →
+  `Orchestrion` row 444 "A Better Tomorrow" (name matches, sanity-checked). Unlock check:
+  `PlayerState.Instance()->IsOrchestrionRollUnlocked(rowId)`.
+- **Emote / Hairstyle** (`Action.RowId == 2633`, `UnlockLink`): `Data[0]` IS the raw unlock-link id
+  directly — same field the earlier-verified hairstyle mechanism
+  (`CharaMakeCustomize.HintItem`/`.UnlockLink`) already used. Deliberately NOT resolving which
+  Emote/CharaMakeCustomize row it targets — `IsUnlockLinkUnlocked(id)` doesn't care, and neither did
+  Dalamud's own `IsItemUnlocked` (single shared switch case). This also fixes the earlier session's
+  false-positive brute-force attempt: that scan matched `Data[0]` against ALL `Emote.UnlockLink`
+  values WITHOUT filtering `Action.RowId == 2633` first, so unrelated items (potions etc., whose
+  `Data[0]` collided numerically for a different `Action.RowId`) matched by coincidence. Filtering
+  by Action type first, as done here, eliminates that. Verified live: item 12040 "Ballroom Etiquette
+  - The Bomb Dance" → `UnlockLink` 98 → `Emote` 109 "Bomb Dance" (name correlation, no false
+  positives in a 5-sample spot check). Unlock check: `UIState.Instance()->IsUnlockLinkUnlocked(id)`.
+
+New `IItemDetailService` members `OrchestrionRowIdForItem`/`UnlockLinkIdForItem`, built in the same
+`EnsureUnlockMaps()` pass as the existing Mount/Companion maps (one single loop over the Item
+sheet, no extra sheet iteration needed for Emote — the reverse-lookup isn't performed, per above).
+`GlamSource.Core.Tests`'s `FakeItemDetailService` stub-updated (same CS0535 pattern as before, see
+1.0.56.0's `IUnlockState` merge note — caught by `dotnet build`, not CI, same caveat as before).
+
+Verified: `dotnet build` 0/0, `dotnet test` 54/54. Both new mechanisms live-verified against real
+sheet data via a throwaway Lumina probe (not just unit-tested) before wiring into the service, per
+project's real-data verification discipline. Not yet confirmed in-game with the actual green/red
+icon badge rendering (same native-window-automation limitation as prior unlock-check rounds).
+
 ## ImGui/Web: Apply/Preview buttons moved under the character preview, shorter labels (1.0.56.0)
 
 "'Auf mich anwenden' unter das Vorschaubild mittig und als zweiter Button" — the two action

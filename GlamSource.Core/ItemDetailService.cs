@@ -103,6 +103,14 @@ public interface IItemDetailService
     /// has clib access this project doesn't) to check PlayerState/UIState unlock status.
     uint? MountRowIdForItem(uint itemId);
     uint? CompanionRowIdForItem(uint itemId);
+    /// Item -> Orchestrion sheet RowId (Action RowId 25183; target comes from Item.AdditionalData,
+    /// not Data[0] — verified against Dalamud's/CriticalCommonLib's own IsItemUnlocked switch, since
+    /// probing Data[0]/Data[1] directly on an orchestrion-roll item showed both as 0).
+    uint? OrchestrionRowIdForItem(uint itemId);
+    /// Item -> raw UnlockLink id (Action RowId 2633). Covers emotes, hairstyles (same UnlockLink
+    /// field CharaMakeCustomize.HintItem items use), and a few other UnlockLink-gated unlocks —
+    /// deliberately not disambiguated further, IsUnlockLinkUnlocked(id) doesn't care what it targets.
+    uint? UnlockLinkIdForItem(uint itemId);
     string? GetEnglishName(uint itemId);
     /// Event item availability (FFXIV Collect "Event" sources + a live Lodestone news check).
     /// Null when the item isn't a known event item.
@@ -2774,28 +2782,44 @@ public sealed class ItemDetailService : IItemDetailService
     // has Action.RowId 853 (Companion/minion), Data[0] 51 (Companion sheet row 51).
     private const uint MountActionType = 1322;
     private const uint CompanionActionType = 853;
+    private const uint OrchestrionRollActionType = 25183;
+    private const uint UnlockLinkActionType = 2633;
     private Dictionary<uint, uint>? _itemToMountRowId;
     private Dictionary<uint, uint>? _itemToCompanionRowId;
+    private Dictionary<uint, uint>? _itemToOrchestrionRowId;
+    private Dictionary<uint, uint>? _itemToUnlockLinkId;
     private void EnsureUnlockMaps()
     {
         if (_itemToMountRowId != null) return;
         _itemToMountRowId = new();
         _itemToCompanionRowId = new();
+        _itemToOrchestrionRowId = new();
+        _itemToUnlockLinkId = new();
         var itemSheet = _gameData.GetExcelSheet<Item>();
         if (itemSheet == null) return;
         foreach (var item in itemSheet)
         {
             if (!item.ItemAction.IsValid) continue;
             var ia = item.ItemAction.Value;
+            // Orchestrion rolls encode their target in Item.AdditionalData, not Data[0]/[1] (both 0
+            // for these items) — same field Dalamud's own UnlockState.IsItemUnlocked() reads.
+            if (ia.Action.RowId == OrchestrionRollActionType && item.AdditionalData.Is<Orchestrion>())
+            {
+                _itemToOrchestrionRowId[item.RowId] = item.AdditionalData.RowId;
+                continue;
+            }
             if (ia.Data.Count == 0) continue;
             var target = ia.Data[0];
             if (target == 0) continue;
             if (ia.Action.RowId == MountActionType) _itemToMountRowId[item.RowId] = target;
             else if (ia.Action.RowId == CompanionActionType) _itemToCompanionRowId[item.RowId] = target;
+            else if (ia.Action.RowId == UnlockLinkActionType) _itemToUnlockLinkId[item.RowId] = target;
         }
     }
     public uint? MountRowIdForItem(uint itemId) { EnsureUnlockMaps(); return _itemToMountRowId!.TryGetValue(itemId, out var id) ? id : null; }
     public uint? CompanionRowIdForItem(uint itemId) { EnsureUnlockMaps(); return _itemToCompanionRowId!.TryGetValue(itemId, out var id) ? id : null; }
+    public uint? OrchestrionRowIdForItem(uint itemId) { EnsureUnlockMaps(); return _itemToOrchestrionRowId!.TryGetValue(itemId, out var id) ? id : null; }
+    public uint? UnlockLinkIdForItem(uint itemId) { EnsureUnlockMaps(); return _itemToUnlockLinkId!.TryGetValue(itemId, out var id) ? id : null; }
 
     // Duty and NPC display names come back lowercase from the game's own sheets ("the minstrel's
     // ballad...", "chopper") — they're written to be embedded mid-sentence elsewhere in the UI, but

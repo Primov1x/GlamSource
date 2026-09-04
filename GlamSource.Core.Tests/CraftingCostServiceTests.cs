@@ -233,6 +233,8 @@ public class CraftingCostServiceTests
         public uint? FindDutyByTerritory(uint territoryTypeId) => null;
         public uint? MountRowIdForItem(uint itemId) => null;
         public uint? CompanionRowIdForItem(uint itemId) => null;
+        public uint? OrchestrionRowIdForItem(uint itemId) => null;
+        public uint? UnlockLinkIdForItem(uint itemId) => null;
     }
 
     private sealed class FakeUniversalisService : IUniversalisService
