@@ -26,6 +26,17 @@ public sealed class MogStationLiveService : IDisposable
     private DateTime _lastRefresh = DateTime.MinValue;
     private Task? _refreshTask;
     public string? LastError { get; private set; }
+    // "richtige Mog-Station-Seite pro Item, damit man den richtigen Shop-Link linkt" — ItemDetailService
+    // permanently caches its whole ItemDetail (including whichever MogStation source this returned)
+    // per item id. The FIRST item looked up in a session almost always hits this BEFORE the
+    // background category fetch below completes — TryGetShopUrl correctly returns "not found yet"
+    // (empty cache), the caller falls back to the static CSV's generic shop-front URL, and that
+    // answer then stays frozen for that item for the rest of the session even once the live data
+    // loads, since nothing re-triggers the cache. Exposed so the caller can skip caching just during
+    // that cold-start window (verified live: without this, "Far Eastern Schoolboy's Hat" stayed on
+    // the generic https://na.finalfantasyxiv.com/shop/ link even 18+ seconds after the category
+    // fetch had demonstrably succeeded).
+    public bool HasCompletedFirstRefresh { get; private set; }
 
     public MogStationLiveService(HttpClient httpClient)
     {
@@ -91,6 +102,13 @@ public sealed class MogStationLiveService : IDisposable
         {
             LastError = $"{DateTime.Now:HH:mm:ss} {ex.Message}";
             // keep whatever was cached before — a failed refresh shouldn't wipe a working cache
+        }
+        finally
+        {
+            // set even on failure — a permanently-broken fetch (blocked network, etc.) shouldn't
+            // wedge callers into never caching ANY item's ItemDetail; failure just means every
+            // MogStation lookup keeps landing on the static-CSV fallback, same as before this fix.
+            HasCompletedFirstRefresh = true;
         }
     }
 

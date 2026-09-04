@@ -456,7 +456,14 @@ public sealed class ItemDetailService : IItemDetailService
             Contents: contents,
             ContentsSummary: contentsSummary);
 
-        _cache[itemId] = detail;
+        // "richtige Mog-Station-Seite pro Item" — don't freeze-in a MogStation source built from the
+        // static-CSV fallback before MogStationLiveService's background category fetch has had its
+        // one chance to complete; caching now would permanently stick this item with the generic
+        // shop-front link for the rest of the session even once the live per-item link becomes
+        // available. Once the live service HAS completed (success or failure) every answer is stable
+        // and safe to cache normally again.
+        if (_mogstationLive.HasCompletedFirstRefresh)
+            _cache[itemId] = detail;
         return detail;
     }
 

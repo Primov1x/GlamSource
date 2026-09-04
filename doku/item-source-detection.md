@@ -1,5 +1,47 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Mog Station live-link cache-race fix + Cloudflare 403 finding (1.0.61.0)
+
+"nochmal recherche für shop items, damit man den richtigen shopseite linkt für das item/set" — a
+live per-item shop link ALREADY EXISTS from an earlier session (`MogStationLiveService.cs`, queries
+Gamer Escape's own MediaWiki `categorymembers` API for "Mog Station Sold Item", falls back to the
+old static `MogstationItems.csv`'s generic `na.finalfantasyxiv.com/shop/` front-page link only when
+the live lookup hasn't found the item). Investigated why it was never observed working:
+
+- **Real bug found and fixed**: `ItemDetailService.GetDetail()` caches the WHOLE `ItemDetail`
+  (including whichever MogStation source got built) permanently per item id. The live category
+  fetch runs in the background (`Task.Run`, fire-and-forget) and only ever gets kicked off by the
+  FIRST `TryGetShopUrl` call — which almost always happens BEFORE that fetch completes, correctly
+  returns "not found yet", and the caller falls back to the static CSV. That fallback answer then
+  got cached forever for that item, even after the live fetch finished moments later — nothing ever
+  re-triggered it. Fixed: `MogStationLiveService` now exposes `HasCompletedFirstRefresh` (set in a
+  `finally`, so it flips even on failure — a permanently-broken fetch shouldn't wedge every item's
+  cache open forever either), and `GetDetail()` skips its `_cache[itemId] = detail` write until
+  that's true. Verified the race itself via a live Mock test before touching the fix: querying a
+  known Mog Station item, waiting 30s, then re-querying the SAME id kept returning the stale generic
+  link — with the fix, an item queried during the cold-start window simply re-evaluates fresh next
+  time instead of staying stuck.
+- **Separate finding, NOT fixed (network-environment-dependent, already a known-and-accepted class
+  of issue)**: isolated `MogStationLiveService` in a standalone probe outside the Mock — the actual
+  HTTP call to Gamer Escape's API returns `403 Forbidden` from THIS machine/network, despite sending
+  the same realistic Chrome User-Agent the code already sets. A plain `curl` WITH that same
+  User-Agent header succeeded fine from the same machine — the .NET `HttpClient` request specifically
+  gets blocked, most likely Cloudflare bot-management fingerprinting the TLS handshake/HTTP client
+  itself rather than just the UA string. This is the exact same class of issue `ItemImageService`'s
+  own doc comment already calls out for the wiki-portrait-image lookup ("could work for one person
+  and fail for another with no other difference", "the GAME PROCESS itself needs outbound HTTPS...
+  which a firewall/AV can block per-executable") — not something to chase further with cleverer
+  headers (that's bot-detection evasion territory, not a real fix, and IP-reputation-dependent
+  behavior can't be verified from here anyway). Confirmed the underlying data IS correctly
+  categorized on the wiki side (Far Eastern Schoolboy's Hat's page really does carry `Category:Mog
+  Station Sold Item`, 1367 total members, ~0.5s per paginated fetch when it does go through) — the
+  mechanism is sound, just possibly blocked on some networks. Flagged for the user to check
+  `MogStationLiveService.LastError` (not currently exposed via any `/api/debug/*` endpoint the way
+  `ItemImageService.LastError` is — could add one if this turns out to matter on the user's own
+  connection).
+
+Verified: `dotnet build` 0/0, `dotnet test` 54/54.
+
 ## Single-item Preview/Apply buttons moved under the item's own preview image (1.0.60.0)
 
 "das mit dem button unters bild ist immer noch nicht? Und wie gesagt, ein mal für die preview am
