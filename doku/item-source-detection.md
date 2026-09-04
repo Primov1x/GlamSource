@@ -1,5 +1,26 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Web: two-line rows (name/price), boss sections collapsible (1.0.53.0)
+
+Follow-up to 1.0.52.0, two more live requests in the same round.
+
+**Layout**: price now sits on its OWN line below the name (was inline `· 1.444 Gil` suffix) — new
+`rowText()`/`.rowtree`/`.rowname` helper wraps every row's name+price into a column, used
+everywhere `rowPrice()` was. `IUniversalisService.GetBulkWorldPricesAsync` now returns a
+`BulkPrice(WorldMinPrice, DcMinPrice)` per item instead of just a world number, so the price line
+can show both ("1.444 Gil · DC 1.200 Gil") — one extra bulk request per batch (world + DC), still
+one call for up to 100 items, not per-row. `unlockBadge` (mount/minion unlock icon) moved to
+BEFORE the item icon (own flex child, "davor das icon") instead of after the name.
+
+**"So overwhelming"**: Duty Drops boss sections used to render fully expanded — a dungeon with 5+
+bosses meant scrolling past everything at once. Boss 1 stays open (that's usually what people came
+for), the rest collapse behind a click — same expand-toggle pattern already used for sack-content
+categories.
+
+Verified live via mock: search results show two-line rows with real server+DC prices; Toto-Rak's
+Duty Drops view opens with only Boss 1 expanded, clicking Boss 2's header expands it in place.
+`dotnet build` 0/0, `dotnet test` 54/54.
+
 ## Web: price badges on list rows + unlock status as icons (1.0.52.0)
 
 Two live requests in one round.

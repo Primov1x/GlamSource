@@ -47,7 +47,10 @@ input[type=search]:focus{border-color:var(--accent)}
 .row img{width:28px;height:28px;border-radius:4px}
 .row img.rowpreview{width:40px;height:40px;border-radius:6px;margin-left:auto;object-fit:cover}
 .row .ilvl{color:var(--muted);font-size:11px;margin-left:6px}
-.row .rowprice{color:var(--accent);font-size:11px}
+.rowtext{display:flex;flex-direction:column;min-width:0;overflow:hidden}
+.rowname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rowprice{color:var(--accent);font-size:11px;min-height:14px}
+.unlockicon{flex:none}
 #filters{display:flex;gap:6px;margin-top:6px;max-width:420px;flex-wrap:wrap}
 #filters select,#filters input{background:var(--panel);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:6px;font-size:12px;outline:none}
 #filters select:focus,#filters input:focus{border-color:var(--accent)}
@@ -705,7 +708,7 @@ async function runSearch(){
   box.innerHTML=`<div class="empty"><span class="spinner"></span>${t('searching')}</div>`;
   const r=await fetch('/api/search?'+p).then(r=>r.json());
   box.style.display='';$('#resback').style.display='none';
-  box.innerHTML=r.length?r.map(x=>`<div class="row" data-item="${x.id}" tabindex="0" role="button" onclick="openItem(${x.id})">${img(x.iconId,28)}<span>${esc(x.name)}${x.ilvl?`<span class="ilvl">iLvl ${x.ilvl}</span>`:''}${rowPrice(x.id)}</span><img class="rowpreview" src="/api/itemimage/${x.id}" loading="lazy" onerror="this.remove()"></div>`).join(''):`<div class="empty">${t('no_items')}</div>`;
+  box.innerHTML=r.length?r.map(x=>`<div class="row" data-item="${x.id}" tabindex="0" role="button" onclick="openItem(${x.id})">${img(x.iconId,28)}${rowText(`${esc(x.name)}${x.ilvl?`<span class="ilvl">iLvl ${x.ilvl}</span>`:''}`,x.id)}<img class="rowpreview" src="/api/itemimage/${x.id}" loading="lazy" onerror="this.remove()"></div>`).join(''):`<div class="empty">${t('no_items')}</div>`;
   updateOverlayCompactness();
   if(r.length)annotateBulkPrices(box);
 }
@@ -792,22 +795,26 @@ function renderDutyList(){
 }
 $('#dq').addEventListener('input',renderDutyList);
 // x.unlocked: true/false when it's a Mount/Minion (native PlayerState/UIState check), undefined
-// otherwise — only show the badge when we actually have an answer. Small inline SVG (no external
+// otherwise — only show the icon when we actually have an answer. Small inline SVG (no external
 // asset, no game-icon round trip) instead of a text label — green check / red cross, title=
-// tooltip keeps it readable for screen readers and on hover.
+// tooltip keeps it readable for screen readers and on hover. Sits BEFORE the item icon (own flex
+// child in the row, not appended after the name) — "davor das icon".
 const unlockBadge=x=>{
   if(x.unlocked===undefined)return'';
   const ok=x.unlocked;
   const d=ok?'M5 13l4 4L19 7':'M6 6l12 12M18 6L6 18';
-  return `<svg class="unlockicon" viewBox="0 0 24 24" width="13" height="13" style="vertical-align:-2px;margin-left:5px"><title>${ok?t('unlocked_yes'):t('unlocked_no')}</title><path fill="none" stroke="${ok?'var(--success)':'var(--danger)'}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="${d}"/></svg>`;
+  return `<svg class="unlockicon" viewBox="0 0 24 24" width="15" height="15"><title>${ok?t('unlocked_yes'):t('unlocked_no')}</title><path fill="none" stroke="${ok?'var(--success)':'var(--danger)'}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="${d}"/></svg>`;
 };
-// "preise fehlen mir bei items" — a quiet price badge on every list row, filled in after the fact
-// by annotateBulkPrices() (one bulk Universalis call for everything currently on screen, not one
-// call per row). Empty until then, invisible either way if the item has no listings.
-const rowPrice=id=>`<span class="rowprice" data-item="${id}"></span>`;
-const featSection=list=>`<div class="dsec" style="margin-top:0"><div class="dsech">${t('duty_featured')}</div><div class="results dgrid">${list.map(x=>`<div class="row" data-item="${x.itemId}" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${img(x.iconId,28)}<span>${esc(x.name)}<span class="ilvl">${x.kind==='Mount'?t('mount'):t('minion')}</span>${unlockBadge(x)}${rowPrice(x.itemId)}</span><img class="rowpreview" src="/api/itemimage/${x.itemId}" loading="lazy" onerror="this.remove()"></div>`).join('')}</div></div>`;
-const previewRows=list=>list.map(x=>`<div class="row" data-item="${x.itemId}" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${img(x.iconId,28)}<span>${esc(x.name)}${x.itemLevel?`<span class="ilvl">iLvl ${x.itemLevel}</span>`:''}${rowPrice(x.itemId)}</span><img class="rowpreview" src="/api/itemimage/${x.itemId}" loading="lazy" onerror="this.remove()"></div>`).join('');
-const dropRows=list=>list.map(x=>`<div class="row" data-item="${x.itemId}" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${img(x.iconId,28)}<span>${esc(x.name)}${x.itemLevel?`<span class="ilvl">iLvl ${x.itemLevel}</span>`:''}${rowPrice(x.itemId)}</span></div>`).join('');
+// "preise fehlen mir bei items" — a price LINE below the name on every list row (current server +
+// DC-wide cheapest), filled in after the fact by annotateBulkPrices() (one bulk Universalis call
+// for everything currently on screen, not one call per row). Empty until then, invisible either
+// way if the item has no listings. rowText wraps name+price into their own column so the price
+// gets its own line instead of running on after the name.
+const rowPrice=id=>`<div class="rowprice" data-item="${id}"></div>`;
+const rowText=(nameHtml,id)=>`<div class="rowtext"><div class="rowname">${nameHtml}</div>${rowPrice(id)}</div>`;
+const featSection=list=>`<div class="dsec" style="margin-top:0"><div class="dsech">${t('duty_featured')}</div><div class="results dgrid">${list.map(x=>`<div class="row" data-item="${x.itemId}" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${unlockBadge(x)}${img(x.iconId,28)}${rowText(`${esc(x.name)}<span class="ilvl">${x.kind==='Mount'?t('mount'):t('minion')}</span>`,x.itemId)}<img class="rowpreview" src="/api/itemimage/${x.itemId}" loading="lazy" onerror="this.remove()"></div>`).join('')}</div></div>`;
+const previewRows=list=>list.map(x=>`<div class="row" data-item="${x.itemId}" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${img(x.iconId,28)}${rowText(`${esc(x.name)}${x.itemLevel?`<span class="ilvl">iLvl ${x.itemLevel}</span>`:''}`,x.itemId)}<img class="rowpreview" src="/api/itemimage/${x.itemId}" loading="lazy" onerror="this.remove()"></div>`).join('');
+const dropRows=list=>list.map(x=>`<div class="row" data-item="${x.itemId}" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${img(x.iconId,28)}${rowText(`${esc(x.name)}${x.itemLevel?`<span class="ilvl">iLvl ${x.itemLevel}</span>`:''}`,x.itemId)}</div>`).join('');
 async function selectDuty(id){
   dutySelected=id;
   const nav=(dutyList||[]).find(y=>y.id===id);
@@ -826,12 +833,16 @@ async function selectDuty(id){
   if(d.featured?.length)h+=featSection(d.featured);
   // exchange shops of the duty (totem -> weapons, books -> gear): with preview pictures
   for(const ex of d.exchanges||[])h+=`<div class="dsec"><div class="dsech">${t('duty_exchange')} — ${esc(ex.shop)}</div>${ex.token?`<div class="dsub">${t('duty_exchange_for')} ${esc(ex.token.name)}</div>`:''}<div class="results dgrid">${previewRows(ex.items)}</div></div>`;
-  for(const b of d.bosses){
-    h+=`<div class="dsec"><div class="dsech">${t('boss')} ${b.fightNo+1}${b.name?` — ${esc(b.name)}`:''}</div>`;
+  // "so overwhelming" — every boss section used to render fully open at once. First one open
+  // (that's what people usually came here for), the rest collapsed behind a click, same toggle
+  // pattern the sack-content categories already use.
+  d.bosses.forEach((b,bi)=>{
+    const bid=`bossbody_${id}_${bi}`,open=bi===0;
+    h+=`<div class="dsec"><div class="dsech" style="cursor:pointer;display:flex;justify-content:space-between" onclick="const e=document.getElementById('${bid}');const show=e.style.display==='none';e.style.display=show?'':'none';this.lastElementChild.textContent=show?'▾':'▸'"><span>${t('boss')} ${b.fightNo+1}${b.name?` — ${esc(b.name)}`:''}</span><span>${open?'▾':'▸'}</span></div><div id="${bid}" style="display:${open?'':'none'}">`;
     if(b.drops.length)h+=`<div class="results dgrid">${dropRows(b.drops)}</div>`;
     for(const c of b.chests)h+=`<div class="dsub">${t('chest')}${b.chests.length>1?` ${c.cofferNo+1}`:''}</div><div class="results dgrid">${dropRows(c.items)}</div>`;
-    h+='</div>';
-  }
+    h+='</div></div>';
+  });
   if(d.general.length)h+=`<div class="dsec"><div class="dsech">${t('duty_general')}</div><div class="results dgrid">${dropRows(d.general)}</div></div>`;
   const hasLocal=!!h||!!(d.exchanges||[]).length;
   // no local table (post-7.1 content): Garland's fight coffers are the whole drop list — show a
@@ -895,7 +906,7 @@ function buildItemHtml(d,openFn='openItem'){
   }
   if((d.contents??[]).length){
     h+=`<div class="tbl">${t('can_contain')}</div><div style="display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 14px">`;
-    for(const m of d.contents)h+=`<div class="row" data-item="${m.itemId}" style="width:auto" onclick="${openFn}(${m.itemId})">${img(m.iconId,24)}<span>${esc(m.name)}${rowPrice(m.itemId)}</span></div>`;
+    for(const m of d.contents)h+=`<div class="row" data-item="${m.itemId}" style="width:auto" onclick="${openFn}(${m.itemId})">${img(m.iconId,24)}${rowText(esc(m.name),m.itemId)}</div>`;
     h+='</div>';
   }
   if((d.contentsSummary??[]).length){
@@ -907,7 +918,7 @@ function buildItemHtml(d,openFn='openItem'){
       // items, no point bulk-fetching all of them before anyone's looked ("preise fehlen mir")
       h+=`<div class="row" style="width:auto;cursor:pointer;margin:2px 0" onclick="const e=document.getElementById('${gid}');const show=e.style.display==='none';e.style.display=show?'flex':'none';if(show&&!e.dataset.loaded){e.dataset.loaded='1';annotateBulkPrices(e)}">${img(cat.iconId,24)}<span>${cat.items.length}x ${esc(cat.label)} ▾</span></div>`;
       h+=`<div id="${gid}" style="display:none;flex-wrap:wrap;gap:8px;margin:4px 0 10px 28px">`;
-      for(const m of cat.items)h+=`<div class="row" data-item="${m.itemId}" style="width:auto" onclick="event.stopPropagation();${openFn}(${m.itemId})">${img(m.iconId,24)}<span>${esc(m.name)}${rowPrice(m.itemId)}</span></div>`;
+      for(const m of cat.items)h+=`<div class="row" data-item="${m.itemId}" style="width:auto" onclick="event.stopPropagation();${openFn}(${m.itemId})">${img(m.iconId,24)}${rowText(esc(m.name),m.itemId)}</div>`;
       h+='</div>';
     });
   }
@@ -1041,7 +1052,11 @@ async function annotateBulkPrices(container){
   const prices=await fetch('/api/market/bulk?ids='+ids.join(',')).then(r=>r.ok?r.json():{}).catch(()=>({}));
   for(const el of container.querySelectorAll('.rowprice[data-item]')){
     const p=prices[el.dataset.item];
-    if(p)el.textContent=` · ${p.toLocaleString()} Gil`;
+    if(!p)continue;
+    const w=p.worldMinPrice||0,dc=p.dcMinPrice||0;
+    let txt=w?`${w.toLocaleString()} Gil`:'';
+    if(dc&&dc!==w)txt+=(txt?' · ':'')+`${t('market_dc')} ${dc.toLocaleString()} Gil`;
+    el.textContent=txt;
   }
 }
 async function annotateInventory(container){

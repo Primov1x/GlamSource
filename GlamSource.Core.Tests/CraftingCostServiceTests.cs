@@ -250,11 +250,11 @@ public class CraftingCostServiceTests
             return Task.FromResult<MarketInfo?>(new MarketInfo(price, 0, price, 0, null));
         }
 
-        public Task<IReadOnlyDictionary<uint, uint>> GetBulkWorldPricesAsync(IReadOnlyCollection<uint> itemIds)
+        public Task<IReadOnlyDictionary<uint, BulkPrice>> GetBulkWorldPricesAsync(IReadOnlyCollection<uint> itemIds)
         {
             var result = itemIds.Where(id => _prices.ContainsKey(id) && _prices[id] > 0)
-                .ToDictionary(id => id, id => _prices[id]);
-            return Task.FromResult<IReadOnlyDictionary<uint, uint>>(result);
+                .ToDictionary(id => id, id => new BulkPrice(_prices[id], _prices[id]));
+            return Task.FromResult<IReadOnlyDictionary<uint, BulkPrice>>(result);
         }
     }
 
