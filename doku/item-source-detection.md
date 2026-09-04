@@ -1,5 +1,99 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Source-card grid, icon caching, hide iLvl 1 (1.0.59.0)
+
+- **"die kacheln könnte man besser gestalten, anstatt so eine nach der anderen"**: `.cards` was
+  `display:flex;flex-direction:column` — a bare vertical stack, one full-width card under another.
+  Changed to `display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr))` — as many
+  ~260px columns as fit the panel width, back to one column once it's too narrow for two, no
+  breakpoints needed. Same `.cards` container used everywhere (item search detail, Character tab
+  slot detail, Duty Drops item detail) — one CSS change, all three get it.
+- **"wir sollten generell schauen dass die [Bilder] cached, lokal dann liegen, komprimiert halt,
+  weil so kriegt man die krise beim lesen"**: `/api/icon/{id}` (small item icons — used in EVERY
+  row/card, unlike the big wiki portrait images `/api/itemimage/` already disk-caches via
+  `ItemImageService`) decoded the `.tex` file AND re-ran PNG encoding from scratch on every single
+  request, even for an icon already served this exact session — the 7-day browser `Cache-Control`
+  header only helps a *repeat* view, not the first render of a big list (up to 60 search hits, or a
+  duty's full drop table) where dozens of distinct icons all miss it at once, all decoded+encoded
+  synchronously on the request thread — very plausibly the "krise" (visible pop-in/stutter) the user
+  saw. Added an in-memory `ConcurrentDictionary<uint, byte[]?>` (`WebUiService.cs`) /
+  `Dictionary<uint, byte[]?>` (Mock's `WebPreviewServer.cs`) keyed by icon id — content-addressed,
+  never changes for a given id, so a plain unbounded-but-small (a session realistically touches a
+  few hundred distinct icons, a few KB each) in-memory cache is enough; no disk persistence needed
+  unlike the wiki portraits (those are external-network JPEGs, much larger, worth surviving a
+  restart).
+- **"ilvl ausblenden für glam items / lvl 1 items"**: iLvl 1 signals a pure-glamour/cosmetic item
+  with no real stats — showing "iLvl 1" next to it is meaningless noise. Every place an item's own
+  iLvl renders (web: `buildItemHtml` header, search rows, Duty Drops preview/drop rows; ImGui:
+  `ItemDetailWindow`'s meta line) now gates on `> 1` instead of a bare truthy/always-shown check.
+  NOT touched: a *duty's* iLvl (its average/required gear level, e.g. "Lv.90 · iLvl 715") — that's a
+  different number with a different meaning, never 1 for a real duty, out of scope. Web's meta line
+  also switched from string-concatenation-with-hardcoded-separators to a `metaParts.filter(Boolean)
+  .join(' · ')` array, ImGui's to a `List<string>` + `string.Join` — both avoid a dangling leading
+  " · " now that the first part (iLvl) can be absent; this is where the ImGui change actually
+  differs code-shape-wise even though the visible behavior matches the web UI's fix 1:1.
+
+Also investigated live (no code change — working as designed): "im charakter fehlt noch das mit dem
+apply... obs unlocked ist" turned out to mean the Character tab's per-slot detail panel (right side,
+opens on slot click) — that already reuses the same `buildItemHtml()` as the standalone item search
+view, unlock badge included; a normal equipment piece (Head/Body/...) just has no unlock concept
+(not a mount/minion/orchestrion/emote/hairstyle), so correctly shows none. Confirmed live via the
+Mock browser, not just code-read.
+
+Verified: `dotnet build` 0/0, `dotnet test` 54/54. Grid layout + iLvl-hide screenshot-confirmed live
+in the rebuilt Mock (item 33850's 5 source cards render 2-3 per row, no "iLvl 1" anywhere on that
+item's header or the search row for it).
+
+## Item search unlock badge, TreasureHunt source tile, FFXIV-Collect dedupe (1.0.58.0)
+
+Three fixes from one live testing round against item 33850 "A Better Tomorrow Orchestrion Roll":
+
+- **"dort fehlt auch unlocked status, also im item search"**: `/api/search` never annotated
+  `unlocked` at all — only the single-item view and Duty Drops did. Added to both the
+  `ItemSearchIndex` hit path AND the pure-digit direct-ID-lookup path (`WebUiService.cs`'s
+  `/api/search` has two separate branches for "type a name" vs "paste an ID" — missed the second
+  one on the first pass, caught live-testing in the Mock browser: badge showed up for a text
+  search but not for pasting "33850" directly). Client `unlockBadge()` widened from
+  `x.unlocked===undefined` to `x.unlocked==null` (JSON `null` for "not an unlock item" vs JS
+  `undefined` for "field not even sent" — both now treated as "no badge", search rows send an
+  explicit `null` where Duty Drops rows omit the field entirely). `GlamSource.Mock` mirror
+  (`WebPreviewServer.cs`, gitignored) got its own `FakeCheckUnlocked()` — deterministic itemId-parity
+  fake, NOT a call to the real `UnlockCheckService` (that reads raw ClientStructs `PlayerState`/
+  `UIState` `Instance()` pointers, which don't exist in this standalone no-live-game process — same
+  hang-risk class as 1.0.19.0). This was a pre-existing gap for mount/minion too, not introduced by
+  1.0.57.0's new Orchestrion/Emote/Hairstyle checks — just never noticed until now.
+- **"warum open item? seit wann kann man notenrollen öffnen?"**: turned out not to be a bug — the
+  "Open item" button on these rows opens the MAP or SACK item (`sourceItemId`), never the
+  orchestrion roll itself. The real issue was the surrounding clutter making it look that way (next
+  point).
+- **"Treasure hunt zusammenfassen... könnte man hier auch kacheln machen wie dungeon, fates, deep
+  dungeon"**: two changes, confirmed via `AskUserQuestion` (dedupe + own tile, not dedupe alone).
+  - All `ItemSupplementSource`-driven "Obtained from: X" / "PilgrimsTraverse: Sack of Y" sources
+    (from the `LuminaSupplemental` library's own bundled dataset, not our CSVs — `PilgrimsTraverse`
+    is literally one of ITS enum values, rendered via the generic `{EnumName}: {itemName}` fallback
+    format) were `ItemSourceType.Other`. Reclassified to `ItemSourceType.TreasureHunt` — which
+    turned out to already have a complete, unused ImGui badge style (`ItemDetailWindow.cs`'s
+    `TypeStyles` dict: teal, "TREASURE HUNT" label) sitting dead since whenever that dict was
+    written, never wired up server-side until now. Web UI got a matching `.card.treasure` CSS
+    bucket (teal, same color family as ImGui) plus a CamelCase→spaced-uppercase label fix
+    (`srcType.replace(/([a-z])([A-Z])/g,'$1 $2')`) so it renders "TREASURE HUNT" not
+    "TREASUREHUNT". The existing coffer/trial-merge dedup at `BuildSources`'s "11b" step checked
+    `s.Type == ItemSourceType.Other` for these same rows — updated to `TreasureHunt` too, or that
+    merge would've silently stopped firing.
+  - `CollectSources.csv`'s Orchestrion entries (1028 of ~2300 rows, "Kind: SourceType - SourceText
+    (via FFXIV Collect)") are a same-purpose, strictly-worse fallback for items where the
+    LuminaSupplemental dataset above (or a direct Dungeon drop) already gives a concrete, clickable
+    source — that's exactly why item 33850 showed its own dungeon-drop and map/sack sources a
+    second/third time as vague text. Now skipped (`Kind == "Orchestrion" && hasConcreteLead`) once
+    a `Dungeon` or `TreasureHunt` source already exists for the item. Mount/Minion CollectSource
+    entries are untouched — no evidence of the same duplication there, no matching structural
+    detection to dedupe against.
+
+Verified live in the rebuilt Mock (`/api/item/33850`): 3 duplicate "(via FFXIV Collect)" rows gone,
+remaining 3 `Other`→`TreasureHunt` rows render as teal "TREASURE HUNT" tiles with working "Open
+item" buttons, search row for "33850" shows the green unlock check. Screenshot-confirmed via the
+Browser pane, not just curl'd JSON. `dotnet build` 0/0, `dotnet test` 54/54.
+
 ## Unlock check extended to Orchestrion Rolls + Emotes/Hairstyles (1.0.57.0)
 
 "minion, mount, notenrollen, emote, haare" — mount/minion unlock-check already existed

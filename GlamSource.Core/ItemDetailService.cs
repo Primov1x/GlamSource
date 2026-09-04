@@ -742,8 +742,14 @@ public sealed class ItemDetailService : IItemDetailService
                     ItemSupplementSource.Loot => $"Obtained from: {sourceItemName}",
                     _ => $"{supp.ItemSupplementSource}: {sourceItemName}"
                 };
+                // "könnte man hier auch kacheln machen wie dungeon, fates, deep dungeon" — every
+                // ItemSupplementSource value here (Loot, Gardening, PalaceOfTheDead, EurekaOrthos,
+                // PilgrimsTraverse, ...) means "you get this by opening/interacting with another
+                // concrete item" (SourceItemId is always set below) — exactly what the ImGui side's
+                // already-built TreasureHunt badge (teal, "TREASURE HUNT") was made for; it just
+                // never had anything routed to it before now.
                 results.Add(new ItemSourceDetail(
-                    ItemSourceType.Other, desc,
+                    ItemSourceType.TreasureHunt, desc,
                     null, null, null, null, null, null,
                     null, null, null, null, null, null, null, null, null, SourceItemId: supp.SourceItemId));
             }
@@ -1057,12 +1063,19 @@ public sealed class ItemDetailService : IItemDetailService
                 ShopUrl: shopUrl));
         }
 
-        // 8b. Minion/mount sources (FFXIV Collect, non-commercial use, attribution appreciated) â€”
-        // always shown additively, same reasoning as Mogstation above.
+        // 8b. Minion/mount/orchestrion sources (FFXIV Collect, non-commercial use, attribution
+        // appreciated) — additive fallback for items we have no other lead on. For Orchestrion
+        // rolls specifically this CSV (1028 of its ~2300 rows) overlaps heavily with the structural
+        // Dungeon/TreasureHunt detection above (LuminaSupplemental's own bundled dataset already
+        // covers most Deep Dungeon sacks/Timeworn Maps) — skip it once we already have a concrete,
+        // clickable lead, so "A Better Tomorrow Orchestrion Roll" doesn't show its own dungeon drop
+        // and map/sack sources a second and third time as vague "(via FFXIV Collect)" text.
+        var hasConcreteLead = results.Any(s => s.Type is ItemSourceType.Dungeon or ItemSourceType.TreasureHunt);
         if (_collectSources.TryGetValue(itemId, out var collectEntries))
         {
             foreach (var c in collectEntries)
             {
+                if (hasConcreteLead && c.Kind == "Orchestrion") continue;
                 results.Add(new ItemSourceDetail(
                     ItemSourceType.Other,
                     $"{c.Kind}: {c.SourceType} - {c.SourceText} (via FFXIV Collect)",
@@ -1175,7 +1188,7 @@ public sealed class ItemDetailService : IItemDetailService
         // verified cross-reference; safe because a coffer with a genuinely different source would
         // show its OWN card correctly if this item ever also has a second matching duty entry.
         var exchangeIdx = results.FindIndex(s => (s.Type == ItemSourceType.Trial || s.Type == ItemSourceType.Raid) && s.CfcRowIds != null);
-        var cofferIdx = results.FindIndex(s => s.Type == ItemSourceType.Other && s.Description.StartsWith("Obtained from: ", StringComparison.Ordinal) && s.SourceItemId != null);
+        var cofferIdx = results.FindIndex(s => s.Type == ItemSourceType.TreasureHunt && s.Description.StartsWith("Obtained from: ", StringComparison.Ordinal) && s.SourceItemId != null);
         if (exchangeIdx >= 0 && cofferIdx >= 0)
         {
             var exchange = results[exchangeIdx];

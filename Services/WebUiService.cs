@@ -59,6 +59,16 @@ public sealed class WebUiService : IDisposable
     // (already used by the ImGui window's hover-preview) instead of inventing a second path —
     // CharaView reads real per-slot overlay data the same way either caller feeds it.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<EquipmentSlotType, EquipmentSlot> _webPreviewGear = new();
+    // "die cached, lokal dann liegen, komprimiert halt" — icons are content-addressed by id (never
+    // change once loaded, same reasoning as the itemimage disk cache below), but every /api/icon/
+    // request was decoding the .tex file AND re-running PNG encoding from scratch even for an icon
+    // already served this session — the 7-day browser Cache-Control header only helps a REPEAT view,
+    // not the first render of a big list (search results, source cards) where dozens of distinct
+    // icons all miss it at once. In-memory only (not disk — icons are a few KB each, a session
+    // realistically touches a few hundred distinct ones, well under any budget worth persisting),
+    // unlike ItemImageService's wiki-portrait cache which needs disk + eviction (JPEGs, external
+    // network fetch, much larger).
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<uint, byte[]?> _iconPngCache = new();
     // ponytail: MJPEG stream session stats — was only logged (see StreamPreviewMjpeg's finally
     // block), meaning "is it smooth" required opening /xllog. Exposed here too so /api/preview3d/debug
     // answers it directly, live while streaming or from the last completed session.
@@ -489,7 +499,7 @@ public sealed class WebUiService : IDisposable
             {
                 var item = itemSheet?.GetRowOrDefault(directId);
                 object idResult = item is { } i
-                    ? new[] { new { id = directId, name = i.Name.ToString(), iconId = (uint)i.Icon } }
+                    ? new[] { new { id = directId, name = i.Name.ToString(), iconId = (uint)i.Icon, unlocked = UnlockCheckService.CheckUnlocked(_detail, directId) } }
                     : Array.Empty<object>();
                 return Json(idResult);
             }
@@ -497,7 +507,11 @@ public sealed class WebUiService : IDisposable
             int? Int(string key) => int.TryParse(query[key], out var v) ? v : null;
             var hits = (_search ??= new ItemSearchIndex(_detail.GameData))
                 .Search(q, query["slot"], query["job"], Int("ilvlmin"), Int("ilvlmax"), 60);
-            return Json(hits.Select(h => new { id = h.Id, name = h.Name, iconId = h.IconId, ilvl = h.ItemLevel }).ToArray());
+            // "dort fehlt auch unlocked status, also im item search" — same UnlockCheckService the
+            // single-item view and Duty Drops already use; null (serializes as JSON null, not
+            // omitted) for the vast majority of hits that aren't a mount/minion/orchestrion/emote/
+            // hairstyle unlock item, unlockBadge() on the client already treats null as "no badge".
+            return Json(hits.Select(h => new { id = h.Id, name = h.Name, iconId = h.IconId, ilvl = h.ItemLevel, unlocked = UnlockCheckService.CheckUnlocked(_detail, h.Id) }).ToArray());
         }
 
         // Duty Drops tab (doku TODO): list of duties with known drops, the one we're standing in,
@@ -619,6 +633,8 @@ public sealed class WebUiService : IDisposable
 
         if (method == "GET" && path.StartsWith("/api/icon/") && uint.TryParse(path["/api/icon/".Length..], out var iconId))
         {
+            if (_iconPngCache.TryGetValue(iconId, out var cachedPng))
+                return cachedPng == null ? ("404 Not Found", "text/plain", Encoding.UTF8.GetBytes("no icon")) : ("200 OK", "image/png", cachedPng);
             // Icons straight from the GAME data — xivapi's icon CDN is frozen and 404s on every
             // item newer than its snapshot (reported live: new weapons/gear showed no icon at all).
             try
@@ -642,13 +658,16 @@ public sealed class WebUiService : IDisposable
                         raw[dst] = bgra[src + 2]; raw[dst + 1] = bgra[src + 1]; raw[dst + 2] = bgra[src]; raw[dst + 3] = bgra[src + 3];
                     }
                 }
-                return ("200 OK", "image/png", PreviewRenderer.WritePngRgba(raw, w, h));
+                var png = PreviewRenderer.WritePngRgba(raw, w, h);
+                _iconPngCache[iconId] = png;
+                return ("200 OK", "image/png", png);
             }
             catch (Exception ex)
             {
                 // a handful of icons killed the connection outright (curl code 000, reported live
                 // as "icons fehlen wieder") — an unguarded decode exception tore the socket down
                 _log.Warning($"[WebUi] icon {iconId} failed: {ex.Message}");
+                _iconPngCache[iconId] = null; // cache the miss too — a bad icon id stays bad, no point re-decoding every request
                 return ("404 Not Found", "text/plain", Encoding.UTF8.GetBytes(ex.Message));
             }
         }

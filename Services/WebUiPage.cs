@@ -87,7 +87,10 @@ input[type=search]:focus{border-color:var(--accent)}
 .dgrid{max-width:none;flex-direction:row;flex-wrap:wrap;margin-top:6px}
 .dgrid .row{width:calc(50% - 4px)}
 #dutydrops{max-height:460px;overflow-y:auto;padding-right:4px}
-.cards{display:flex;flex-direction:column;gap:14px;margin-top:16px}
+/* "die kacheln könnte man besser gestalten, anstatt so eine nach der anderen" — was flex-column,
+   cards block-stacked full-width one under another. auto-fill/minmax needs no breakpoints: as many
+   ~260px columns as fit, back to a single column once the panel's too narrow for two. */
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;margin-top:16px}
 .card{background:var(--panel);border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:10px;padding:14px 16px;box-shadow:0 2px 10px rgba(0,0,0,.35)}
 .card h3{display:flex;align-items:center;gap:8px;font-size:14px;margin-bottom:8px}
 .badge{font-size:10px;font-weight:700;letter-spacing:1px;padding:3px 10px;border-radius:99px;color:#fff;background:#3c4560}
@@ -95,6 +98,7 @@ input[type=search]:focus{border-color:var(--accent)}
 .card.vendor{border-left-color:#5c6cc0}.card.vendor .badge{background:#2c3170}
 .card.quest{border-left-color:#4ecb5e}.card.quest .badge{background:#1c5a24}
 .card.duty{border-left-color:#e05555}.card.duty .badge{background:#5c1c1c}
+.card.treasure{border-left-color:#33cccc}.card.treasure .badge{background:#0d3333}
 table{width:100%;border-collapse:collapse;margin-top:6px}
 td,th{padding:5px 8px;text-align:left;font-size:13px}
 tr:nth-child(even) td{background:rgba(255,255,255,.025)}
@@ -708,7 +712,7 @@ async function runSearch(){
   box.innerHTML=`<div class="empty"><span class="spinner"></span>${t('searching')}</div>`;
   const r=await fetch('/api/search?'+p).then(r=>r.json());
   box.style.display='';$('#resback').style.display='none';
-  box.innerHTML=r.length?r.map(x=>`<div class="row" data-item="${x.id}" tabindex="0" role="button" onclick="openItem(${x.id})">${img(x.iconId,28)}${rowText(`${esc(x.name)}${x.ilvl?`<span class="ilvl">iLvl ${x.ilvl}</span>`:''}`,x.id)}<img class="rowpreview" src="/api/itemimage/${x.id}" loading="lazy" onerror="this.remove()"></div>`).join(''):`<div class="empty">${t('no_items')}</div>`;
+  box.innerHTML=r.length?r.map(x=>`<div class="row" data-item="${x.id}" tabindex="0" role="button" onclick="openItem(${x.id})">${unlockBadge(x)}${img(x.iconId,28)}${rowText(`${esc(x.name)}${x.ilvl>1?`<span class="ilvl">iLvl ${x.ilvl}</span>`:''}`,x.id)}<img class="rowpreview" src="/api/itemimage/${x.id}" loading="lazy" onerror="this.remove()"></div>`).join(''):`<div class="empty">${t('no_items')}</div>`;
   updateOverlayCompactness();
   if(r.length)annotateBulkPrices(box);
 }
@@ -800,7 +804,7 @@ $('#dq').addEventListener('input',renderDutyList);
 // tooltip keeps it readable for screen readers and on hover. Sits BEFORE the item icon (own flex
 // child in the row, not appended after the name) — "davor das icon".
 const unlockBadge=x=>{
-  if(x.unlocked===undefined)return'';
+  if(x.unlocked==null)return''; // == covers both undefined (field absent) and JSON null (explicit "no check applies")
   const ok=x.unlocked;
   const d=ok?'M5 13l4 4L19 7':'M6 6l12 12M18 6L6 18';
   return `<svg class="unlockicon" viewBox="0 0 24 24" width="15" height="15"><title>${ok?t('unlocked_yes'):t('unlocked_no')}</title><path fill="none" stroke="${ok?'var(--success)':'var(--danger)'}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="${d}"/></svg>`;
@@ -813,8 +817,8 @@ const unlockBadge=x=>{
 const rowPrice=id=>`<div class="rowprice" data-item="${id}"></div>`;
 const rowText=(nameHtml,id)=>`<div class="rowtext"><div class="rowname">${nameHtml}</div>${rowPrice(id)}</div>`;
 const featSection=list=>`<div class="dsec" style="margin-top:0"><div class="dsech">${t('duty_featured')}</div><div class="results dgrid">${list.map(x=>`<div class="row" data-item="${x.itemId}" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${unlockBadge(x)}${img(x.iconId,28)}${rowText(`${esc(x.name)}<span class="ilvl">${x.kind==='Mount'?t('mount'):t('minion')}</span>`,x.itemId)}<img class="rowpreview" src="/api/itemimage/${x.itemId}" loading="lazy" onerror="this.remove()"></div>`).join('')}</div></div>`;
-const previewRows=list=>list.map(x=>`<div class="row" data-item="${x.itemId}" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${img(x.iconId,28)}${rowText(`${esc(x.name)}${x.itemLevel?`<span class="ilvl">iLvl ${x.itemLevel}</span>`:''}`,x.itemId)}<img class="rowpreview" src="/api/itemimage/${x.itemId}" loading="lazy" onerror="this.remove()"></div>`).join('');
-const dropRows=list=>list.map(x=>`<div class="row" data-item="${x.itemId}" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${img(x.iconId,28)}${rowText(`${esc(x.name)}${x.itemLevel?`<span class="ilvl">iLvl ${x.itemLevel}</span>`:''}`,x.itemId)}</div>`).join('');
+const previewRows=list=>list.map(x=>`<div class="row" data-item="${x.itemId}" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${img(x.iconId,28)}${rowText(`${esc(x.name)}${x.itemLevel>1?`<span class="ilvl">iLvl ${x.itemLevel}</span>`:''}`,x.itemId)}<img class="rowpreview" src="/api/itemimage/${x.itemId}" loading="lazy" onerror="this.remove()"></div>`).join('');
+const dropRows=list=>list.map(x=>`<div class="row" data-item="${x.itemId}" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${img(x.iconId,28)}${rowText(`${esc(x.name)}${x.itemLevel>1?`<span class="ilvl">iLvl ${x.itemLevel}</span>`:''}`,x.itemId)}</div>`).join('');
 async function selectDuty(id){
   dutySelected=id;
   const nav=(dutyList||[]).find(y=>y.id===id);
@@ -904,7 +908,10 @@ function updateOverlayCompactness(){
 function buildItemHtml(d,openFn='openItem'){
   // "ItemID interessiert spieler nicht" — dropped from the header (still in the URL/search box for
   // anyone who does want it). Unlock status uses the same icon as the list rows now, not text.
-  let h=`<div class="header">${img(d.iconId,48)}<div><h2 class="name">${esc(d.name)}${unlockBadge(d)}</h2><div class="meta">iLvl ${d.itemLevel}${d.isMarketable?` · ${t('marketable')}`:''}${d.setName?` · ${t('set_label')}: ${esc(d.setName)}`:''}</div>${d.isEquippable?`<button class="act" style="margin-top:4px" title="${t('apply_item_tt')}" onclick="glamourerPost('/api/action/glamourer/item/${d.itemId}',this)">${t('apply_btn')}</button>`:''}</div></div><div class="preview"><img src="/api/itemimage/${d.itemId}" loading="lazy" onerror="this.parentElement.style.display='none'"></div>`;
+  // iLvl 1 = pure-glamour/cosmetic item, no real stats — "lvl 1 items" showing that number is
+  // meaningless noise, drop it (same >1 threshold now used by every row's iLvl badge too).
+  const metaParts=[d.itemLevel>1?`iLvl ${d.itemLevel}`:null,d.isMarketable?t('marketable'):null,d.setName?`${t('set_label')}: ${esc(d.setName)}`:null].filter(Boolean);
+  let h=`<div class="header">${img(d.iconId,48)}<div><h2 class="name">${esc(d.name)}${unlockBadge(d)}</h2><div class="meta">${metaParts.join(' · ')}</div>${d.isEquippable?`<button class="act" style="margin-top:4px" title="${t('apply_item_tt')}" onclick="glamourerPost('/api/action/glamourer/item/${d.itemId}',this)">${t('apply_btn')}</button>`:''}</div></div><div class="preview"><img src="/api/itemimage/${d.itemId}" loading="lazy" onerror="this.parentElement.style.display='none'"></div>`;
   if((d.setMembers??[]).length){
     h+=`<div class="tbl">${t('rest_of_set')}</div><div style="display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 14px">`;
     for(const m of d.setMembers)h+=`<div class="row" style="width:auto" onclick="${openFn}(${m.itemId})">${img(m.iconId,24)}<span>${esc(m.name)}</span></div>`;
@@ -980,8 +987,11 @@ function renderSource(group,itemId,openFn='openItem'){
   // ponytail: named srcType, not t — a local "t" here shadows the global t() i18n function used
   // below (live crash: "TypeError: t is not a function" the moment any t('key') call ran)
   const srcType=(s.type??'').toString();
-  const cls=/craft/i.test(srcType)?'crafted':/vendor|shop/i.test(srcType)?'vendor':/quest/i.test(srcType)?'quest':/trial|raid|dungeon/i.test(srcType)?'duty':'';
-  let h=`<div class="card ${cls}"><h3><span class="badge">${typeIcon(cls)} ${esc(srcType).toUpperCase()}</span> ${esc(s.description??'')}</h3>`;
+  const cls=/craft/i.test(srcType)?'crafted':/vendor|shop/i.test(srcType)?'vendor':/quest/i.test(srcType)?'quest':/trial|raid|dungeon/i.test(srcType)?'duty':/treasurehunt/i.test(srcType)?'treasure':'';
+  // "TreasureHunt" etc. are PascalCase enum names — space them out before uppercasing so the badge
+  // reads "TREASURE HUNT", not "TREASUREHUNT".
+  const typeLabel=srcType.replace(/([a-z])([A-Z])/g,'$1 $2');
+  let h=`<div class="card ${cls}"><h3><span class="badge">${typeIcon(cls)} ${esc(typeLabel).toUpperCase()}</span> ${esc(s.description??'')}</h3>`;
   // same jump ImGui's ItemDetailWindow offers: coffer / "Retired — replaced by Augmented X" -> that item
   if(s.sourceItemId)h+=`<button class="act" onclick="${openFn}(${s.sourceItemId})">${I18N.open_item[lang]}</button> `;
   if(/craft/i.test(srcType))h+=`<button class="act" onclick="post('/api/action/craftlog/${itemId}')">${t('open_craftlog')}</button>`;
