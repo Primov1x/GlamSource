@@ -998,8 +998,10 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
     // "Auf mich anwenden unter das vorschaubild mittig und als zweiter button" — moved out of the
     // top toolbar (was competing with Pin/Shopping-list there) to sit right under the preview,
     // centered, where the outfit you're about to act on is actually visible. Short labels per
-    // request: "Glamen" (apply via Glamourer) / "Vorschau" (queue into the vanilla Fitting Room —
-    // it IS a preview, just an in-game one).
+    // request: "Glamen" (apply via Glamourer) / "Vorschau" (see QueueTryOnPreview below — used to
+    // Fitting-Room-queue everything, now only weapons; body/armor already show live in the
+    // in-plugin CharaView preview above this button, no Fitting Room needed for those anymore —
+    // "wenn ich preview teste will ich das im plugin sehen und nicht im fitting room (außer waffen)").
     private void DrawApplyButtons()
     {
         var glamourerInstalled = IsGlamourerInstalled();
@@ -1032,7 +1034,7 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
                 QueueTryOnPreview();
         }
         if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-            ImGui.SetTooltip(Loc.T("Queue each slot into the vanilla Fitting Room. Weapons skipped."));
+            ImGui.SetTooltip(Loc.T("Shows live in the preview above already. Only weapons (no in-plugin preview yet) get queued into the vanilla Fitting Room."));
     }
 
     private Vector2? _previewDragLast;
@@ -1279,13 +1281,19 @@ private void ApplyTargetGlamourToSelf()
         [FieldOffset(0x366)] public bool SaveDeleteOutfit;
     }
 
+    // "wenn ich preview teste will ich das im plugin sehen und nicht im fitting room (außer waffen)"
+    // — the plugin's own CharaView preview (PreviewWindow, above this button) already tracks
+    // _snapshot live every frame (SyncLiveTargetSnapshot), no button press needed for body/armor
+    // slots. Weapons are the one exception: in-plugin weapon preview was parked this session (21
+    // attempts, see doku/character-preview.md) — the vanilla Fitting Room is still the only place
+    // to preview those, so this button now queues ONLY weapon slots into it instead of everything.
     private unsafe void QueueTryOnPreview()
     {
         _tryOnQueue.Clear();
         var queued = 0;
         foreach (var slot in _snapshot)
         {
-            if (slot.Slot == EquipmentSlotType.MainHand || slot.Slot == EquipmentSlotType.OffHand)
+            if (slot.Slot != EquipmentSlotType.MainHand && slot.Slot != EquipmentSlotType.OffHand)
                 continue;
 
             var itemId = slot.GlamourItemId ?? slot.ActualItemId;
@@ -1297,7 +1305,7 @@ private void ApplyTargetGlamourToSelf()
 
         if (queued == 0)
         {
-            _lastPreviewStatus = "Nothing to preview.";
+            _lastPreviewStatus = "No weapon to preview — everything else already shows live above.";
             return;
         }
 
@@ -1307,7 +1315,7 @@ private void ApplyTargetGlamourToSelf()
             _frameworkHooked = true;
         }
         _tryOnDelay = 0;
-        _lastPreviewStatus = $"Queued {queued} slots — check Fitting Room.";
+        _lastPreviewStatus = $"Queued {queued} weapon slot(s) — check Fitting Room.";
     }
 
     private unsafe void OnFrameworkDrainTryOn(IFramework framework)

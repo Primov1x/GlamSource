@@ -72,8 +72,8 @@ public static class Loc
         ["Copy this snapshot (glamour where set, else actual) to your own character.\nWeapons are skipped."] =
             "Diesen Schnappschuss (Glamour wo gesetzt, sonst Original) auf den eigenen Charakter übertragen.\nWaffen werden ausgelassen.",
         ["Fitting Room"] = "Anprobe",
-        ["Queue each slot into the vanilla Fitting Room. Weapons skipped."] =
-            "Jeden Slot in die normale Anprobe einreihen. Waffen werden ausgelassen.",
+        ["Shows live in the preview above already. Only weapons (no in-plugin preview yet) get queued into the vanilla Fitting Room."] =
+            "Wird schon live in der Vorschau oben gezeigt. Nur Waffen (noch keine Vorschau im Plugin) werden in die normale Anprobe eingereiht.",
         ["Preview initializing..."] = "Vorschau wird initialisiert...",
         ["Waiting for texture..."] = "Warte auf Textur...",
         ["Drag: rotate · Right-drag: orbit · Wheel: zoom to cursor"] =
