@@ -230,6 +230,8 @@ public class CraftingCostServiceTests
         public System.Threading.Tasks.Task<IReadOnlyList<DutyCoffer>> GetDutyCoffersAsync(uint cfcId)
             => System.Threading.Tasks.Task.FromResult<IReadOnlyList<DutyCoffer>>(Array.Empty<DutyCoffer>());
         public uint? FindDutyByTerritory(uint territoryTypeId) => null;
+        public uint? MountRowIdForItem(uint itemId) => null;
+        public uint? CompanionRowIdForItem(uint itemId) => null;
     }
 
     private sealed class FakeUniversalisService : IUniversalisService

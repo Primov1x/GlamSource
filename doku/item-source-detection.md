@@ -1,5 +1,38 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Pulled external work (1.0.25.0–1.0.41.0), fixed a broken build + a reintroduced Mock hang (1.0.42.0)
+
+`git pull` brought in 18 commits (1.0.25.0 → v1.0.41.0, not documented in this file by whoever
+made them) done in parallel elsewhere on this same repo: Deep Dungeon support in Duty Drops
+(ContentType 21, per-floor dedup), Accursed Hoard sack contents (expandable category rows, new
+`HoardSackContents.csv`), coffer/sack contents shown on item detail, trade-in items as a proper
+row list (location, cost, dedup by shop), special-currency source detection, and mount/minion
+"already unlocked" status (`Services/UnlockCheckService.cs`, new — `PlayerState`/`UIState` native
+unlock checks) shown in both ImGui and the web UI. Clean fast-forward merge, no conflicts with
+this session's work.
+
+Two things needed fixing after the pull, both caught by the normal build/test routine, not
+observed live:
+
+- **Build was broken**: `IItemDetailService` gained `MountRowIdForItem`/`CompanionRowIdForItem`
+  (feeding the new unlock check), but `GlamSource.Core.Tests`'s hand-written
+  `FakeItemDetailService` was never updated to implement them — `dotnet build` failed with
+  CS0535. Their CI stayed green throughout because it apparently doesn't build the Tests project
+  (or not the same way `dotnet build` from the repo root does) — worth checking `.github/workflows/build.yml`
+  if this keeps happening. Fixed: two one-line stub implementations added, matching the fake's
+  existing style.
+- **Reintroduced the exact 1.0.19.0 Mock-hang bug, via a new code path**: `UnlockCheckService.CheckUnlocked`
+  calls `PlayerState.Instance()`/`UIState.Instance()` — the same raw ClientStructs `Service<T>`
+  pattern that hung Mock before (see 1.0.19.0 above) — now called unconditionally in
+  `ItemDetailWindow.DrawItemHeader` for any mount/minion item shown. Same fix as before: guarded
+  on `_plugin == null`. `GlamSourceShellWindow.cs`'s own call site (Duty Drops row unlock badge)
+  was NOT touched — that class is never constructed in Mock at all (Mock has its own hand-rolled
+  `MockShellWindow`), so `_plugin` can never be null there; guarding it would be a dead check
+  against an impossible case.
+
+Verified: `dotnet build` 0/0 (main + Mock), `dotnet test` 54/54. Mock-hang fix not live-verified
+(same native-window-automation limitation as 1.0.19.0/1.0.22.0) — flagged for the user to confirm.
+
 ## Security: CSRF + wildcard CORS on the Web UI's local HTTP server (1.0.23.0)
 
 Requested security review found one real issue in `WebUiService` (port 23424, opt-in, off by

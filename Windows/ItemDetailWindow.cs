@@ -385,8 +385,11 @@ public class ItemDetailWindow : Window, IDisposable
         var metaLine = $"{Loc.T("Item ID")} {detail.ItemId}  \u00b7  {Loc.T("iLvl")} {detail.ItemLevel}";
         if (!string.IsNullOrEmpty(detail.SetName))
             metaLine += $"  \u00b7  {Loc.T("Set")}: {detail.SetName}";
-        // "hat man das mount oder minion schon unlocked" \u2014 null unless the item itself is one
-        var unlocked = UnlockCheckService.CheckUnlocked(_detailService, detail.ItemId);
+        // "hat man das mount oder minion schon unlocked" \u2014 null unless the item itself is one.
+        // ponytail: same Mock-hang class as CheckUnlockStatus (1.0.19.0) \u2014 PlayerState.Instance()/
+        // UIState.Instance() inside UnlockCheckService are raw ClientStructs Service<T> calls, hang
+        // outside a real ffxiv_dx11.exe. _plugin is only ever set by the real Plugin.cs.
+        var unlocked = _plugin == null ? null : UnlockCheckService.CheckUnlocked(_detailService, detail.ItemId);
         if (unlocked.HasValue)
             metaLine += unlocked.Value ? $"  \u00b7  \u2713 {Loc.T("Unlocked")}" : $"  \u00b7  {Loc.T("Not unlocked")}";
         ImGui.TextDisabled(metaLine);
