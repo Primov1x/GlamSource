@@ -1019,9 +1019,14 @@ function buildItemHtml(d,openFn='openItem'){
     byType.get(ty).push(group);
   }
   const sortedTypes=[...byType.keys()].sort((a,b)=>{const ia=catOrder.indexOf(a),ib=catOrder.indexOf(b);return(ia<0?99:ia)-(ib<0?99:ib)});
+  // "maybe als Coffer sogar nen Icon... anstatt nur text" — a small chest glyph in front of the
+  // Coffer category header, same brown #8c5926 the individual Coffer cards' left border/badge
+  // already use (see .card.coffer above). Scoped to just this one type, the one actually asked
+  // for — the other 21 catOrder entries stay text-only headers.
+  const catIcon={Coffer:'<svg width="13" height="13" viewBox="0 0 24 24" style="vertical-align:-2px;margin-right:4px" fill="none" stroke="#8c5926" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h18v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M3 8l2-4h14l2 4"/><path d="M10 12h4"/></svg>'};
   for(const ty of sortedTypes){
     const catLabel=ty.replace(/([a-z])([A-Z])/g,'$1 $2');
-    if(sortedTypes.length>1)h+=`<div class="tbl" style="margin-top:12px">${esc(catLabel)}</div>`;
+    if(sortedTypes.length>1)h+=`<div class="tbl" style="margin-top:12px">${catIcon[ty]??''}${esc(catLabel)}</div>`;
     h+='<div class="cards">';
     for(const group of byType.get(ty))h+=renderSource(group,d.itemId,openFn);
     h+='</div>';

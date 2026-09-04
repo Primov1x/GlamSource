@@ -1,5 +1,19 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Coffer category header gets a small chest icon (1.0.74.0)
+
+"maybe als Coffer sogar nen Icon... anstatt nur text" — the per-type category headers above a
+source-type's cards (Dungeon/Trial/Coffer/... — same header the "unübersichtlich" multi-type-card
+grouping comment above `catOrder` describes) were plain uppercase text for all 22 types. Added a
+small inline SVG chest glyph in front of the label, but scoped to just Coffer — the one actually
+asked for, colored the same `#8c5926` brown the individual Coffer cards' left border/badge already
+use (`.card.coffer`), so it reads as "this brown = coffer" consistently between the header and the
+cards under it. The other 21 `catOrder` types stay text-only.
+
+Verified: `dotnet build` 0/0, `dotnet test` 54/54. Live (Mock, Web UI): item 6177 "Bluebird" has both
+a Dungeon and a Coffer source — screenshot confirms the chest icon sits before "COFFER" only, not
+before "DUNGEON".
+
 ## Duty-drops: Triple Triad cards join the top "Mounts & minions" section (1.0.73.0)
 
 "bei dungeons bitte 'karten + minions' nach oben schieben, boss unspezifisch - also maybe einfach
