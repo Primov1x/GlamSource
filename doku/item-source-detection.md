@@ -1,5 +1,25 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## In-duty context: Coffer cards for the SAME duty also suppressed (1.0.64.0)
+
+"Bitte nur auflisten wo man es zusätzlich bekommt, nicht die Quelle die man schon öffnet, indem
+Fall heaven on high" — 1.0.63.0's Dungeon-card filter (drop every Dungeon-type card when
+`openFn==='openDutyItem'`) didn't cover Coffer-type cards, so an item reached by drilling into a
+Heaven-on-High sack's own contents still showed "HeavenOnHigh: Gold-haloed Sack" / "HeavenOnHigh:
+Silver-haloed Sack" as its own sources — circular, not "additional" info. An Oizys-sourced entry on
+the same item genuinely IS additional and should stay.
+
+Coffer sources carry no `cfcRowId` (unlike Dungeon ones) to match precisely against — this compares
+the normalized `ItemSupplementSource`-derived description prefix ("HeavenOnHigh") against the
+currently-selected duty's own display name ("Heaven-on-High") with all punctuation/case stripped
+from both. Deliberately a fail-safe heuristic (a non-match just leaves the card showing, same as
+before this fix) rather than something load-bearing — exact CFC-id matching would need mapping each
+`ItemSupplementSource` enum value to its Deep Dungeon's real CFC id(s), not done here.
+
+Live-verified via the real click path (Duty Drops → Heaven-on-High → sack contents → Hunting Hawk),
+not just a direct JS-console call: HeavenOnHigh's own 2 Coffer cards dropped, Oizys' 2 Coffer cards
++ the Vendor (Item Exchange) card stayed. `dotnet build` 0/0, `dotnet test` 54/54.
+
 ## Category grouping, Deep Dungeon sacks correctly typed as Coffer not TreasureHunt (1.0.63.0)
 
 Three fixes from one live testing round (a minion with 10 near-duplicate source cards):

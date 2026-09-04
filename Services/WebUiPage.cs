@@ -954,8 +954,23 @@ function buildItemHtml(d,openFn='openItem'){
   // whole floor-range's worth of sub-duties). Only drop it in this in-duty-browsing context; the
   // standalone item-detail view (search tab) still needs it, nothing else says where the item drops
   // there.
+  // "nur auflisten wo man es zusätzlich bekommt, nicht die Quelle die man schon öffnet" — same idea
+  // for Coffer-type cards (Deep Dungeon hoard sacks): if you reached this item by drilling into a
+  // Heaven-on-High sack's contents, a "HeavenOnHigh: Gold-haloed Sack" card is circular, not
+  // additional info — an Oizys one genuinely is. Coffer sources carry no cfcRowId (unlike Dungeon
+  // ones) to match precisely against, so this compares the normalized ItemSupplementSource-derived
+  // prefix ("HeavenOnHigh") against the currently-selected duty's own display name
+  // ("Heaven-on-High") with punctuation/case stripped from both — good enough for a filter that
+  // fails safe (just doesn't suppress) rather than something load-bearing.
+  const norm=s=>(s||'').replace(/[^a-z0-9]/gi,'').toLowerCase();
+  const curDutyName=dutyList?.find(x=>x.id===dutySelected)?.name;
+  const curDutyNorm=curDutyName?norm(curDutyName):null;
   const srcList=openFn==='openDutyItem'
-    ? (d.sources??[]).filter(s=>s.type!=='Dungeon')
+    ? (d.sources??[]).filter(s=>{
+        if(s.type==='Dungeon')return false;
+        if(s.type==='Coffer'&&curDutyNorm&&norm((s.description??'').split(':')[0]).startsWith(curDutyNorm))return false;
+        return true;
+      })
     : (d.sources??[]);
   // ponytail: same shop/vendor sold from several NPC locations used to render as one full repeated
   // card per location ("unübersichtlich" — a shop with 3 vendor spots meant 3 near-identical cards).
