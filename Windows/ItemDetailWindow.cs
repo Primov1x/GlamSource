@@ -382,7 +382,8 @@ public class ItemDetailWindow : Window, IDisposable
 
         ImGui.BeginGroup();
         ImGui.Text(detail.Name);
-        var metaLine = $"{Loc.T("Item ID")} {detail.ItemId}  \u00b7  {Loc.T("iLvl")} {detail.ItemLevel}";
+        // "ItemID interessiert spieler nicht" \u2014 dropped from the header, matches the web UI.
+        var metaLine = $"{Loc.T("iLvl")} {detail.ItemLevel}";
         if (!string.IsNullOrEmpty(detail.SetName))
             metaLine += $"  \u00b7  {Loc.T("Set")}: {detail.SetName}";
         // "hat man das mount oder minion schon unlocked" \u2014 null unless the item itself is one.

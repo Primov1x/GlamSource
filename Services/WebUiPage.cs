@@ -858,12 +858,16 @@ async function selectDuty(id){
     const feat=[...new Map(coffers.flatMap(c=>c.items).filter(x=>x.kind).map(x=>[x.itemId,x])).values()];
     if(feat.length)$('#dutydrops').insertAdjacentHTML('beforeend',featSection(feat));
   }
+  // "check jede duty nach einheitlichkeit... bosse einklappbar, truhen voll da" — same collapse
+  // pattern as the boss sections above, one open by default, applies here too (a big Garland dump
+  // is a wall of "Truhe 1"/"Truhe 2"/... otherwise).
   let c='';
   coffers.forEach((cf,i)=>{
     const placed=cf.fightNo<0;
-    const map=placed&&d.mapId?` <button class="act" onclick="post('/api/action/map?territory=${d.territoryTypeId}&map=${d.mapId}&x=${cf.x}&y=${cf.y}')">${t('map')}</button>`:'';
+    const map=placed&&d.mapId?` <button class="act" onclick="event.stopPropagation();post('/api/action/map?territory=${d.territoryTypeId}&map=${d.mapId}&x=${cf.x}&y=${cf.y}')">${t('map')}</button>`:'';
     const label=placed?`${t('chest')} ${i+1} · (${cf.x.toFixed(1)}, ${cf.y.toFixed(1)})`:`${t('boss')} ${cf.fightNo+1} · ${t('chest')}`;
-    c+=`<div class="dsub">${label}${map}</div><div class="results dgrid">${dropRows(cf.items)}</div>`;
+    const cbid=`chestbody_${id}_${i}`,cOpen=i===0;
+    c+=`<div class="dsub" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center" onclick="const e=document.getElementById('${cbid}');const show=e.style.display==='none';e.style.display=show?'':'none';this.querySelector('.dsecarrow').textContent=show?'▾':'▸'"><span>${label}</span><span>${map}<span class="dsecarrow">${cOpen?'▾':'▸'}</span></span></div><div id="${cbid}" style="display:${cOpen?'':'none'}"><div class="results dgrid">${dropRows(cf.items)}</div></div>`;
   });
   $('#dutydrops').insertAdjacentHTML('beforeend',`<div class="dsec"${hasLocal?'':' style="margin-top:0"'}><div class="dsech">${hasLocal?t('duty_coffers'):t('duty_garland_drops')}</div>${c}</div>`);
   annotateBulkPrices($('#dutydrops'));
@@ -898,7 +902,9 @@ function updateOverlayCompactness(){
 // to #detail) or 'showItemPanel' (Charakter tab, writes to #chardetail). Set-member chips need to
 // call back into whichever panel is actually showing, not always the Suche one.
 function buildItemHtml(d,openFn='openItem'){
-  let h=`<div class="header">${img(d.iconId,48)}<div><h2 class="name">${esc(d.name)}</h2><div class="meta">${t('item_id')} ${d.itemId} · iLvl ${d.itemLevel}${d.isMarketable?` · ${t('marketable')}`:''}${d.setName?` · ${t('set_label')}: ${esc(d.setName)}`:''}${d.unlocked===true?` · ✓ ${t('unlocked_yes')}`:d.unlocked===false?` · ${t('unlocked_no')}`:''}</div>${d.isEquippable?`<button class="act" style="margin-top:4px" title="${t('apply_item_tt')}" onclick="glamourerPost('/api/action/glamourer/item/${d.itemId}',this)">${t('apply_btn')}</button>`:''}</div></div><div class="preview"><img src="/api/itemimage/${d.itemId}" loading="lazy" onerror="this.parentElement.style.display='none'"></div>`;
+  // "ItemID interessiert spieler nicht" — dropped from the header (still in the URL/search box for
+  // anyone who does want it). Unlock status uses the same icon as the list rows now, not text.
+  let h=`<div class="header">${img(d.iconId,48)}<div><h2 class="name">${esc(d.name)}${unlockBadge(d)}</h2><div class="meta">iLvl ${d.itemLevel}${d.isMarketable?` · ${t('marketable')}`:''}${d.setName?` · ${t('set_label')}: ${esc(d.setName)}`:''}</div>${d.isEquippable?`<button class="act" style="margin-top:4px" title="${t('apply_item_tt')}" onclick="glamourerPost('/api/action/glamourer/item/${d.itemId}',this)">${t('apply_btn')}</button>`:''}</div></div><div class="preview"><img src="/api/itemimage/${d.itemId}" loading="lazy" onerror="this.parentElement.style.display='none'"></div>`;
   if((d.setMembers??[]).length){
     h+=`<div class="tbl">${t('rest_of_set')}</div><div style="display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 14px">`;
     for(const m of d.setMembers)h+=`<div class="row" style="width:auto" onclick="${openFn}(${m.itemId})">${img(m.iconId,24)}<span>${esc(m.name)}</span></div>`;

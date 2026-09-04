@@ -1,5 +1,23 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Web: Garland chests collapsible too, Item ID dropped from header (1.0.55.0)
+
+Two quick follow-ups. **"check jede duty nach einheitlichkeit... bosse einklappbar, truhen voll
+da"**: the Garland-Tools coffer list (below the boss sections) wasn't collapsible at all — a big
+dump was a wall of "Chest 1"/"Chest 2"/... one after another (also the "was das AI slop hier"
+complaint about that section). Same collapse pattern as bosses now: first chest open, rest behind
+a click, map button gets `stopPropagation` so it doesn't also trigger the toggle.
+
+**"ItemID interessiert spieler nicht"**: dropped from both the web item-detail header and ImGui's
+(`Loc.T("Item ID")` line) — still visible in the URL/search box for the rare case someone does
+want it. While in there: the single-item header's unlock status (mount/minion) was still the old
+text badge, not the SVG icon from 1.0.52.0 — now uses the same `unlockBadge()` for consistency.
+
+`dotnet build` 0/0, `dotnet test` 54/54. Verified live via mock: item header shows `iLvl 1 ·
+marketable` with no ID; Toto-Rak's single Garland chest renders open+collapsible (couldn't verify
+the "2nd chest starts collapsed" case live — no local duty in this data snapshot has 2+ Garland
+chests to test against — but it's the identical, already-proven boss-collapse code shape).
+
 ## Critical: difficulty/Deep-Dungeon/Unobtainable detection silently broke on non-English clients (1.0.54.0)
 
 Live report chain, starting from "Fatal" vs "Unreal" translation check, ended up finding a much
