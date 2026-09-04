@@ -1,5 +1,24 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## ImGui/Web: Apply/Preview buttons moved under the character preview, shorter labels (1.0.56.0)
+
+"'Auf mich anwenden' unter das Vorschaubild mittig und als zweiter Button" — the two action
+buttons (Apply to Self, Fitting Room) lived in the top toolbar of the Character tab, competing for
+space with Pin/Shopping-list/Clear-Recent. Moved to their own centered row directly under the
+inline 3D preview image (new `DrawApplyButtons()`, called from `DrawInlinePreview()`'s end) — same
+`ImGui.SetCursorPosX` centering approach the preview image itself already uses. New short labels
+per the user's own suggestion: "Glamen" (apply via Glamourer) / "Vorschau" (queue into the vanilla
+Fitting Room — it IS a preview, just an in-game one) replacing the wider "Auf mich anwenden"/
+"Anprobe". New `Loc.cs` keys `Apply`/`Preview` (English fallback "Apply"/"Preview", German
+"Glamen"/"Vorschau") — the old `["Apply to Self"]`/`["Fitting Room"]` keys stay (still used in
+tooltip text). Web UI's single equivalent button (`apply_btn`, no separate Fitting-Room action
+exists there) relabeled to match; its position in the 3D-preview toolbar row was already directly
+below the preview, left as-is rather than risk the multi-purpose row (spin/reset/pose/emote
+controls share it).
+
+`dotnet build` 0/0, `dotnet test` 54/54. Not click-verified (no native ImGui automation available)
+— flagged for the user to confirm the centering looks right at their own window width.
+
 ## Web: Garland chests collapsible too, Item ID dropped from header (1.0.55.0)
 
 Two quick follow-ups. **"check jede duty nach einheitlichkeit... bosse einklappbar, truhen voll

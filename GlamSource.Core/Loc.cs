@@ -53,6 +53,10 @@ public static class Loc
         ["Live from target"] = "Live vom Ziel",
         ["Click somebody or pick from Recent"] = "Jemanden anklicken oder aus dem Verlauf wählen",
         ["Clear Recent"] = "Verlauf löschen",
+        // short button labels, centered under the preview image (moved out of the toolbar) — user
+        // proposed these two directly ("Vorschau" und "Glamen") over the old, wider toolbar labels.
+        ["Apply"] = "Glamen",
+        ["Preview"] = "Vorschau",
         ["Apply to Self"] = "Auf mich anwenden",
         ["Requires Glamourer plugin"] = "Benötigt das Glamourer-Plugin",
         ["Copy this snapshot (glamour where set, else actual) to your own character.\nWeapons are skipped."] =

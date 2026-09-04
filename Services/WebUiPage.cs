@@ -313,7 +313,7 @@ const I18N={
   set_label:{en:'Set',de:'Set'},
   bags:{en:'Bags',de:'Taschen'},
   saddlebag:{en:'Saddlebag',de:'Satteltasche'},
-  apply_btn:{en:'Apply to Self',de:'Auf mich anwenden'},
+  apply_btn:{en:'Apply',de:'Glamen'}, // short label to match the ImGui toolbar (moved+renamed there too)
   apply_tt:{en:'Put the shown outfit on your own character via Glamourer (weapons skipped)',de:'Gezeigtes Outfit per Glamourer auf den eigenen Charakter legen (Waffen ausgenommen)'},
   apply_item_tt:{en:'Put this piece on your own character via Glamourer',de:'Dieses Teil per Glamourer auf den eigenen Charakter legen'},
   ev_recurring:{en:'Recurring event',de:'Wiederkehrendes Event'},

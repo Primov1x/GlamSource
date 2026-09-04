@@ -807,31 +807,6 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
             }
         }
 
-        var glamourerInstalled = IsGlamourerInstalled();
-        var canApply = glamourerInstalled && _snapshot.Count > 0;
-
-        ImGui.SameLine();
-        using (ImRaii.Disabled(!canApply))
-        {
-            if (ImGui.SmallButton(Loc.T("Apply to Self")))
-                ApplyTargetGlamourToSelf();
-        }
-        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-        {
-            if (!glamourerInstalled) ImGui.SetTooltip(Loc.T("Requires Glamourer plugin"));
-            else ImGui.SetTooltip(Loc.T("Copy this snapshot (glamour where set, else actual) to your own character.\nWeapons are skipped."));
-        }
-
-        ImGui.SameLine();
-        var canPreview = _snapshot.Count > 0;
-        using (ImRaii.Disabled(!canPreview))
-        {
-            if (ImGui.SmallButton(Loc.T("Fitting Room")))
-                QueueTryOnPreview();
-        }
-        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-            ImGui.SetTooltip(Loc.T("Queue each slot into the vanilla Fitting Room. Weapons skipped."));
-
         // single status line: mode + last action feedback
         var mode = _recentOverride != null ? Loc.T("Viewing recent snapshot")
             : _pinned ? $"{Loc.T("Pinned")} — {_pinnedFor}"
@@ -1016,6 +991,48 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         {
             _previewDragLast = null;
         }
+
+        DrawApplyButtons();
+    }
+
+    // "Auf mich anwenden unter das vorschaubild mittig und als zweiter button" — moved out of the
+    // top toolbar (was competing with Pin/Shopping-list there) to sit right under the preview,
+    // centered, where the outfit you're about to act on is actually visible. Short labels per
+    // request: "Glamen" (apply via Glamourer) / "Vorschau" (queue into the vanilla Fitting Room —
+    // it IS a preview, just an in-game one).
+    private void DrawApplyButtons()
+    {
+        var glamourerInstalled = IsGlamourerInstalled();
+        var canApply = glamourerInstalled && _snapshot.Count > 0;
+        var canPreview = _snapshot.Count > 0;
+
+        var fontSize = ImGui.GetFontSize();
+        var spacing = ImGui.GetStyle().ItemSpacing.X;
+        var w1 = ImGui.CalcTextSize(Loc.T("Apply")).X + fontSize * 1.5f;
+        var w2 = ImGui.CalcTextSize(Loc.T("Preview")).X + fontSize * 1.5f;
+        var totalW = w1 + w2 + spacing;
+        var avail = ImGui.GetContentRegionAvail();
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + MathF.Max(0f, (avail.X - totalW) * 0.5f));
+
+        using (ImRaii.Disabled(!canApply))
+        {
+            if (ImGui.Button(Loc.T("Apply"), new Vector2(w1, 0)))
+                ApplyTargetGlamourToSelf();
+        }
+        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+        {
+            if (!glamourerInstalled) ImGui.SetTooltip(Loc.T("Requires Glamourer plugin"));
+            else ImGui.SetTooltip(Loc.T("Copy this snapshot (glamour where set, else actual) to your own character.\nWeapons are skipped."));
+        }
+
+        ImGui.SameLine();
+        using (ImRaii.Disabled(!canPreview))
+        {
+            if (ImGui.Button(Loc.T("Preview"), new Vector2(w2, 0)))
+                QueueTryOnPreview();
+        }
+        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+            ImGui.SetTooltip(Loc.T("Queue each slot into the vanilla Fitting Room. Weapons skipped."));
     }
 
     private Vector2? _previewDragLast;
