@@ -1348,15 +1348,22 @@ public sealed class ItemDetailService : IItemDetailService
         // floor's CFC row, not just the representative one it was called with (would've silently
         // shown only floors 1-10 of a 100-floor dungeon otherwise).
         var siblingCfcIds = new HashSet<uint> { cfcId };
+        // live report: header still showed the representative CFC's raw name ("Heaven-on-High
+        // (Floors 1-10)") even though the drops below are aggregated across ALL floor sets —
+        // looked like the list was silently truncated to floors 1-10 again. Use the stripped base
+        // name (matching the item-source card's own "(all floors)" wording) whenever more than one
+        // floor-set row got merged in.
+        var displayName = CapitalizeFirst(cfc.Value.Name.ToString());
         if (cfc.Value.ContentType.RowId == 21)
         {
-            var baseName = Regex.Replace(CapitalizeFirst(cfc.Value.Name.ToString()), @"\s*\(Floors? \d+-\d+\)\s*$", "");
+            var baseName = Regex.Replace(displayName, @"\s*\(Floors? \d+-\d+\)\s*$", "");
             foreach (var other in _gameData.GetExcelSheet<ContentFinderCondition>() ?? Enumerable.Empty<ContentFinderCondition>())
             {
                 if (other.ContentType.RowId != 21 || other.Name.IsEmpty) continue;
                 if (Regex.Replace(CapitalizeFirst(other.Name.ToString()), @"\s*\(Floors? \d+-\d+\)\s*$", "") == baseName)
                     siblingCfcIds.Add(other.RowId);
             }
+            if (siblingCfcIds.Count > 1) displayName = $"{baseName} (all floors)";
         }
 
         List<DutyDrop> Drops(IEnumerable<uint> ids)
@@ -1455,7 +1462,7 @@ public sealed class ItemDetailService : IItemDetailService
                 .Where(b => b.Drops.Count > 0 || b.Chests.Count > 0).ToList();
             generalDrops = generalDrops.Where(d => d.Kind.Length == 0).ToList();
         }
-        return new DutyDetail(cfcId, CapitalizeFirst(cfc.Value.Name.ToString()), GetDutyType(cfcId), cfc.Value.Image,
+        return new DutyDetail(cfcId, displayName, GetDutyType(cfcId), cfc.Value.Image,
             cfc.Value.ClassJobLevelRequired, cfc.Value.ItemLevelRequired, bossList, generalDrops,
             cfc.Value.TerritoryType.RowId,
             Safe(() => cfc.Value.TerritoryType.ValueNullable?.Map.RowId ?? 0, 0u), // TerritoryType sheet mismatches under DalaMock

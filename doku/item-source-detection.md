@@ -1,5 +1,20 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Fix: Deep Dungeon duty header still said "(Floors 1-10)" after the all-floors merge (1.0.43.0)
+
+Live report (screenshot): opening Heaven-on-High's Duty Drops tile showed "Heaven-on-High (Floors
+1-10)" as the header, implying the list below was only floors 1-10's drops. It wasn't — the
+pulled 1.0.4x work already aggregates drops across every 10-floor CFC row sharing the base name
+(comment: "would've silently shown only floors 1-10 of a 100-floor dungeon otherwise"), the header
+just never got updated to match — `GetDutyDetail` still built the displayed `Name` from
+`cfc.Value.Name` (the ONE representative CFC row's own raw name), not the merged base name.
+
+Fix: hoisted the already-computed `baseName` (used for sibling-matching) into a `displayName`
+that becomes `"{baseName} (all floors)"` whenever more than one floor-set row got merged —
+mirrors the exact wording the item-source-card path already uses for the same situation. Verified
+live via mock: `/api/duty/540` now returns `"Heaven-on-High (all floors)"`; a plain non-Deep-
+Dungeon duty (Toto-Rak) is unaffected. `dotnet build` 0/0, `dotnet test` 54/54.
+
 ## Pulled external work (1.0.25.0–1.0.41.0), fixed a broken build + a reintroduced Mock hang (1.0.42.0)
 
 `git pull` brought in 18 commits (1.0.25.0 → v1.0.41.0, not documented in this file by whoever
