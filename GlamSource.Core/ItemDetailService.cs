@@ -119,6 +119,11 @@ public interface IItemDetailService
     /// field CharaMakeCustomize.HintItem items use), and a few other UnlockLink-gated unlocks —
     /// deliberately not disambiguated further, IsUnlockLinkUnlocked(id) doesn't care what it targets.
     uint? UnlockLinkIdForItem(uint itemId);
+    /// Item -> TripleTriadCard sheet RowId, same "ItemUICategory gate + ItemAction.Data[0]" pattern
+    /// already used by the 7d source lookup below (no dedicated Action RowId for cards — gated on
+    /// ItemUICategory.Name == "Triple Triad Card" instead). Feeds UnlockCheckService's
+    /// IsTripleTriadCardUnlocked check — "im dungeon tab: cards sind nicht 'hab ich die schon'".
+    uint? TripleTriadCardRowIdForItem(uint itemId);
     string? GetEnglishName(uint itemId);
     /// Event item availability (FFXIV Collect "Event" sources + a live Lodestone news check).
     /// Null when the item isn't a known event item.
@@ -2877,6 +2882,7 @@ public sealed class ItemDetailService : IItemDetailService
     private Dictionary<uint, uint>? _itemToCompanionRowId;
     private Dictionary<uint, uint>? _itemToOrchestrionRowId;
     private Dictionary<uint, uint>? _itemToUnlockLinkId;
+    private Dictionary<uint, uint>? _itemToTripleTriadCardRowId;
     private void EnsureUnlockMaps()
     {
         if (_itemToMountRowId != null) return;
@@ -2884,10 +2890,19 @@ public sealed class ItemDetailService : IItemDetailService
         _itemToCompanionRowId = new();
         _itemToOrchestrionRowId = new();
         _itemToUnlockLinkId = new();
+        _itemToTripleTriadCardRowId = new();
         var itemSheet = _gameData.GetExcelSheet<Item>();
         if (itemSheet == null) return;
         foreach (var item in itemSheet)
         {
+            // Triple Triad cards: no dedicated Action RowId, gated on ItemUICategory instead (same
+            // check the 7d source lookup uses) — Data[0] is still the TripleTriadCard RowId.
+            if (item.ItemAction.IsValid && item.ItemUICategory.IsValid
+                && item.ItemUICategory.Value.Name.ToString() == "Triple Triad Card"
+                && item.ItemAction.Value.Data.Count > 0 && item.ItemAction.Value.Data[0] != 0)
+            {
+                _itemToTripleTriadCardRowId[item.RowId] = item.ItemAction.Value.Data[0];
+            }
             if (!item.ItemAction.IsValid) continue;
             var ia = item.ItemAction.Value;
             // Orchestrion rolls encode their target in Item.AdditionalData, not Data[0]/[1] (both 0
@@ -2909,6 +2924,7 @@ public sealed class ItemDetailService : IItemDetailService
     public uint? CompanionRowIdForItem(uint itemId) { EnsureUnlockMaps(); return _itemToCompanionRowId!.TryGetValue(itemId, out var id) ? id : null; }
     public uint? OrchestrionRowIdForItem(uint itemId) { EnsureUnlockMaps(); return _itemToOrchestrionRowId!.TryGetValue(itemId, out var id) ? id : null; }
     public uint? UnlockLinkIdForItem(uint itemId) { EnsureUnlockMaps(); return _itemToUnlockLinkId!.TryGetValue(itemId, out var id) ? id : null; }
+    public uint? TripleTriadCardRowIdForItem(uint itemId) { EnsureUnlockMaps(); return _itemToTripleTriadCardRowId!.TryGetValue(itemId, out var id) ? id : null; }
 
     // Duty and NPC display names come back lowercase from the game's own sheets ("the minstrel's
     // ballad...", "chopper") — they're written to be embedded mid-sentence elsewhere in the UI, but

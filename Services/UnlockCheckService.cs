@@ -38,6 +38,12 @@ public static class UnlockCheckService
             var ui = UIState.Instance();
             return ui != null && ui->IsUnlockLinkUnlocked(unlockLinkId.Value);
         }
+        var triadCardRowId = detail.TripleTriadCardRowIdForItem(itemId);
+        if (triadCardRowId.HasValue)
+        {
+            var ui = UIState.Instance();
+            return ui != null && ui->IsTripleTriadCardUnlocked((ushort)triadCardRowId.Value);
+        }
         return null;
     }
 }

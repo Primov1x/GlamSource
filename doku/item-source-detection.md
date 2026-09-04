@@ -1,5 +1,29 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Triple Triad Card unlock badge in "can contain" lists (1.0.72.0)
+
+"im dungeon tab: karten sind nicht 'hab ich die schon'" — the Web UI's `contentsSummary` category
+rows (coffer/dungeon-drop "6x Orchestrion Roll ▾" style groups) already show a green/red unlock
+badge per item once expanded, via `annotateBulkUnlocks` → `/api/unlock/bulk` →
+`UnlockCheckService.CheckUnlocked`. That switch covered Mount/Companion/Orchestrion/UnlockLink
+(emotes, hairstyles) — Triple Triad Card was missing, so cards silently fell through to "not an
+unlock item, no badge" even though the game natively tracks card ownership too
+(`UIState.IsTripleTriadCardUnlocked`).
+
+Added `TripleTriadCardRowIdForItem` to `ItemDetailService` — same "ItemUICategory gate + Item
+Action.Data[0]" resolution the existing 7d source-lookup section already uses for cards (no
+dedicated Action RowId for this type, unlike Mount/Companion), populated in the same
+`EnsureUnlockMaps()` pass. `UnlockCheckService.CheckUnlocked` now tries it last, same
+`ui->IsXUnlocked(...)` pattern as the other three.
+
+Equipment (Body/Legs/Cloth in the same dungeon-tab screenshot) intentionally still gets no badge —
+gear has no "unlock" concept the way collectibles do (you either have the item or don't, that's an
+inventory check, not the same API), so leaving it blank there isn't a bug.
+
+Verified: `dotnet build` 0/0, `dotnet test` 54/54. **Not** verified in-game — `UIState::Instance()`
+needs the real game process; GlamSource.Mock can't exercise this path, same limitation as the other
+three unlock checks it sits next to. Needs a real-client check next session.
+
 ## Mog Station: 57 more real product links — outfit pieces, not container items (1.0.71.0)
 
 Follow-up to 1.0.70.0's 672-pair scrape. Re-scraped ids 1-1171 fresh (803 real products now vs 755

@@ -235,6 +235,7 @@ public class CraftingCostServiceTests
         public uint? CompanionRowIdForItem(uint itemId) => null;
         public uint? OrchestrionRowIdForItem(uint itemId) => null;
         public uint? UnlockLinkIdForItem(uint itemId) => null;
+        public uint? TripleTriadCardRowIdForItem(uint itemId) => null;
     }
 
     private sealed class FakeUniversalisService : IUniversalisService
