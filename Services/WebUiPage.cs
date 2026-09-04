@@ -807,7 +807,7 @@ async function selectDuty(id){
   if(!d){$('#dutydrops').innerHTML=`<div class="empty">${t('not_found')}</div>`;return}
   // Duty Finder style header: the game's own banner image, then one section per boss (drops +
   // chests after that boss), then whatever drops anywhere in the duty
-  $('#dutyhead').innerHTML=`<div class="dutybanner"><img src="/api/icon/${d.imageId}" onerror="this.style.display='none'"><div><h2 class="name">${esc(d.name)}</h2><div class="meta">${esc(d.type)} · Lv.${d.level}${d.itemLevel?` · iLvl ${d.itemLevel}`:''}</div><button class="act" style="margin-top:6px" onclick="post('/api/action/dutyfinder/${d.id}')">${t('duty_open')}</button></div></div>`;
+  $('#dutyhead').innerHTML=`<div class="dutybanner"><img src="/api/icon/${d.imageId}" onerror="this.style.display='none'"><div><h2 class="name">${esc(d.name)}</h2><div class="meta">${esc(d.type)} · Lv.${d.level}${d.itemLevel?` · iLvl ${d.itemLevel}`:''}</div><button class="act" style="margin-top:8px;padding:8px 20px;font-size:14px;font-weight:600" onclick="post('/api/action/dutyfinder/${d.id}')">${t('duty_open')}</button></div></div>`;
   let h='';
   // mounts / minions first, with the wiki preview picture — that's what people farm Extremes for
   if(d.featured?.length)h+=featSection(d.featured);
@@ -843,10 +843,15 @@ async function selectDuty(id){
   $('#dutydrops').insertAdjacentHTML('beforeend',`<div class="dsec"${hasLocal?'':' style="margin-top:0"'}><div class="dsech">${hasLocal?t('duty_coffers'):t('duty_garland_drops')}</div>${c}</div>`);
 }
 async function openDutyItem(id){
-  $('#dutydetail').innerHTML=`<div class="empty"><span class="spinner"></span>${t('loading')}</div>`;
+  // same fast-click race guard as openItem/showItemPanel (1.0.20.0) — added later than those, had
+  // neither the guard nor annotateMarket until now
+  const el=$('#dutydetail');
+  const myToken=(el._reqToken=(el._reqToken||0)+1);
+  el.innerHTML=`<div class="empty"><span class="spinner"></span>${t('loading')}</div>`;
   const d=await fetch('/api/item/'+id).then(r=>r.ok?r.json():null);
-  $('#dutydetail').innerHTML=d?buildItemHtml(d,'openDutyItem'):`<div class="empty">${t('not_found')}</div>`;
-  if(d){annotateInventory($('#dutydetail'));annotateEvent($('#dutydetail'),id)}
+  if(el._reqToken!==myToken)return;
+  el.innerHTML=d?buildItemHtml(d,'openDutyItem'):`<div class="empty">${t('not_found')}</div>`;
+  if(d){annotateInventory(el);annotateEvent(el,id,myToken);annotateMarket(el,id,d.isMarketable,myToken)}
 }
 
 // "Suchergebnisse verschwinden beim Item-Klick": list is only hidden, the back bar restores it
@@ -946,7 +951,10 @@ function renderSource(group,itemId,openFn='openItem'){
   // same jump ImGui's ItemDetailWindow offers: coffer / "Retired — replaced by Augmented X" -> that item
   if(s.sourceItemId)h+=`<button class="act" onclick="${openFn}(${s.sourceItemId})">${I18N.open_item[lang]}</button> `;
   if(/craft/i.test(srcType))h+=`<button class="act" onclick="post('/api/action/craftlog/${itemId}')">${t('open_craftlog')}</button>`;
-  if(s.cfcRowId)h+=` <button class="act" onclick="post('/api/action/dutyfinder/${s.cfcRowId}')">${t('duty_open')}</button>`;
+  // openFn==='openDutyItem' means we're already inside that exact duty's own view (Duty Drops tab,
+  // #dutyhead has its own bigger Duty-Finder button right above) — a second small one on every
+  // source card of every item in that duty is pure duplication ("haben wir doch oben schon").
+  if(s.cfcRowId&&openFn!=='openDutyItem')h+=` <button class="act" onclick="post('/api/action/dutyfinder/${s.cfcRowId}')">${t('duty_open')}</button>`;
   const withNpc=group.filter(g=>g.npcName);
   if(withNpc.length){
     h+=`<table><tr><th>${t('npc')}</th><th>${t('location')}</th><th></th></tr>`;

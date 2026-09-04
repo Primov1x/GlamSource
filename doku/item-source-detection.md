@@ -1,5 +1,35 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Web: duplicate "Duty öffnen" button removed, remaining one made bigger (1.0.48.0)
+
+Live report (screenshot, Pilgrim's Traverse → Sack of Platinum Light via Duty Drops tab): TWO
+"Duty öffnen" buttons on screen — one big one in the duty banner up top, one small one on the
+item's own source card right below it, pointing at the exact same duty. Root cause: the Duty Drops
+tab's own item-click renderer (`openDutyItem`, added by the pulled 1.0.2x-4x work) reuses
+`renderSource()`, which unconditionally adds a "Duty öffnen" button whenever a source has a
+`cfcRowId` — never suppressed for the one context (`openFn==='openDutyItem'`) where that duty is
+already visibly open on the same page.
+
+Fix: `renderSource` skips its own duty button when `openFn==='openDutyItem'`. The remaining
+(duty-banner) button made bigger per request — `padding:8px 20px;font-size:14px;font-weight:600`
+vs the base `.act` class's `4px 12px / 12px`. Verified live via mock: exactly 1 "Duty öffnen"
+button on screen now (was 2), bigger one confirmed via its inline style.
+
+**Found while in there, fixed too**: `openDutyItem` never got the fast-click race guard or
+`annotateMarket` call that `openItem`/`showItemPanel` already have (1.0.20.0/1.0.21.0) — added
+later than those fixes, so it missed them. Same token-guard pattern applied now.
+
+`dotnet build` 0/0, `dotnet test` 54/54.
+
+**Flagged, not attempted**: the same screenshot shows no sack contents for "Sack of Platinum
+Light" (47106) — checked `HoardSackContents.csv`: Eureka Orthos's 3 sacks already have 99-129
+entries each, Pilgrim's Traverse's 3 (47104-47106) have zero. Researched via wiki: each sack's
+real contents span ~15-25+ categories (bardings, dyes, materia tiers, multiple full weapon-glamour
+sets across 3 UI-collections, orchestrion rolls, furniture, ...) — realistically 100+ individual
+items PER sack to verify one-by-one, matching the existing sacks' scale. Too large to hand-compile
+reliably in one pass without meaningfully more research turns; flagging rather than dumping a
+partial or unverified list.
+
 ## Hand-compiled drop data for Eureka Orthos + Pilgrim's Traverse (1.0.47.0)
 
 Both showed 0 drops (1.0.46.0 audit) because `LuminaSupplemental.Excel` (already latest on NuGet,
