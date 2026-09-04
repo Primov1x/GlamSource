@@ -166,7 +166,11 @@ public static class Loc
         ["Normal"] = "Normal",
         ["Extreme"] = "Extrem",
         ["Savage"] = "Episch",
-        ["Unreal"] = "Fatal",
+        // verified against our own German game data (ContentFinderCondition, e.g. "Shinryu's
+        // Domain (Unreal)" -> "Traumprüfung - Heldenlied von Shinryu") — "Fatal" was wrong, that's
+        // actually the German word for ULTIMATE duties ("Omega (fatal)", "Dancing Mad (fatal)"),
+        // not Unreal.
+        ["Unreal"] = "Traumprüfung",
         ["Alliance"] = "Allianz",
         ["Trials"] = "Prüfungen",
         ["Raids"] = "Raids",

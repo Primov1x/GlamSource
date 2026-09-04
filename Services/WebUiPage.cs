@@ -334,7 +334,7 @@ const I18N={
   diff_Normal:{en:'Normal',de:'Normal'},
   diff_Extreme:{en:'Extreme',de:'Extrem'},
   diff_Savage:{en:'Savage',de:'Episch'},
-  diff_Unreal:{en:'Unreal',de:'Fatal'},
+  diff_Unreal:{en:'Unreal',de:'Traumprüfung'}, // "Fatal" was wrong — that's Ultimate's German word, verified against our own game data
   diff_Alliance:{en:'Alliance',de:'Allianz'},
   duties:{en:'duties',de:'Duties'},
   map:{en:'Map',de:'Karte'},

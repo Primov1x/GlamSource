@@ -1,5 +1,46 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Critical: difficulty/Deep-Dungeon/Unobtainable detection silently broke on non-English clients (1.0.54.0)
+
+Live report chain, starting from "Fatal" vs "Unreal" translation check, ended up finding a much
+bigger bug. `DataManager.GameData` (Dalamud's own game-data accessor) defaults every unqualified
+`GetExcelSheet<T>()` call to the CLIENT'S CONFIGURED GAME LANGUAGE — Mock's raw `Lumina.GameData`
+always defaults to English instead, so this never showed up in any of this session's Mock testing.
+On a German client specifically:
+
+- `DifficultyOf` matches English suffixes ("(Extreme)", "(Savage)", "(Unreal)") against the duty
+  name — verified live against our own German `ContentFinderCondition` sheet that most Dawntrail
+  Extremes don't carry any such suffix in German at all (`"Everkeep (Extreme)"` → German `"Gok
+  Tajaal - Zoraal Ja"`, no parenthetical anywhere). Difficulty grouping/sorting silently broke for
+  these.
+- The Deep Dungeon floor-set merge regex (`DeepDungeonCheckpointSuffix`/`Range`, 1.0.44.0/1.0.45.0)
+  matched the same way — same risk, unverified whether German uses "(Floors X-Y)" at all.
+- The "Unobtainable" (retired belt-slot) check compared `ItemUICategory.Name.ToString() ==
+  "Unobtainable"` — a category NAME string, also localized, also silently never matching on
+  non-English clients.
+
+Fix: new `GetEnglishCfcName(cfcId)` (mirrors the existing `_englishItemSheet`/`GetEnglishName`
+pattern already used elsewhere in this file for the exact same class of problem) — an explicit
+`GetExcelSheet<ContentFinderCondition>(Language.English)` fetch, used for ALL classification/
+matching (`DifficultyOf`, both Deep-Dungeon-merge call sites); DISPLAY names stay in the client's
+language, generically stripped of a trailing `"(...)"` via a new language-agnostic
+`TrailingParenSuffix` regex when a floor range needs appending. The "Unobtainable" check now
+compares `ItemUICategory.RowId == 39` (verified against our own English sheet) instead of a
+language-dependent name string — even more robust than an English-name lookup, no sheet fetch
+needed at all.
+
+**Also fixed while verifying**: `Loc.cs`/`WebUiPage.cs` translated `"Unreal"` → `"Fatal"` — wrong.
+Verified against our own German game data: `"Fatal"` is the German word for **Ultimate** duties
+(`"the Omega Protocol (Ultimate)"` → `"Omega (fatal)"`, `"Dancing Mad (Ultimate)"` → `"Tanzender
+Wahn (fatal)"`), not Unreal. The real German word for Unreal is `"Traumprüfung"`
+(`"Shinryu's Domain (Unreal)"` → `"Traumprüfung - Heldenlied von Shinryu"`). `"Extreme"`→`"Extrem"`
+and `"Savage"`→`"Episch"` (both used only as UI category-folder labels, not for name-matching) were
+already correct, confirmed against the same data.
+
+Verified: `dotnet build` 0/0, `dotnet test` 54/54, no regression in mock (46 Extreme, 1 Unreal,
+Deep Dungeon merges all still correct — mock's English-default environment can't reproduce the
+actual bug scenario though, so this needs the user's own German-client confirmation in-game).
+
 ## Web: two-line rows (name/price), boss sections collapsible (1.0.53.0)
 
 Follow-up to 1.0.52.0, two more live requests in the same round.

@@ -131,6 +131,10 @@ public sealed class ItemDetailService : IItemDetailService
     private const string DeepDungeonCheckpointWord = "(?:Floors?|Stones)";
     private static readonly Regex DeepDungeonCheckpointSuffix = new($@"\s*\({DeepDungeonCheckpointWord} \d+-\d+\)\s*$");
     private static readonly Regex DeepDungeonCheckpointRange = new($@"\({DeepDungeonCheckpointWord} (\d+)-(\d+)\)\s*$");
+    // language-agnostic trailing "(...)" strip for DISPLAY names — matching/grouping runs on the
+    // English name (see GetEnglishCfcName), this is only for showing a clean localized base name
+    // when we don't know what a non-English client actually put inside those parens.
+    private static readonly Regex TrailingParenSuffix = new(@"\s*\([^)]*\)\s*$");
 
     private record NpcLocationInfo(
         string NpcName, string ZoneName,
@@ -510,7 +514,7 @@ public sealed class ItemDetailService : IItemDetailService
         if (!results.Any(s => s.Type == ItemSourceType.Dungeon || s.Type == ItemSourceType.Trial || s.Type == ItemSourceType.Raid) && _itemToDutyMap.TryGetValue(itemId, out var dutyCfcIds))
         {
             var cfcSheet = _gameData.GetExcelSheet<ContentFinderCondition>();
-            var cfcNames = new List<(string name, string dutyType, ItemSourceType sourceType, uint rowId)>();
+            var cfcNames = new List<(string name, string enName, string dutyType, ItemSourceType sourceType, uint rowId)>();
             foreach (var cfcId in dutyCfcIds)
             {
                 if (cfcSheet != null && cfcSheet.TryGetRow(cfcId, out var cfc))
@@ -525,7 +529,10 @@ public sealed class ItemDetailService : IItemDetailService
                         28 => ItemSourceType.Raid,
                         _ => ItemSourceType.Dungeon
                     };
-                    cfcNames.Add((cfcName, dutyType, sourceType, cfc.RowId));
+                    // grouping/floor-matching needs English regardless of client language — see
+                    // GetEnglishCfcName's doc comment ("die deep dungeons checken" on a German
+                    // client: none of this matched at all, German names don't carry these suffixes).
+                    cfcNames.Add((cfcName, GetEnglishCfcName(cfcId) ?? cfcName, dutyType, sourceType, cfc.RowId));
                 }
             }
             if (cfcNames.Count > 0)
@@ -539,16 +546,17 @@ public sealed class ItemDetailService : IItemDetailService
                 // "die deep dungeons checken" caught this one still saying generic "(all floors)").
                 // Verified live: this screenshot showed 5+ Palace of the Dead cards for one item
                 // ("lieblos").
-                foreach (var group in cfcNames.GroupBy(c => DeepDungeonCheckpointSuffix.Replace(c.name, "")))
+                foreach (var group in cfcNames.GroupBy(c => DeepDungeonCheckpointSuffix.Replace(c.enName, "")))
                 {
                     var groupList = group.ToList();
-                    var (name, dutyType, sourceType, rowId) = groupList[0];
+                    var (name, _, dutyType, sourceType, rowId) = groupList[0];
                     string displayName;
                     if (groupList.Count > 1)
                     {
-                        var floorNums = groupList.SelectMany(c => DeepDungeonCheckpointRange.Match(c.name) is { Success: true } m
+                        var floorNums = groupList.SelectMany(c => DeepDungeonCheckpointRange.Match(c.enName) is { Success: true } m
                             ? new[] { int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value) } : Array.Empty<int>()).ToList();
-                        displayName = floorNums.Count > 0 ? $"{group.Key} ({floorNums.Min()}-{floorNums.Max()})" : $"{group.Key} (all floors)";
+                        var localizedBase = TrailingParenSuffix.Replace(name, "");
+                        displayName = floorNums.Count > 0 ? $"{localizedBase} ({floorNums.Min()}-{floorNums.Max()})" : $"{localizedBase} (all floors)";
                     }
                     else displayName = name;
                     results.Add(new ItemSourceDetail(
@@ -1055,10 +1063,11 @@ public sealed class ItemDetailService : IItemDetailService
         }
 
         // 9. Removed equipment slot â€” the game itself files these under ItemUICategory
-        // "Unobtainable". In the 500-item audit every hit here was a belt: Stormblood (4.0) removed
-        // the belt slot entirely, so all belt items became permanently unobtainable/glamour-only.
-        // Check the game's own category before any name-pattern guessing below.
-        if (results.Count == 0 && item.ItemUICategory.IsValid && item.ItemUICategory.Value.Name.ToString() == "Unobtainable")
+        // "Unobtainable" (RowId 39, verified against our own English sheet — NOT the category's
+        // NAME string, which is client-language and silently never matches on non-English clients).
+        // In the 500-item audit every hit here was a belt: Stormblood (4.0) removed the belt slot
+        // entirely, so all belt items became permanently unobtainable/glamour-only.
+        if (results.Count == 0 && item.ItemUICategory.RowId == 39)
         {
             results.Add(new ItemSourceDetail(
                 ItemSourceType.Other,
@@ -1282,11 +1291,14 @@ public sealed class ItemDetailService : IItemDetailService
             var contentType = cfc.ContentType.RowId;
             var hasLocal = DutyToItems.TryGetValue(cfcId, out var items);
             if (!hasLocal && contentType is not (2 or 4 or 5 or 21 or 28)) continue;
+            // classification needs the English name (suffix patterns), display keeps the client's
+            // language — see GetEnglishCfcName's doc comment.
+            var enName = GetEnglishCfcName(cfcId) ?? name;
             list.Add(new DutyInfo(cfcId, name, GetDutyType(cfcId), cfc.TerritoryType.RowId, hasLocal ? items!.Count : 0,
                 cfc.Image, cfc.ClassJobLevelRequired, cfc.ItemLevelRequired, ExpansionName(cfc.ClassJobLevelRequired),
                 Safe(() => (uint)(cfc.ContentType.ValueNullable?.Icon ?? 0), 0u), // Duty Finder category icon (61801 dungeons, ...)
                 BossNamesByDuty.TryGetValue(cfcId, out var bossNames) ? bossNames : Array.Empty<string>(),
-                DifficultyOf(name, Safe(() => cfc.AllianceRoulette, false))));
+                DifficultyOf(enName, Safe(() => cfc.AllianceRoulette, false))));
         }
         // Deep Dungeons split into one CFC row PER 10-floor set (Palace of the Dead alone is 12 rows)
         // — the browsable list showed one tile per floor range instead of one per dungeon. Live
@@ -1380,29 +1392,37 @@ public sealed class ItemDetailService : IItemDetailService
         // looked like the list was silently truncated to floors 1-10 again. Use the stripped base
         // name plus the REAL overall floor range (min start - max end across every merged row,
         // e.g. "1-100" for Heaven-on-High) instead of a generic "(all floors)".
+        // live report #2: on a non-English client, matching/grouping against the LOCALIZED name
+        // silently broke (German duty names don't reliably carry "(Floors X-Y)" at all — confirmed
+        // against our own German game data). Sibling-matching and floor-number extraction now run
+        // on the English name exclusively; only the DISPLAYED base name stays in the client's
+        // language (generic trailing-"(...)" strip, works regardless of what's actually inside the
+        // parens in that language).
         var displayName = CapitalizeFirst(cfc.Value.Name.ToString());
         if (cfc.Value.ContentType.RowId == 21)
         {
-            var baseName = DeepDungeonCheckpointSuffix.Replace(displayName, "");
+            var enName = GetEnglishCfcName(cfcId) ?? displayName;
+            var enBaseName = DeepDungeonCheckpointSuffix.Replace(enName, "");
+            var localizedBaseName = TrailingParenSuffix.Replace(displayName, "");
             var floorNums = new List<int>();
             void CollectFloors(string rawName)
             {
                 var m = DeepDungeonCheckpointRange.Match(rawName);
                 if (m.Success) { floorNums.Add(int.Parse(m.Groups[1].Value)); floorNums.Add(int.Parse(m.Groups[2].Value)); }
             }
-            CollectFloors(displayName);
+            CollectFloors(enName);
             foreach (var other in _gameData.GetExcelSheet<ContentFinderCondition>() ?? Enumerable.Empty<ContentFinderCondition>())
             {
                 if (other.ContentType.RowId != 21 || other.Name.IsEmpty) continue;
-                var otherName = CapitalizeFirst(other.Name.ToString());
-                if (DeepDungeonCheckpointSuffix.Replace(otherName, "") == baseName)
+                var otherEnName = GetEnglishCfcName(other.RowId) ?? CapitalizeFirst(other.Name.ToString());
+                if (DeepDungeonCheckpointSuffix.Replace(otherEnName, "") == enBaseName)
                 {
                     siblingCfcIds.Add(other.RowId);
-                    CollectFloors(otherName);
+                    CollectFloors(otherEnName);
                 }
             }
             if (siblingCfcIds.Count > 1 && floorNums.Count > 0)
-                displayName = $"{baseName} ({floorNums.Min()}-{floorNums.Max()})";
+                displayName = $"{localizedBaseName} ({floorNums.Min()}-{floorNums.Max()})";
         }
 
         List<DutyDrop> Drops(IEnumerable<uint> ids)
@@ -2820,6 +2840,21 @@ public sealed class ItemDetailService : IItemDetailService
     }
 
     private ExcelSheet<Item>? _englishItemSheet;
+    private ExcelSheet<ContentFinderCondition>? _englishCfcSheet;
+
+    /// <summary>Duty name in English regardless of the client's configured language. Needed for
+    /// anything keyed off English suffix patterns ("(Extreme)", "(Savage)", "(Floors X-Y)", ...) —
+    /// live report: on a German client, DifficultyOf/the Deep Dungeon floor-merge regex silently
+    /// broke because German duty names don't reliably carry those suffixes at all (e.g. "Gok
+    /// Tajaal - Zoraal Ja" for "Everkeep (Extreme)", no "(Extreme)" anywhere; confirmed against our
+    /// own German game data, not guessed). Display names stay in the client's language — only
+    /// pattern-matching for classification needs English.</summary>
+    private string? GetEnglishCfcName(uint cfcId)
+    {
+        _englishCfcSheet ??= _gameData.GetExcelSheet<ContentFinderCondition>(Language.English);
+        var name = _englishCfcSheet?.GetRowOrDefault(cfcId)?.Name.ToString();
+        return string.IsNullOrEmpty(name) ? null : name;
+    }
 
     /// <summary>Item name in English regardless of the client's configured language. Needed for
     /// anything keyed off the item name against an English-only source — the item preview image
