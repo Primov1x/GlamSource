@@ -218,6 +218,7 @@ public sealed class ItemDetailService : IItemDetailService
 
     // ponytail: ItemId -> Mogstation shop URL, from static scrape of Gamer Escape's Mog Station category (LuminaSupplemental/MogstationItems.csv)
     private readonly Dictionary<uint, string> _mogstationItems = new();
+    private readonly Dictionary<uint, uint> _mogstationProductIds = new();
 
     // ponytail: TripleTriadCard RowId -> NPC win locations. Lumina's own TripleTriadCard/
     // TripleTriadResident sheets don't expose reward-NPC linkage (verified: TripleTriadCard's
@@ -1086,17 +1087,23 @@ public sealed class ItemDetailService : IItemDetailService
         // page shows the real Mog Station price/set right on it (verified live: "Far Eastern
         // Schoolboy's Hat" → "$18 ... - Far Eastern Schoolboy's Uniform"). Sidesteps
         // MogStationLiveService's gamerescape.com 403 entirely by not depending on it for the link.
+        // Upgraded further: 672 items (scraped store.finalfantasyxiv.com + matched against Lumina
+        // Mount/Companion/Emote/Orchestrion/ItemSeries data, see MogStationProductIds.csv) now get
+        // the REAL store product link instead of just the wiki page — "du sollst schauen wer die
+        // shoplinks hinterlegt hat, nicht die consolengameswiki link".
         var englishName = GetEnglishName(itemId) ?? item.Name.ToString();
         var isMogStationItem = _mogstationLive.TryGetShopUrl(englishName, out _) || _mogstationItems.ContainsKey(itemId);
         if (isMogStationItem)
         {
-            var wikiShopUrl = "https://ffxiv.consolegameswiki.com/wiki/"
-                + Uri.EscapeDataString((GetWikiPageName(itemId) ?? englishName).Replace(' ', '_'));
+            var shopUrl = _mogstationProductIds.TryGetValue(itemId, out var productId)
+                ? $"https://store.finalfantasyxiv.com/ffxivstore/en-us/product/{productId}"
+                : "https://ffxiv.consolegameswiki.com/wiki/"
+                    + Uri.EscapeDataString((GetWikiPageName(itemId) ?? englishName).Replace(' ', '_'));
             results.Add(new ItemSourceDetail(
                 ItemSourceType.MogStation,
                 Tr("Available for purchase on the Mog Station."),
                 null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-                ShopUrl: wikiShopUrl));
+                ShopUrl: shopUrl));
         }
 
         // 8b. Minion/mount/orchestrion sources (FFXIV Collect, non-commercial use, attribution
@@ -2657,6 +2664,7 @@ public sealed class ItemDetailService : IItemDetailService
         BuildTriadCardNpcCache();
         BuildCollectSourceCache();
         BuildMountItemMapCache();
+        BuildMogStationProductIdsCache();
         BuildHoardSackContentsCache();
         BuildDeepDungeonNewFloorDropsCache();
     }
@@ -2830,6 +2838,32 @@ public sealed class ItemDetailService : IItemDetailService
     /// <summary>MountId (as read from Character.Mount.MountId natively) -> its unlock item, or null
     /// if this mount isn't in the scraped dataset.</summary>
     public uint? ResolveMountItemId(uint mountId) => _mountToItemId.TryGetValue(mountId, out var id) ? id : null;
+
+    // ItemId -> real store.finalfantasyxiv.com product id, scraped+matched against Lumina data
+    // (Mount/Companion/Emote/Orchestrion/ItemSeries reverse lookups) — see doku for the pipeline.
+    private void BuildMogStationProductIdsCache()
+    {
+        var assembly = typeof(ItemDetailService).Assembly;
+        using var stream = assembly.GetManifestResourceStream(
+            "GlamSource.Core.LuminaSupplemental.MogStationProductIds.csv");
+        if (stream == null)
+            return;
+
+        using var reader = new StreamReader(stream);
+        reader.ReadLine(); // header
+        string? line;
+        while ((line = reader.ReadLine()) != null)
+        {
+            var parts = line.Split(',');
+            if (parts.Length < 2)
+                continue;
+            if (!uint.TryParse(parts[0], out var itemId))
+                continue;
+            if (!uint.TryParse(parts[1], out var productId))
+                continue;
+            _mogstationProductIds[itemId] = productId;
+        }
+    }
 
     // Item -> Mount/Companion RowId, built natively from Item.ItemAction — no external dataset.
     // Verified live against real Item/ItemAction sheet data: Chocobo Whistle (item 6001) has

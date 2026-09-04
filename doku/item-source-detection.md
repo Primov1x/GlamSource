@@ -1,5 +1,43 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Mog Station: real store product links, not just the wiki page (1.0.70.0)
+
+"du sollst schauen wer die shoplinks hinterlegt hat, nicht die consolengameswiki link" — 1.0.69.0's
+wiki-page link was a real improvement over the old generic front-page link, but it's still not the
+actual product. User's own suggested method: "scrape über Google? Also dort item eingeben und dann
+schauen wie der Link aufgebaut ist o.ä.?"
+
+Found the real pattern via Google site-search: `store.finalfantasyxiv.com/ffxivstore/en-us/product/{id}`
+(ids roughly 1-1171, with gaps) deep-links correctly on a cold, unauthenticated load — confirmed live
+(title tag shows the real product name). The store's OTHER URL shape, the SPA hash fragment
+(`.../en-us/#{guid}`) set by `window.location.hash` after clicking a product client-side, does **not**
+deep-link — a fresh navigation to it just renders the generic homepage, confirmed live before this
+pattern was discarded. Unlike `ffxiv.gamerescape.com` (1.0.68.0's blocked target), this domain has no
+Cloudflare/bot-fingerprint block at all — confirmed via bare `curl` (no UA) returning 200 with the
+same server-rendered `<title>` a real browser gets.
+
+Built a one-off scrape+match pipeline (scratchpad only, not part of the plugin):
+1. Bash loop over ids 1-1171 hitting `/product/{id}`, scraping `<title>` — 755 real products found.
+2. C# console probe (reusing this session's existing Lumina-backed reverse-lookup patterns — Mount/
+   Companion `ItemAction.Action.RowId` 1322/853, Emote `UnlockLink` via Action 2633, Orchestrion via
+   `AdditionalData.Is<Orchestrion>()`, `Item.ItemSeries.Name` for attire-bundle matching, direct
+   `Item.Name` match, and a couple of store-specific name strips like "Ten Pots of X Dye" → "X Dye")
+   matches each scraped product name against real item/mount/minion/emote/orchestrion/series names.
+3. Result: **672 ItemId→ProductId pairs, covering 607 of 755 scraped products (80%)**. The
+   remaining ~20% (mostly gendered "Men's/Women's X Summer Set" and named-character "Y'shtola's
+   Attire"-style bundles) are likely `ItemSeries.Name` naming mismatches between the store's display
+   name and the game's own series name — not individually diagnosed, diminishing returns for now.
+
+Output committed as `GlamSource.Core/LuminaSupplemental/MogStationProductIds.csv` (embedded resource,
+loaded the same way as every other `LuminaSupplemental` CSV — `BuildMogStationProductIdsCache()`).
+`BuildSources`'s MogStation block now prefers `https://store.finalfantasyxiv.com/ffxivstore/en-us/product/{id}`
+when the item is in this map, falling back to 1.0.69.0's consolegameswiki.com wiki-page link
+otherwise (still real per-item purchase info, just not the storefront itself).
+
+Verified: `dotnet build` 0/0, `dotnet test` 54/54. `/api/item/2638` ("Pumpkin Head") → `shopUrl`
+`https://store.finalfantasyxiv.com/ffxivstore/en-us/product/35` — opened live, page title confirms
+"Pumpkin Head | FINAL FANTASY XIV Online Store".
+
 ## Mog Station link switched to consolegameswiki.com — sidesteps the Cloudflare 403 entirely (1.0.69.0)
 
 "kriegen wir den link von wo anders?" — confirmed live (Browser pane, this machine/network) that
