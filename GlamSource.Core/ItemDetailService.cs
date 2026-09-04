@@ -1075,25 +1075,28 @@ public sealed class ItemDetailService : IItemDetailService
             }
         }
 
-        // 8. Mogstation â€” always shown additively alongside any other detected sources. Live
-        // lookup first (fresh, real per-item wiki link); static CSV as fallback (older items, or
-        // this session's fetch hasn't completed/succeeded yet — see MogStationLiveService).
+        // 8. Mogstation â€” always shown additively alongside any other detected sources. "kriegen
+        // wir den link von wo anders?" — MogStationLiveService's gamerescape.com category lookup
+        // (this method already gates on) is one thing; the LINK ITSELF used to be either that same
+        // live lookup's gamerescape wiki URL (fine when reachable) or, as a fallback, just the
+        // generic na.finalfantasyxiv.com/shop/ front page (not per-item at all). Both replaced with
+        // a direct link to ffxiv.consolegameswiki.com's own per-item page — no live HTTP call
+        // needed for the URL itself (same predictable /wiki/{Name_With_Underscores} slug
+        // ItemImageService's OWN successful scrape of this exact domain already uses), and that
+        // page shows the real Mog Station price/set right on it (verified live: "Far Eastern
+        // Schoolboy's Hat" → "$18 ... - Far Eastern Schoolboy's Uniform"). Sidesteps
+        // MogStationLiveService's gamerescape.com 403 entirely by not depending on it for the link.
         var englishName = GetEnglishName(itemId) ?? item.Name.ToString();
-        if (_mogstationLive.TryGetShopUrl(englishName, out var liveShopUrl))
+        var isMogStationItem = _mogstationLive.TryGetShopUrl(englishName, out _) || _mogstationItems.ContainsKey(itemId);
+        if (isMogStationItem)
         {
+            var wikiShopUrl = "https://ffxiv.consolegameswiki.com/wiki/"
+                + Uri.EscapeDataString((GetWikiPageName(itemId) ?? englishName).Replace(' ', '_'));
             results.Add(new ItemSourceDetail(
                 ItemSourceType.MogStation,
                 Tr("Available for purchase on the Mog Station."),
                 null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-                ShopUrl: liveShopUrl));
-        }
-        else if (_mogstationItems.TryGetValue(itemId, out var shopUrl))
-        {
-            results.Add(new ItemSourceDetail(
-                ItemSourceType.MogStation,
-                Tr("Available for purchase on the Mog Station."),
-                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-                ShopUrl: shopUrl));
+                ShopUrl: wikiShopUrl));
         }
 
         // 8b. Minion/mount/orchestrion sources (FFXIV Collect, non-commercial use, attribution

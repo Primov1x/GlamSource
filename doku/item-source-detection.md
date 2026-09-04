@@ -1,5 +1,32 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Mog Station link switched to consolegameswiki.com — sidesteps the Cloudflare 403 entirely (1.0.69.0)
+
+"kriegen wir den link von wo anders?" — confirmed live (Browser pane, this machine/network) that
+`ffxiv.consolegameswiki.com` — the SAME wiki `ItemImageService` already successfully scrapes for
+preview images, unrelated 403 issue — has its own per-item page with real purchase info ("Far
+Eastern Schoolboy's Hat" → "$18 ... - Far Eastern Schoolboy's Uniform", under an "Acquisition >
+Purchase" section, plus a "Final Fantasy XIV Online Store item" wiki category). A real browser from
+this exact machine/IP reaches it fine — ruling out IP-reputation as the blocker for gamerescape.com
+too (see 1.0.68.0's note); this is specifically about which wiki/domain, not about the network.
+
+Both MogStation branches (the live gamerescape.com lookup's URL, and the static-CSV fallback's
+generic `na.finalfantasyxiv.com/shop/` front-page link) replaced with one direct link to
+`ffxiv.consolegameswiki.com/wiki/{Name_With_Underscores}` — same predictable slug pattern (and
+`GetWikiPageName` mount-page special-casing) `ItemImageService`'s own image scrape already relies
+on, so **no live HTTP call is needed for the link itself at all** — pure string construction from
+data already in memory. This sidesteps `MogStationLiveService`'s gamerescape.com 403 entirely for
+the purposes of the link (that service's live category lookup is still used for the "is this
+genuinely a Mog Station item" gate — unrelated question, unaffected by this change) rather than
+trying to fix the blocked request itself, which would have meant spoofing a browser's TLS
+fingerprint — declined, see 1.0.68.0.
+
+Verified: `dotnet build` 0/0, `dotnet test` 54/54. `/api/item/24599` → `shopUrl` now
+`https://ffxiv.consolegameswiki.com/wiki/Far_Eastern_Schoolboy%27s_Hat` (was the generic front-page
+link). The actual open-in-browser click uses `Process.Start`, which launches the user's own default
+browser — a completely different code path than the blocked `HttpClient`, so this was never at risk
+from the same block regardless of which URL it opened.
+
 ## Item detail: preview image + content side by side (1.0.68.0)
 
 "kriegen wir das eig. auch kompakter nach rechts und unten? Heißt.. maybe neben das vorschau bild?
