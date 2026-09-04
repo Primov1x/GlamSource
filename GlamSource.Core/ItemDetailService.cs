@@ -1351,19 +1351,32 @@ public sealed class ItemDetailService : IItemDetailService
         // live report: header still showed the representative CFC's raw name ("Heaven-on-High
         // (Floors 1-10)") even though the drops below are aggregated across ALL floor sets —
         // looked like the list was silently truncated to floors 1-10 again. Use the stripped base
-        // name (matching the item-source card's own "(all floors)" wording) whenever more than one
-        // floor-set row got merged in.
+        // name plus the REAL overall floor range (min start - max end across every merged row,
+        // e.g. "1-100" for Heaven-on-High) instead of a generic "(all floors)".
+        var floorRange = new Regex(@"\(Floors? (\d+)-(\d+)\)\s*$");
         var displayName = CapitalizeFirst(cfc.Value.Name.ToString());
         if (cfc.Value.ContentType.RowId == 21)
         {
             var baseName = Regex.Replace(displayName, @"\s*\(Floors? \d+-\d+\)\s*$", "");
+            var floorNums = new List<int>();
+            void CollectFloors(string rawName)
+            {
+                var m = floorRange.Match(rawName);
+                if (m.Success) { floorNums.Add(int.Parse(m.Groups[1].Value)); floorNums.Add(int.Parse(m.Groups[2].Value)); }
+            }
+            CollectFloors(displayName);
             foreach (var other in _gameData.GetExcelSheet<ContentFinderCondition>() ?? Enumerable.Empty<ContentFinderCondition>())
             {
                 if (other.ContentType.RowId != 21 || other.Name.IsEmpty) continue;
-                if (Regex.Replace(CapitalizeFirst(other.Name.ToString()), @"\s*\(Floors? \d+-\d+\)\s*$", "") == baseName)
+                var otherName = CapitalizeFirst(other.Name.ToString());
+                if (Regex.Replace(otherName, @"\s*\(Floors? \d+-\d+\)\s*$", "") == baseName)
+                {
                     siblingCfcIds.Add(other.RowId);
+                    CollectFloors(otherName);
+                }
             }
-            if (siblingCfcIds.Count > 1) displayName = $"{baseName} (all floors)";
+            if (siblingCfcIds.Count > 1 && floorNums.Count > 0)
+                displayName = $"{baseName} ({floorNums.Min()}-{floorNums.Max()})";
         }
 
         List<DutyDrop> Drops(IEnumerable<uint> ids)

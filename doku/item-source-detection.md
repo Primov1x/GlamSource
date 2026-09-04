@@ -1,5 +1,20 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## "1-100 statt all floors" — real floor range instead of generic wording (1.0.44.0)
+
+Follow-up to 1.0.43.0: instead of a generic "(all floors)", the header now shows the REAL overall
+range — min start floor to max end floor across every merged CFC row. Collects the two numbers out
+of each sibling's own `(Floors X-Y)` suffix via regex, takes the min/max. Verified live: Heaven-on-
+High → `"Heaven-on-High (1-100)"`, The Palace of the Dead → `"The Palace of the Dead (1-200)"`.
+`dotnet build` 0/0, `dotnet test` 54/54.
+
+**Found in passing, not fixed here**: `Eureka Orthos`'s newer sibling `Pilgrim's Traverse` names
+its checkpoints `"(Stones X-Y)"`, not `"(Floors X-Y)"` — the regex (both here and in the pulled
+merge-dedup logic) only matches "Floors", so Pilgrim's Traverse never gets merged at all: `/api/duties`
+still lists all 10 of its checkpoint rows (1032-1041) as separate tiles, same "lieblos" duplication
+problem the Deep Dungeon merge was written to fix for Palace/Heaven-on-High. Flagged for the user —
+fix would be widening the regex to `\(Floors?|Stones \d+-\d+\)`, same pattern, just the one word.
+
 ## Fix: Deep Dungeon duty header still said "(Floors 1-10)" after the all-floors merge (1.0.43.0)
 
 Live report (screenshot): opening Heaven-on-High's Duty Drops tile showed "Heaven-on-High (Floors
