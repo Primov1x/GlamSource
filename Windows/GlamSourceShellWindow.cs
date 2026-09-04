@@ -1176,6 +1176,29 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         }
     }
 
+    // One piece into the vanilla Fitting Room — the single-item sibling of QueueTryOnPreview's
+    // multi-slot queue below. No queue/drain needed for just one item, a direct call is enough;
+    // framework thread only (AgentTryon is ClientStructs), guaranteed by the web caller.
+    internal unsafe string TryOnItemToSelf(uint itemId)
+    {
+        try
+        {
+            var agent = AgentTryon.Instance();
+            if (agent != null)
+            {
+                var flag = (AgentTryonSaveFlag*)agent;
+                flag->SaveDeleteOutfit = true;
+            }
+            AgentTryon.TryOn(0, itemId, 0, 0, 0, false);
+            return "Queued — check Fitting Room."; // matches QueueTryOnPreview's own status text, not localized (same convention there)
+        }
+        catch (Exception ex)
+        {
+            _log.Error(ex, "[GlamSource] TryOnItemToSelf failed");
+            return "Failed — Fitting Room error.";
+        }
+    }
+
 private void ApplyTargetGlamourToSelf()
     {
         try

@@ -320,6 +320,8 @@ const I18N={
   apply_btn:{en:'Apply',de:'Glamen'}, // short label to match the ImGui toolbar (moved+renamed there too)
   apply_tt:{en:'Put the shown outfit on your own character via Glamourer (weapons skipped)',de:'Gezeigtes Outfit per Glamourer auf den eigenen Charakter legen (Waffen ausgenommen)'},
   apply_item_tt:{en:'Put this piece on your own character via Glamourer',de:'Dieses Teil per Glamourer auf den eigenen Charakter legen'},
+  preview_btn:{en:'Preview',de:'Vorschau'}, // matches the ImGui toolbar's short label
+  preview_item_tt:{en:'Queue this piece into the vanilla Fitting Room (in-game preview, not applied)',de:'Dieses Teil in die Anprobe (Fitting Room) legen — nur Vorschau, wird nicht angewendet'},
   ev_recurring:{en:'Recurring event',de:'Wiederkehrendes Event'},
   ev_onetime:{en:'One-time event',de:'Einmaliges Event'},
   ev_active:{en:'active now',de:'läuft gerade'},
@@ -911,7 +913,15 @@ function buildItemHtml(d,openFn='openItem'){
   // iLvl 1 = pure-glamour/cosmetic item, no real stats — "lvl 1 items" showing that number is
   // meaningless noise, drop it (same >1 threshold now used by every row's iLvl badge too).
   const metaParts=[d.itemLevel>1?`iLvl ${d.itemLevel}`:null,d.isMarketable?t('marketable'):null,d.setName?`${t('set_label')}: ${esc(d.setName)}`:null].filter(Boolean);
-  let h=`<div class="header">${img(d.iconId,48)}<div><h2 class="name">${esc(d.name)}${unlockBadge(d)}</h2><div class="meta">${metaParts.join(' · ')}</div>${d.isEquippable?`<button class="act" style="margin-top:4px" title="${t('apply_item_tt')}" onclick="glamourerPost('/api/action/glamourer/item/${d.itemId}',this)">${t('apply_btn')}</button>`:''}</div></div><div class="preview"><img src="/api/itemimage/${d.itemId}" loading="lazy" onerror="this.parentElement.style.display='none'"></div>`;
+  // "das mit dem button unters bild ist immer noch nicht" — was inside the header, above the
+  // preview image; moved below it instead, centered, same placement as the ImGui/whole-outfit
+  // buttons. Two of them now too, same split: Vorschau (Fitting Room, non-destructive try-on) /
+  // Glamen (actual Glamourer apply, permanent-until-changed).
+  const applyRow=d.isEquippable?`<div style="text-align:center;margin-top:2px">
+    <button class="act" title="${t('preview_item_tt')}" onclick="glamourerPost('/api/action/tryon/item/${d.itemId}',this)">${t('preview_btn')}</button>
+    <button class="act" title="${t('apply_item_tt')}" onclick="glamourerPost('/api/action/glamourer/item/${d.itemId}',this)">${t('apply_btn')}</button>
+  </div>`:'';
+  let h=`<div class="header">${img(d.iconId,48)}<div><h2 class="name">${esc(d.name)}${unlockBadge(d)}</h2><div class="meta">${metaParts.join(' · ')}</div></div></div><div class="preview"><img src="/api/itemimage/${d.itemId}" loading="lazy" onerror="this.parentElement.style.display='none'">${applyRow}</div>`;
   if((d.setMembers??[]).length){
     h+=`<div class="tbl">${t('rest_of_set')}</div><div style="display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 14px">`;
     for(const m of d.setMembers)h+=`<div class="row" style="width:auto" onclick="${openFn}(${m.itemId})">${img(m.iconId,24)}<span>${esc(m.name)}</span></div>`;

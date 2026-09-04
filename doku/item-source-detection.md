@@ -1,5 +1,35 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Single-item Preview/Apply buttons moved under the item's own preview image (1.0.60.0)
+
+"das mit dem button unters bild ist immer noch nicht? Und wie gesagt, ein mal für die preview am
+char links und einmal als glamourer api call, direkt am char ingame" — the PER-ITEM apply button
+(`buildItemHtml`'s single-piece "Apply" — distinct from 1.0.56.0's whole-outfit Apply/Preview pair
+under the Character tab's 3D preview) was still sitting inside the header text block, ABOVE the
+item's own preview image, not under it — 1.0.56.0 only moved the whole-outfit pair, this one was
+missed. Fixed the same way, plus split into the same two-button pattern:
+
+- **Vorschau/Preview**: new `TryOnItemToSelf(uint itemId)` in `GlamSourceShellWindow.cs` — single-
+  item sibling of the existing multi-slot `QueueTryOnPreview()`/`OnFrameworkDrainTryOn` queue-drain;
+  for one item a direct `AgentTryon.TryOn(0, itemId, 0, 0, 0, false)` call is enough, no queue
+  needed. New `POST /api/action/tryon/item/{id}` endpoint (`WebUiService.cs`), same
+  `_framework.RunOnFrameworkThread(...)` dispatch as the existing apply endpoint right above it.
+- **Glamen/Apply**: unchanged (`ApplyItemToSelf`, existing `/api/action/glamourer/item/{id}`), just
+  moved position + given a sibling button.
+- Both now render centered under the `<img>` inside `buildItemHtml`'s `.preview` div (was inside
+  `.header`) — reuses the already-generic `glamourerPost(url, btn)` JS helper for both endpoints,
+  no new client code needed beyond the row markup. New i18n keys `preview_btn`/`preview_item_tt`
+  (English "Preview", German "Vorschau" — same short label the ImGui toolbar already uses).
+
+Not mirrored in `GlamSource.Mock` (gitignored) — the existing single-item Glamourer apply endpoint
+was never mirrored there either (no live game/Glamourer IPC to fake against), so this isn't a new
+gap, just the same pre-existing one. Verified layout via the Browser pane against the Mock (button
+position, not the actual Fitting Room/Glamourer call — that needs the real game).
+
+Verified: `dotnet build` 0/0, `dotnet test` 54/54. Hit one build error along the way: a `uint
+tryOnItemId` local collided with an existing unrelated `/api/debug/tryon` endpoint's own `out var
+tryOnItemId` in the same method scope — renamed to `previewItemId`.
+
 ## Source-card grid, icon caching, hide iLvl 1 (1.0.59.0)
 
 - **"die kacheln könnte man besser gestalten, anstatt so eine nach der anderen"**: `.cards` was

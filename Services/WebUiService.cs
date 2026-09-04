@@ -522,6 +522,11 @@ public sealed class WebUiService : IDisposable
             return Json(new { status = _framework.RunOnFrameworkThread(() => _shell.ApplyToSelfFromWeb()).GetAwaiter().GetResult() });
         if (method == "POST" && path.StartsWith("/api/action/glamourer/item/") && uint.TryParse(path["/api/action/glamourer/item/".Length..], out var applyItemId))
             return Json(new { status = _framework.RunOnFrameworkThread(() => _shell.ApplyItemToSelf(applyItemId)).GetAwaiter().GetResult() });
+        // "einmal für die preview... einmal als glamourer api call" — single-item Fitting Room
+        // try-on, sibling to the apply endpoint above (same framework-thread dispatch, same button
+        // row now under every equippable item's preview image).
+        if (method == "POST" && path.StartsWith("/api/action/tryon/item/") && uint.TryParse(path["/api/action/tryon/item/".Length..], out var previewItemId))
+            return Json(new { status = _framework.RunOnFrameworkThread(() => _shell.TryOnItemToSelf(previewItemId)).GetAwaiter().GetResult() });
 
         if (method == "GET" && path == "/api/duties")
             return Json(_detail.ListDutiesWithDrops().Select(d => new { id = d.CfcId, name = d.Name, type = d.Type, drops = d.DropCount, imageId = d.ImageId, level = d.Level, itemLevel = d.ItemLevel, expansion = d.Expansion, typeIcon = d.TypeIconId, bosses = d.Bosses, difficulty = d.Difficulty }).ToArray());
