@@ -21,6 +21,7 @@
     <EmbeddedResource Include="LuminaSupplemental\CollectSources.csv" />
     <EmbeddedResource Include="LuminaSupplemental\MountItemMap.csv" />
     <EmbeddedResource Include="LuminaSupplemental\HoardSackContents.csv" />
+    <EmbeddedResource Include="LuminaSupplemental\DeepDungeonNewFloorDrops.csv" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="Lumina">

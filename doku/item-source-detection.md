@@ -1,5 +1,35 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Hand-compiled drop data for Eureka Orthos + Pilgrim's Traverse (1.0.47.0)
+
+Both showed 0 drops (1.0.46.0 audit) because `LuminaSupplemental.Excel` (already latest on NuGet,
+5.1.4, nothing newer) has no rows for either — Eureka Orthos too late for that package's last
+update, Pilgrim's Traverse (patch 7.35) brand new. No auto-fix possible; hand-compiled instead,
+verified against real sources before writing anything (this project's rule, not skipped):
+
+- Researched via `ffxiv.consolegameswiki.com` (WebSearch/WebFetch) — each Deep Dungeon has 3
+  Accursed-Hoard sack tiers per floor range: Eureka Orthos → Bronze-tinged Sack (38945, floors
+  1-30), Silver-tinged Sack (38946, 31-70), Gold-tinged Sack (38947, 71-100); Pilgrim's Traverse →
+  Sack of Silvered Light (47104, stones 1-30), Sack of Gilded Light (47105, 31-70), Sack of
+  Platinum Light (47106, 71-100).
+- Cross-checked all 6 item IDs against our OWN Item sheet via the mock (`/api/item/{id}`) before
+  trusting them — every name matched exactly.
+- Found the real per-10-floor CFC row IDs via a throwaway Lumina probe against `ContentFinderCondition`
+  (897-906 for Eureka Orthos, 1032-1041 for Pilgrim's Traverse — confirms both DO split into 10
+  rows like Palace/Heaven-on-High, just never had drop data to trigger the existing merge logic).
+
+New `LuminaSupplemental/DeepDungeonNewFloorDrops.csv` (own embedded resource — can't add rows to
+the LuminaSupplemental package's own compiled-in CSV), same `ItemId,ContentFinderConditionId`
+shape as their `DungeonDrop.csv`. Feeds `_itemToDutyMap` (same as `BuildDutyDropCache` does for
+the package's own rows — covers the item-source-card and `DutyToItems` drop counts) and unions
+into `GetDutyDetail`'s `generalDrops` (the duty tab's own list, which reads from the package's CSVs
+directly and never saw this data otherwise).
+
+Verified live via mock: both duties now show all 3 sacks each (`drops: 3`, was `0`); item 38945's
+own source card reads `"Deep Dungeon Drop: Eureka Orthos (1-30)"` — correctly narrower than the
+duty tab's `(1-100)`, matching the 1.0.44.0 pattern for the older Deep Dungeons. `dotnet build`
+0/0, `dotnet test` 54/54.
+
 ## Deep Dungeon loot audit + last "(all floors)" leftover fixed (1.0.46.0)
 
 "Check the deep dungeons — do they show loot and what you can buy with it": verified live via

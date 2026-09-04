@@ -248,6 +248,15 @@ public sealed class ItemDetailService : IItemDetailService
     // weights exist anywhere — this is the possible pool, not odds.
     private readonly Dictionary<uint, List<uint>> _hoardSackContents = new();
 
+    // "orthos und pilgrim's traverse leer" — LuminaSupplemental.Excel (already on latest 5.1.4,
+    // nothing newer on NuGet) has no drop-table rows for either: Eureka Orthos launched too late
+    // for that package's last update, Pilgrim's Traverse (patch 7.35) is brand new. Hand-compiled
+    // instead: their own Accursed Hoard sack items per 10-floor CFC row, verified against
+    // ffxiv.consolegameswiki.com AND cross-checked live against our own Item sheet (name match) —
+    // same "which duty drops this item" shape as LuminaSupplemental's own DungeonDrop.csv, just a
+    // separate small file since we can't add rows to their embedded package resource.
+    private readonly List<(uint ItemId, uint CfcId)> _deepDungeonNewFloorDrops = new();
+
     // Name-only fallback for NPCs with no location data
     private readonly Dictionary<uint, string> _shopNpcNameOnly = new();
 
@@ -1427,7 +1436,12 @@ public sealed class ItemDetailService : IItemDetailService
             if (drops.Count == 0 && chestList.Count == 0) continue;
             bossList.Add(new DutyBoss(f, name, drops, chestList));
         }
-        var generalDrops = Drops(general.Where(d => siblingCfcIds.Contains(d.ContentFinderConditionId)).Select(d => d.ItemId));
+        // union with our own hand-compiled rows (Eureka Orthos / Pilgrim's Traverse — see
+        // _deepDungeonNewFloorDrops' comment) — LuminaSupplemental's own `general` has nothing for
+        // either, this is the only source their drops come from.
+        var generalIds = general.Where(d => siblingCfcIds.Contains(d.ContentFinderConditionId)).Select(d => d.ItemId)
+            .Concat(_deepDungeonNewFloorDrops.Where(d => siblingCfcIds.Contains(d.CfcId)).Select(d => d.ItemId));
+        var generalDrops = Drops(generalIds);
         // "Mounts nach oben": mount and minion drops get their own section at the top instead of
         // hiding inside a boss chest list (the whole point of most Extreme trials)
         var featured = bossList.SelectMany(b => b.Drops.Concat(b.Chests.SelectMany(c => c.Items))).Concat(generalDrops)
@@ -2561,6 +2575,36 @@ public sealed class ItemDetailService : IItemDetailService
         BuildCollectSourceCache();
         BuildMountItemMapCache();
         BuildHoardSackContentsCache();
+        BuildDeepDungeonNewFloorDropsCache();
+    }
+
+    private void BuildDeepDungeonNewFloorDropsCache()
+    {
+        var assembly = typeof(ItemDetailService).Assembly;
+        using var stream = assembly.GetManifestResourceStream(
+            "GlamSource.Core.LuminaSupplemental.DeepDungeonNewFloorDrops.csv");
+        if (stream == null)
+            return;
+
+        using var reader = new StreamReader(stream);
+        reader.ReadLine(); // header
+        string? line;
+        while ((line = reader.ReadLine()) != null)
+        {
+            var parts = line.Split(',');
+            if (parts.Length < 2)
+                continue;
+            if (!uint.TryParse(parts[0], out var itemId) || !uint.TryParse(parts[1], out var cfcId))
+                continue;
+
+            _deepDungeonNewFloorDrops.Add((itemId, cfcId));
+            // same _itemToDutyMap merge BuildDutyDropCache does for LuminaSupplemental's own rows —
+            // feeds the item-source-card ("which duty drops this") and DutyToItems' drop counts.
+            if (!_itemToDutyMap.TryGetValue(itemId, out var duties))
+                _itemToDutyMap[itemId] = duties = new();
+            if (!duties.Contains(cfcId))
+                duties.Add(cfcId);
+        }
     }
 
     private void BuildHoardSackContentsCache()
