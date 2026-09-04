@@ -1,5 +1,26 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Sack contents round 1/3: Sack of Platinum Light (1.0.49.0)
+
+First of 3 rounds hand-compiling `HoardSackContents.csv` rows for Pilgrim's Traverse (flagged
+1.0.48.0 as too large for one pass). This round: item 47106, Sack of Platinum Light (stones
+71-100) — 111 items across 12 real categories (bardings, dyes... consumables, facewear, fashion,
+furniture, 3 full weapon-glamour collections — Augmented/Sanctifying Light/The Fae's Crown —
+hairstyle, materia XI/XII×7 stats, 28 orchestrion rolls, 1 vendor item).
+
+Every single item name fetched from `ffxiv.consolegameswiki.com`, then verified against our OWN
+local Item sheet by name via the mock's `/api/search` before trusting the ID (not just copied from
+the wiki) — same rule as 1.0.47.0's drop-source data. Two weapon collections each had one extra
+item ("Paladin's Arms"/"Paladin Arms") the wiki's own content-summary didn't list as part of this
+sack's pool — excluded rather than guessed in.
+
+Verified live via mock: `/api/item/47106` now returns 26 grouped `contentsSummary` categories
+covering all 111 items (Orchestrion Roll ×28, Materia ×14, per-job weapon groups ×3 each, ...).
+`dotnet build` 0/0, `dotnet test` 54/54.
+
+**Remaining**: Sack of Gilded Light (47105, stones 31-70) and Sack of Silvered Light (47104,
+stones 1-30) — next 2 rounds.
+
 ## Web: duplicate "Duty öffnen" button removed, remaining one made bigger (1.0.48.0)
 
 Live report (screenshot, Pilgrim's Traverse → Sack of Platinum Light via Duty Drops tab): TWO
