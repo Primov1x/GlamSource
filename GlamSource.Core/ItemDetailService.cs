@@ -526,13 +526,22 @@ public sealed class ItemDetailService : IItemDetailService
                 // 20 rows, "Floors 1-10" through "Floors 191-200") — a floor-gear piece droppable
                 // across the whole dungeon used to get one near-identical card per row. Group by the
                 // dungeon name with the floor suffix stripped; >1 row sharing a base name collapses
-                // into a single "(all floors)" card. Verified live: this screenshot showed 5+ Palace
-                // of the Dead cards for one item ("lieblos").
+                // into a single card with the real overall range (matches GetDutyDetail's header —
+                // "die deep dungeons checken" caught this one still saying generic "(all floors)").
+                // Verified live: this screenshot showed 5+ Palace of the Dead cards for one item
+                // ("lieblos").
                 foreach (var group in cfcNames.GroupBy(c => DeepDungeonCheckpointSuffix.Replace(c.name, "")))
                 {
                     var groupList = group.ToList();
                     var (name, dutyType, sourceType, rowId) = groupList[0];
-                    var displayName = groupList.Count > 1 ? $"{group.Key} (all floors)" : name;
+                    string displayName;
+                    if (groupList.Count > 1)
+                    {
+                        var floorNums = groupList.SelectMany(c => DeepDungeonCheckpointRange.Match(c.name) is { Success: true } m
+                            ? new[] { int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value) } : Array.Empty<int>()).ToList();
+                        displayName = floorNums.Count > 0 ? $"{group.Key} ({floorNums.Min()}-{floorNums.Max()})" : $"{group.Key} (all floors)";
+                    }
+                    else displayName = name;
                     results.Add(new ItemSourceDetail(
                         sourceType,
                         $"{dutyType} Drop: {displayName}",

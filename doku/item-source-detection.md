@@ -1,5 +1,29 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Deep Dungeon loot audit + last "(all floors)" leftover fixed (1.0.46.0)
+
+"Check the deep dungeons — do they show loot and what you can buy with it": verified live via
+mock against all 4 (Palace of the Dead, Heaven-on-High, Eureka Orthos, Pilgrim's Traverse).
+
+- **Loot**: the Duty Drops tab's "general" list correctly shows the loot-bearing Sack items
+  (Bronze/Silver/Gold/Platinum-trimmed for PotD, Silver/Gold/Platinum-haloed for HoH) — these are
+  the "Accursed Hoard" treasure-chest drops. Clicking into a sack's own item detail shows its full
+  randomized contents (`contentsSummary`, grouped by category — the pulled 1.0.2x work), verified
+  live for item 16170 (Bronze-trimmed Sack). Eureka Orthos and Pilgrim's Traverse show 0 local
+  drops — LuminaSupplemental's tables end around patch 7.1 (documented limitation elsewhere in this
+  file), both are newer content; not a bug, just no local data source for them yet.
+- **"What you can buy with it"**: nothing to show — Deep Dungeons genuinely have no NPC exchange
+  shop tied to a special currency in the real game (unlike raids/tomestones). `exchanges: []` for
+  all 4 is the CORRECT representation, confirmed by design (the `DutyDetail.Exchanges` field exists
+  generically for other duty types that DO have one).
+- **Found while checking**: the item-source-card path (`BuildSources`, "which duty drops this
+  item") still said the generic `"(all floors)"` — 1.0.44.0/1.0.45.0 only updated the Duty Drops
+  TAB's own header, not this second place showing the same situation. Fixed the same way: real
+  floor range from the merged CFC rows. Verified live: item 16170's source now reads `"Deep Dungeon
+  Drop: the Palace of the Dead (1-50)"` — narrower than the duty tab's own `(1-200)`, correctly,
+  since this specific sack tier only drops from CFC rows covering floors 1-50, not the whole
+  dungeon. `dotnet build` 0/0, `dotnet test` 54/54.
+
 ## Fix: Pilgrim's Traverse ("Stones") never merged into one tile (1.0.45.0)
 
 Follow-up to 1.0.44.0's flagged-not-fixed note: Pilgrim's Traverse names its Deep Dungeon
