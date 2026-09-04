@@ -1,5 +1,22 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Fix: Pilgrim's Traverse ("Stones") never merged into one tile (1.0.45.0)
+
+Follow-up to 1.0.44.0's flagged-not-fixed note: Pilgrim's Traverse names its Deep Dungeon
+checkpoints `"(Stones X-Y)"`, not `"(Floors X-Y)"` — the merge/dedup regex (three separate call
+sites: item-source-card grouping, `ListDutiesWithDrops` picker merge, `GetDutyDetail` header) only
+matched "Floors", so it fell through all three unmatched: 10 separate picker tiles, no drop
+aggregation, generic name never stripped.
+
+Deduped into one shared pattern instead of patching each literal separately — `DeepDungeonCheckpointSuffix`/
+`DeepDungeonCheckpointRange`, both built from one `DeepDungeonCheckpointWord = "(?:Floors?|Stones)"`
+const, so a THIRD future checkpoint word only needs changing in one place. All 5 previous
+`@"...Floors?..."` literals across the 3 call sites now reference these.
+
+Verified live via mock: `/api/duties` now lists Pilgrim's Traverse as ONE tile (was 10:
+`1032`-`1041`); `/api/duty/1032` returns `"Pilgrim's Traverse (1-100)"`. Palace of the Dead /
+Heaven-on-High unaffected (still `(1-200)`/`(1-100)`). `dotnet build` 0/0, `dotnet test` 54/54.
+
 ## "1-100 statt all floors" — real floor range instead of generic wording (1.0.44.0)
 
 Follow-up to 1.0.43.0: instead of a generic "(all floors)", the header now shows the REAL overall

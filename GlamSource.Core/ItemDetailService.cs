@@ -123,6 +123,15 @@ public sealed class ItemDetailService : IItemDetailService
     private Dictionary<string, uint>? _itemIdByName; // lazy, built once on first fallback lookup
     private Dictionary<uint, List<(uint id, string name, uint iconId)>>? _itemsBySeriesId; // lazy
 
+    // Deep Dungeon checkpoint-row suffix: most use "(Floors X-Y)" (Palace of the Dead, Heaven-on-
+    // High, Eureka Orthos), but Pilgrim's Traverse — Eureka Orthos's own newer sibling — uses
+    // "(Stones X-Y)" instead. Live report: "fix pilgrim's traverse (stones) auch" — the merge/dedup
+    // logic below only matched "Floors", so its 10 checkpoint rows never got merged into one tile.
+    // One shared pattern so every place that merges/strips this suffix stays in sync.
+    private const string DeepDungeonCheckpointWord = "(?:Floors?|Stones)";
+    private static readonly Regex DeepDungeonCheckpointSuffix = new($@"\s*\({DeepDungeonCheckpointWord} \d+-\d+\)\s*$");
+    private static readonly Regex DeepDungeonCheckpointRange = new($@"\({DeepDungeonCheckpointWord} (\d+)-(\d+)\)\s*$");
+
     private record NpcLocationInfo(
         string NpcName, string ZoneName,
         float MapX, float MapY,
@@ -519,7 +528,7 @@ public sealed class ItemDetailService : IItemDetailService
                 // dungeon name with the floor suffix stripped; >1 row sharing a base name collapses
                 // into a single "(all floors)" card. Verified live: this screenshot showed 5+ Palace
                 // of the Dead cards for one item ("lieblos").
-                foreach (var group in cfcNames.GroupBy(c => Regex.Replace(c.name, @"\s*\(Floors? \d+-\d+\)\s*$", "")))
+                foreach (var group in cfcNames.GroupBy(c => DeepDungeonCheckpointSuffix.Replace(c.name, "")))
                 {
                     var groupList = group.ToList();
                     var (name, dutyType, sourceType, rowId) = groupList[0];
@@ -1267,7 +1276,7 @@ public sealed class ItemDetailService : IItemDetailService
         // "jedes deep dungeon zusammenfassen" ask applies here too — verified live, this picker
         // showed 10 separate "Heaven-on-High (Floors X-Y)" tiles. Group by base name, merge into one.
         var merged = new List<DutyInfo>();
-        foreach (var group in list.GroupBy(d => d.Type == "Deep Dungeon" ? Regex.Replace(d.Name, @"\s*\(Floors? \d+-\d+\)\s*$", "") : d.Name))
+        foreach (var group in list.GroupBy(d => d.Type == "Deep Dungeon" ? DeepDungeonCheckpointSuffix.Replace(d.Name, "") : d.Name))
         {
             var groupList = group.ToList();
             if (groupList.Count == 1) { merged.Add(groupList[0]); continue; }
@@ -1353,15 +1362,14 @@ public sealed class ItemDetailService : IItemDetailService
         // looked like the list was silently truncated to floors 1-10 again. Use the stripped base
         // name plus the REAL overall floor range (min start - max end across every merged row,
         // e.g. "1-100" for Heaven-on-High) instead of a generic "(all floors)".
-        var floorRange = new Regex(@"\(Floors? (\d+)-(\d+)\)\s*$");
         var displayName = CapitalizeFirst(cfc.Value.Name.ToString());
         if (cfc.Value.ContentType.RowId == 21)
         {
-            var baseName = Regex.Replace(displayName, @"\s*\(Floors? \d+-\d+\)\s*$", "");
+            var baseName = DeepDungeonCheckpointSuffix.Replace(displayName, "");
             var floorNums = new List<int>();
             void CollectFloors(string rawName)
             {
-                var m = floorRange.Match(rawName);
+                var m = DeepDungeonCheckpointRange.Match(rawName);
                 if (m.Success) { floorNums.Add(int.Parse(m.Groups[1].Value)); floorNums.Add(int.Parse(m.Groups[2].Value)); }
             }
             CollectFloors(displayName);
@@ -1369,7 +1377,7 @@ public sealed class ItemDetailService : IItemDetailService
             {
                 if (other.ContentType.RowId != 21 || other.Name.IsEmpty) continue;
                 var otherName = CapitalizeFirst(other.Name.ToString());
-                if (Regex.Replace(otherName, @"\s*\(Floors? \d+-\d+\)\s*$", "") == baseName)
+                if (DeepDungeonCheckpointSuffix.Replace(otherName, "") == baseName)
                 {
                     siblingCfcIds.Add(other.RowId);
                     CollectFloors(otherName);
