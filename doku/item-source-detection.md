@@ -1,5 +1,18 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Sack contents round 2/3: Sack of Gilded Light (1.0.50.0)
+
+Item 47105, stones 31-70 — 137 items across 10 categories (bardings, consumables, dyes, 24
+furniture pieces, 29 glamour pieces, hairstyle, materia, 18 minions — this sack does give minions,
+unlike Platinum Light — 30 orchestrion rolls, 4 vendor items). Same rule as rounds 1: every name
+fetched from the wiki, every ID verified against our own Item sheet via mock `/api/search` before
+trusting it. Dyes/materia/hairstyle reused verbatim from round 1 (identical across all 3 sacks).
+
+Verified live via mock: `/api/item/47105` → 18 grouped categories, 137 items total, matches the
+CSV row count exactly. `dotnet build` 0/0, `dotnet test` 54/54.
+
+**Remaining**: Sack of Silvered Light (47104, stones 1-30) — last round.
+
 ## Sack contents round 1/3: Sack of Platinum Light (1.0.49.0)
 
 First of 3 rounds hand-compiling `HoardSackContents.csv` rows for Pilgrim's Traverse (flagged
