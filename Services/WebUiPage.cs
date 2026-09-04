@@ -346,6 +346,7 @@ const I18N={
   diff_Alliance:{en:'Alliance',de:'Allianz'},
   duties:{en:'duties',de:'Duties'},
   map:{en:'Map',de:'Karte'},
+  highlight_npc:{en:'Highlight',de:'Markieren'},
   search_ph:{en:'Search any item… or paste an item ID',de:'Beliebiges Item suchen… oder Item-ID einfügen'},
   p3dhint:{en:'Overlay is unlocked — lock it top-right, then drag-rotate.',de:'Overlay ist entsperrt — Schloss oben rechts sperren, dann per Ziehen drehen.'},
   chardetail_hint:{en:'Click a slot for source & details',de:'Slot anklicken für Herkunft & Quellen'},
@@ -1179,7 +1180,10 @@ async function annotateInventory(container){
 function npcRow(s){
   const loc=[s.zoneName,s.mapX!=null?`(${s.mapX.toFixed(1)}, ${s.mapY.toFixed(1)})`:null].filter(Boolean).join(' ');
   const map=s.mapX!=null&&s.territoryTypeId?`<button class="act" onclick="post('/api/action/map?territory=${s.territoryTypeId}&map=${s.mapId}&x=${s.mapX}&y=${s.mapY}')">${t('map')}</button>`:'';
-  return`<tr><td>${esc(s.npcName)}</td><td class="muted">${esc(loc)}</td><td>${map}</td></tr>`;
+  // "1:1 wie VendorLocation das macht" — red world-outline pulse on the actual NPC, not just a
+  // map marker. Only when we resolved a real ENpcBase id (0/missing = can't match anything).
+  const hl=s.npcId?` <button class="act" onclick="post('/api/action/highlight/${s.npcId}')">${t('highlight_npc')}</button>`:'';
+  return`<tr><td>${esc(s.npcName)}</td><td class="muted">${esc(loc)}</td><td>${map}${hl}</td></tr>`;
 }
 
 // EquipmentSlotType names -> in-game style labels per UI language (was German-only, and missed

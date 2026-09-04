@@ -1176,6 +1176,48 @@ public sealed class GlamSourceShellWindow : Window, IDisposable
         }
     }
 
+    // "1:1 wie VendorLocation das macht" — GameObject.Highlight() is the same native
+    // ObjectHighlightColor outline the game itself uses (quest markers etc.), verified against
+    // ItemVendorLocation's own HighlightObject.cs (same BaseId match, same API). One-shot pulse
+    // (a few seconds, auto-clears) rather than a persistent toggle — no settings UI needed, no
+    // risk of a highlight staying stuck on if the NPC despawns/the player changes zones. Matches
+    // every visible instance of that BaseId (an NPC can have several placements in view).
+    private const double HighlightSeconds = 5;
+    private uint _highlightNpcId;
+    private DateTime _highlightUntil;
+    private bool _highlightHooked;
+
+    internal string HighlightNpc(uint npcId)
+    {
+        if (npcId == 0) return Loc.T("Unknown location — nothing to highlight.");
+        _highlightNpcId = npcId;
+        _highlightUntil = DateTime.UtcNow.AddSeconds(HighlightSeconds);
+        if (!_highlightHooked)
+        {
+            _framework.Update += OnFrameworkHighlightTick;
+            _highlightHooked = true;
+        }
+        return Loc.T("Highlighted — look for the red outline nearby.");
+    }
+
+    private unsafe void OnFrameworkHighlightTick(IFramework framework)
+    {
+        var color = DateTime.UtcNow <= _highlightUntil ? ObjectHighlightColor.Red : ObjectHighlightColor.None;
+        foreach (var obj in _objectTable)
+        {
+            if (!obj.IsValid()) continue;
+            var go = (GameObject*)obj.Address;
+            if (go->BaseId == _highlightNpcId)
+                go->Highlight(color);
+        }
+        if (color == ObjectHighlightColor.None)
+        {
+            _framework.Update -= OnFrameworkHighlightTick;
+            _highlightHooked = false;
+            _highlightNpcId = 0;
+        }
+    }
+
     // One piece into the vanilla Fitting Room — the single-item sibling of QueueTryOnPreview's
     // multi-slot queue below. No queue/drain needed for just one item, a direct call is enough;
     // framework thread only (AgentTryon is ClientStructs), guaranteed by the web caller.

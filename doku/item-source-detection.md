@@ -1,5 +1,46 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Vendor NPC world-highlight — "1:1 wie VendorLocation" (1.0.67.0)
+
+Native `GameObject.Highlight(ObjectHighlightColor)` — the same in-world red-outline effect the
+game itself uses for quest markers — verified against the `ItemVendorLocation` reference plugin's
+own `HighlightObject.cs` (identical mechanism: match `GameObject->BaseId` against the target NPC's
+`ENpcBase` RowId, call `->Highlight(color)`). One-shot pulse (5s, auto-clears via a `Framework.Update`
+hook) rather than a persistent toggle — no settings UI needed, and nothing can stay stuck highlighted
+if the NPC despawns or the player changes zones.
+
+**Data layer**: `NpcLocationInfo` (the internal vendor-location record `ItemDetailService.cs` builds
+during shop-NPC binding) never carried the NPC's own `ENpcBase` RowId — only name/zone/coordinates —
+even though that id is directly available at all 3 construction sites (it's the same `npcId` the
+surrounding loop already iterates over `ENpcBase.RowId`... it just wasn't being stored). Added as
+the record's new first field. `ItemSourceDetail` gained a matching optional `NpcId` field (named,
+not positional, so only the 3 call sites that actually resolve one needed touching, not the ~30
+other `ItemSourceDetail` constructions in the file). The name-only vendor fallback
+(`_shopNpcNameOnly`, no location ever tracked) gets `NpcId: 0` — a deliberate "can't highlight, we
+never resolved a real id" sentinel, not a bug.
+
+**Web UI**: new `POST /api/action/highlight/{npcId}` (framework-thread-dispatched, same pattern as
+the existing apply/tryon endpoints) calling a new `GlamSourceShellWindow.HighlightNpc(uint)`. New
+"Markieren"/"Highlight" button in `npcRow()`, next to the existing Map button, shown only when
+`s.npcId` is truthy. **Not mirrored in `GlamSource.Mock`** — the standalone Mock has no live
+`IObjectTable`/game process to highlight anything in, and no `GlamSourceShellWindow` instance to
+call at all (confirmed: `WebPreviewServer`'s constructor never took one) — same "genuinely can't be
+faked here" class as the 3D preview stream and the single-item apply/tryon endpoints. The button
+still renders and is clickable in the Mock (harmless 404 on click, no crash).
+
+**ImGui**: added directly to `DrawNpcTable`'s existing map-icon column (`FontAwesomeIcon.
+LocationCrosshairs`, verified against Dalamud's own `FontAwesomeIcon.cs` before use — not guessed),
+shown only when `src.NpcId > 0`. Self-contained `HighlightNpc`/`OnFrameworkHighlightTick` pair in
+`ItemDetailWindow.cs` — NOT sharing the shell's copy (no reference to the shell from this window),
+uses the same static `Plugin.Framework`/`Plugin.ObjectTable` services directly instead, guarded by
+the same `_plugin == null` Mock-hang check every other raw-native call in this file already uses.
+
+Verified: `dotnet build` 0/0, `dotnet test` 54/54. `npcId` presence in the JSON confirmed live
+against the Mock (`/api/item/52419` → 5 real `ENpcBase` RowIds, one per vendor location) and the
+"Markieren" button rendering next to "Karte" screenshot-confirmed via the Browser pane. The actual
+in-world highlight effect itself needs a real running game (no `IObjectTable` in the Mock) —
+flagged for the user to confirm live, same caveat as every native-only feature this session.
+
 ## Unlock badges in expanded coffer/hoard-sack contents (1.0.66.0)
 
 "da soll natürlich auch stehen ob schon 'obtained'" — clicking into a coffer/hoard-sack's "Can

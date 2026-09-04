@@ -56,7 +56,11 @@ public record ItemSourceDetail(
     uint? QuestForUnlock,
     IReadOnlyList<uint>? CfcRowIds,
     string? ShopUrl = null,
-    uint? SourceItemId = null);
+    uint? SourceItemId = null,
+    // ENpcBase RowId for NpcName (0/null = unknown, e.g. the name-only vendor fallback) — feeds the
+    // "highlight this NPC in the world" feature. Optional/named so this didn't need touching every
+    // other ItemSourceDetail construction site in the file, only the 3 that actually resolve one.
+    uint? NpcId = null);
 
 /// One duty (ContentFinderCondition) that has at least one known drop.
 /// Bosses: fight names in order (Susano, Titan, ...) so the tab's search finds a duty by its boss.
@@ -151,8 +155,11 @@ public sealed class ItemDetailService : IItemDetailService
     // when we don't know what a non-English client actually put inside those parens.
     private static readonly Regex TrailingParenSuffix = new(@"\s*\([^)]*\)\s*$");
 
+    // NpcId: ENpcBase RowId — same value GameObject.BaseId reads at runtime (verified against
+    // ItemVendorLocation reference plugin's own HighlightObject.cs, which matches on that exact
+    // field). Feeds the "highlight this NPC" feature; not used for anything else in this record.
     private record NpcLocationInfo(
-        string NpcName, string ZoneName,
+        uint NpcId, string NpcName, string ZoneName,
         float MapX, float MapY,
         uint TerritoryTypeId, uint MapId);
     private record GatheringInfo(
@@ -1049,7 +1056,9 @@ public sealed class ItemDetailService : IItemDetailService
                 // where to actually go trade it in — same NPC lookup FindSpecialShopSources uses.
                 var npcInfos = _shopNpcLookup.GetValueOrDefault(group.Key);
                 if (npcInfos == null && _shopNpcNameOnly.TryGetValue(group.Key, out var nameOnly))
-                    npcInfos = new List<NpcLocationInfo> { new(nameOnly, "", 0, 0, 0, 0) };
+                    // 0 NpcId: this fallback only ever tracked a name (_shopNpcNameOnly), never the
+                    // ENpcBase row id — no highlight possible for these, HighlightNpc(0) is a no-op.
+                    npcInfos = new List<NpcLocationInfo> { new(0, nameOnly, "", 0, 0, 0, 0) };
 
                 var desc = $"{Tr("Trade-in only")} — {Tr("handed over at")} \"{shopName}\"; {Tr("the item itself isn't sold there.")}";
                 if (npcInfos is { Count: > 0 })
@@ -1057,7 +1066,7 @@ public sealed class ItemDetailService : IItemDetailService
                     foreach (var npc in npcInfos)
                         results.Add(new ItemSourceDetail(ItemSourceType.Other, desc,
                             npc.NpcName, npc.ZoneName, npc.MapX, npc.MapY, npc.TerritoryTypeId, npc.MapId,
-                            null, tradeInPieces, null, null, null, null, null, null, null, SourceItemId: singleReceiveId));
+                            null, tradeInPieces, null, null, null, null, null, null, null, SourceItemId: singleReceiveId, NpcId: npc.NpcId));
                 }
                 else
                 {
@@ -1858,7 +1867,7 @@ public sealed class ItemDetailService : IItemDetailService
                             npc.NpcName, npc.ZoneName,
                             npc.MapX, npc.MapY,
                             npc.TerritoryTypeId, npc.MapId,
-                            costs, null, null, null, null, null, null, null, null));
+                            costs, null, null, null, null, null, null, null, null, NpcId: npc.NpcId));
                     }
                 }
                 else
@@ -1984,7 +1993,9 @@ public sealed class ItemDetailService : IItemDetailService
                         var npcInfos = _shopNpcLookup.GetValueOrDefault(shopId);
                         if (npcInfos == null && _shopNpcNameOnly.TryGetValue(shopId, out var nameOnly))
                         {
-                            npcInfos = new List<NpcLocationInfo> { new(nameOnly, "", 0, 0, 0, 0) };
+                            // 0 NpcId: this fallback only ever tracked a name (_shopNpcNameOnly), never the
+                            // ENpcBase row id — no highlight possible for these, HighlightNpc(0) is a no-op.
+                            npcInfos = new List<NpcLocationInfo> { new(0, nameOnly, "", 0, 0, 0, 0) };
                         }
 
                         if (npcInfos != null && npcInfos.Count > 0)
@@ -1998,7 +2009,7 @@ public sealed class ItemDetailService : IItemDetailService
                                     npc.MapX, npc.MapY,
                                     npc.TerritoryTypeId, npc.MapId,
                                     currencyItemIds, null,
-                                    questName, null, null, null, null, questForUnlock, null));
+                                    questName, null, null, null, null, questForUnlock, null, NpcId: npc.NpcId));
                             }
                         }
                         else
@@ -2218,7 +2229,7 @@ public sealed class ItemDetailService : IItemDetailService
                     var supMapY = place.Position.Y;
 
                     var supInfo = new NpcLocationInfo(
-                        npcName, supZoneName, supMapX, supMapY, supTerritoryTypeId, supMapId);
+                        npcId, npcName, supZoneName, supMapX, supMapY, supTerritoryTypeId, supMapId);
                     foreach (var dataRef in npcBase.ENpcData)
                     {
                         if (dataRef.RowId == 0)
@@ -2237,7 +2248,7 @@ public sealed class ItemDetailService : IItemDetailService
             var mapY = ToMapCoordinate(levelInfo.z, map.SizeFactor, map.OffsetY);
 
             var levelInfoRecord = new NpcLocationInfo(
-                npcName, zoneName, mapX, mapY, territoryTypeId, mapId);
+                npcId, npcName, zoneName, mapX, mapY, territoryTypeId, mapId);
             foreach (var dataRef in npcBase.ENpcData)
             {
                 if (dataRef.RowId == 0)
@@ -2289,7 +2300,7 @@ public sealed class ItemDetailService : IItemDetailService
 
                                 var npcBase = enpcBaseSheet.GetRow(npcId);
                                 var lgbInfo = new NpcLocationInfo(
-                                    npcName, zoneName, mapX, mapY,
+                                    npcId, npcName, zoneName, mapX, mapY,
                                     territory.RowId, map.Value.RowId);
                                 foreach (var dataRef in npcBase.ENpcData)
                                 {

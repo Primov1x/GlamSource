@@ -346,5 +346,8 @@ public static class Loc
         ["Unknown Currency"] = "Unbekannte Währung",
         ["Item Exchange"] = "Item-Tausch",
         ["Shop"] = "Shop",
+        ["Highlight"] = "Markieren",
+        ["Unknown location — nothing to highlight."] = "Unbekannter Ort — nichts zu markieren.",
+        ["Highlighted — look for the red outline nearby."] = "Markiert — nach der roten Umrandung in der Nähe Ausschau halten.",
     };
 }

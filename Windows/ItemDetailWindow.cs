@@ -16,6 +16,7 @@ using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
+using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using GlamSource.Core;
 using GlamSource.Services;
@@ -1086,6 +1087,46 @@ public class ItemDetailWindow : Window, IDisposable
     private void DrawNpcRow(ItemSourceDetail src, int groupIdx, int npcIdx)
         => DrawNpcTable(new[] { src }, groupIdx * 1000 + npcIdx + 1);
 
+    // "1:1 wie VendorLocation das macht" — same GameObject.Highlight() native outline the web UI's
+    // GlamSourceShellWindow.HighlightNpc uses; a self-contained copy here (not shared with the
+    // shell) since ItemDetailWindow has no reference to it — uses the same static Plugin.Framework/
+    // Plugin.ObjectTable services directly instead. _plugin==null guard: same Mock-hang class as
+    // every other raw-native call in this file (see UnlockCheckService usage above).
+    private const double HighlightSeconds = 5;
+    private uint _highlightNpcId;
+    private DateTime _highlightUntil;
+    private bool _highlightHooked;
+
+    private void HighlightNpc(uint npcId)
+    {
+        if (_plugin == null || npcId == 0) return;
+        _highlightNpcId = npcId;
+        _highlightUntil = DateTime.UtcNow.AddSeconds(HighlightSeconds);
+        if (!_highlightHooked)
+        {
+            Plugin.Framework.Update += OnFrameworkHighlightTick;
+            _highlightHooked = true;
+        }
+    }
+
+    private unsafe void OnFrameworkHighlightTick(IFramework framework)
+    {
+        var color = DateTime.UtcNow <= _highlightUntil ? ObjectHighlightColor.Red : ObjectHighlightColor.None;
+        foreach (var obj in Plugin.ObjectTable)
+        {
+            if (!obj.IsValid()) continue;
+            var go = (GameObject*)obj.Address;
+            if (go->BaseId == _highlightNpcId)
+                go->Highlight(color);
+        }
+        if (color == ObjectHighlightColor.None)
+        {
+            Plugin.Framework.Update -= OnFrameworkHighlightTick;
+            _highlightHooked = false;
+            _highlightNpcId = 0;
+        }
+    }
+
     // ponytail: aligned vendor list \u2014 NPC | zone (x,y) | map button. Right-click a location copies it.
     private void DrawNpcTable(IReadOnlyList<ItemSourceDetail> npcs, int tableId)
     {
@@ -1094,7 +1135,7 @@ public class ItemDetailWindow : Window, IDisposable
             return;
         ImGui.TableSetupColumn("npc", ImGuiTableColumnFlags.WidthStretch, 2f);
         ImGui.TableSetupColumn("loc", ImGuiTableColumnFlags.WidthStretch, 2f);
-        ImGui.TableSetupColumn("map", ImGuiTableColumnFlags.WidthFixed, ImGui.GetFrameHeight());
+        ImGui.TableSetupColumn("map", ImGuiTableColumnFlags.WidthFixed, ImGui.GetFrameHeight() * 2 + ImGui.GetStyle().ItemSpacing.X);
 
         for (int i = 0; i < npcs.Count; i++)
         {
@@ -1127,6 +1168,19 @@ public class ItemDetailWindow : Window, IDisposable
                 }
                 if (ImGui.IsItemHovered())
                     ImGui.SetTooltip(Loc.T("Open map"));
+            }
+            // "1:1 wie VendorLocation das macht" — red world-outline pulse, only when we actually
+            // resolved a real ENpcBase id (0/null = the name-only vendor fallback, can't match).
+            if (src.NpcId is > 0 && _plugin != null)
+            {
+                ImGui.SameLine();
+                using (ImRaii.PushId($"hl_{tableId}_{i}"))
+                {
+                    if (ImGuiComponents.IconButton(FontAwesomeIcon.LocationCrosshairs))
+                        HighlightNpc(src.NpcId.Value);
+                }
+                if (ImGui.IsItemHovered())
+                    ImGui.SetTooltip(Loc.T("Highlight"));
             }
         }
         ImGui.EndTable();

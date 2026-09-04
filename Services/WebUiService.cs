@@ -527,6 +527,11 @@ public sealed class WebUiService : IDisposable
         // row now under every equippable item's preview image).
         if (method == "POST" && path.StartsWith("/api/action/tryon/item/") && uint.TryParse(path["/api/action/tryon/item/".Length..], out var previewItemId))
             return Json(new { status = _framework.RunOnFrameworkThread(() => _shell.TryOnItemToSelf(previewItemId)).GetAwaiter().GetResult() });
+        // "1:1 wie VendorLocation das macht" — highlight a vendor NPC in the world (red outline,
+        // a few seconds). npcId not itemId — the button lives on a Vendor source card, which
+        // already carries the NPC's own ENpcBase RowId.
+        if (method == "POST" && path.StartsWith("/api/action/highlight/") && uint.TryParse(path["/api/action/highlight/".Length..], out var highlightNpcId))
+            return Json(new { status = _framework.RunOnFrameworkThread(() => _shell.HighlightNpc(highlightNpcId)).GetAwaiter().GetResult() });
 
         // "Mogstation items sollen nen korrekt shop link haben nicht nur 'ist mog'" — mirrors
         // ItemDetailWindow's own "Open Mog Station" button (same Process.Start+UseShellExecute).
