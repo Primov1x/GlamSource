@@ -607,6 +607,18 @@ public sealed class WebUiService : IDisposable
             return Json(prices);
         }
 
+        if (method == "GET" && path == "/api/unlock/bulk")
+        {
+            // "da soll natürlich auch stehen ob schon 'obtained'" — expanded coffer/hoard-sack
+            // contents (13x Minion, Triple Triad cards, ...) want the same green/red badge every
+            // other item row already gets, without one /api/item round trip per entry (a sack can
+            // list 100+). Same ids-as-comma-separated-query-param shape as /api/market/bulk.
+            var unlockIds = (query["ids"] ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(s => uint.TryParse(s, out var id) ? id : 0).Where(id => id > 0).Distinct().ToList();
+            var unlocks = unlockIds.ToDictionary(id => id, id => UnlockCheckService.CheckUnlocked(_detail, id));
+            return Json(unlocks);
+        }
+
         if (method == "GET" && path.StartsWith("/api/market/") && uint.TryParse(path["/api/market/".Length..], out var marketItemId))
         {
             // same blocking-await-on-request-thread pattern as /api/itemimage/ above — fine here

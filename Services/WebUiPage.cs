@@ -820,6 +820,8 @@ const unlockBadge=x=>{
 // gets its own line instead of running on after the name.
 const rowPrice=id=>`<div class="rowprice" data-item="${id}"></div>`;
 const rowText=(nameHtml,id)=>`<div class="rowtext"><div class="rowname">${nameHtml}</div>${rowPrice(id)}</div>`;
+// empty placeholder, filled in by annotateBulkUnlocks() — see that function's own comment.
+const unlockSlot=id=>`<span class="unlockslot" data-item="${id}"></span>`;
 const featSection=list=>`<div class="dsec" style="margin-top:0"><div class="dsech">${t('duty_featured')}</div><div class="results dgrid">${list.map(x=>`<div class="row" data-item="${x.itemId}" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${unlockBadge(x)}${img(x.iconId,28)}${rowText(`${esc(x.name)}<span class="ilvl">${x.kind==='Mount'?t('mount'):t('minion')}</span>`,x.itemId)}<img class="rowpreview" src="/api/itemimage/${x.itemId}" loading="lazy" onerror="this.remove()"></div>`).join('')}</div></div>`;
 const previewRows=list=>list.map(x=>`<div class="row" data-item="${x.itemId}" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${img(x.iconId,28)}${rowText(`${esc(x.name)}${x.itemLevel>1?`<span class="ilvl">iLvl ${x.itemLevel}</span>`:''}`,x.itemId)}<img class="rowpreview" src="/api/itemimage/${x.itemId}" loading="lazy" onerror="this.remove()"></div>`).join('');
 const dropRows=list=>list.map(x=>`<div class="row" data-item="${x.itemId}" tabindex="0" role="button" onclick="openDutyItem(${x.itemId})">${img(x.iconId,28)}${rowText(`${esc(x.name)}${x.itemLevel>1?`<span class="ilvl">iLvl ${x.itemLevel}</span>`:''}`,x.itemId)}</div>`).join('');
@@ -889,7 +891,7 @@ async function openDutyItem(id){
   const d=await fetch('/api/item/'+id+'?lang='+lang).then(r=>r.ok?r.json():null);
   if(el._reqToken!==myToken)return;
   el.innerHTML=d?buildItemHtml(d,'openDutyItem'):`<div class="empty">${t('not_found')}</div>`;
-  if(d){annotateInventory(el);annotateEvent(el,id,myToken);annotateMarket(el,id,d.isMarketable,myToken)}
+  if(d){annotateInventory(el);annotateEvent(el,id,myToken);annotateMarket(el,id,d.isMarketable,myToken);annotateContentsUnlocks(el,id)}
 }
 
 // "Suchergebnisse verschwinden beim Item-Klick": list is only hidden, the back bar restores it
@@ -930,8 +932,8 @@ function buildItemHtml(d,openFn='openItem'){
     h+='</div>';
   }
   if((d.contents??[]).length){
-    h+=`<div class="tbl">${t('can_contain')}</div><div style="display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 14px">`;
-    for(const m of d.contents)h+=`<div class="row" data-item="${m.itemId}" style="width:auto" onclick="${openFn}(${m.itemId})">${img(m.iconId,24)}${rowText(esc(m.name),m.itemId)}</div>`;
+    h+=`<div class="tbl">${t('can_contain')}</div><div id="contents_${d.itemId}" style="display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 14px">`;
+    for(const m of d.contents)h+=`<div class="row" data-item="${m.itemId}" style="width:auto" onclick="${openFn}(${m.itemId})">${unlockSlot(m.itemId)}${img(m.iconId,24)}${rowText(esc(m.name),m.itemId)}</div>`;
     h+='</div>';
   }
   if((d.contentsSummary??[]).length){
@@ -939,11 +941,12 @@ function buildItemHtml(d,openFn='openItem'){
     // click a "13x Minion" row to expand which 13 — was a dead-end count before.
     d.contentsSummary.forEach((cat,ci)=>{
       const gid=`cs_${d.itemId}_${ci}`;
-      // price badges load lazily, only once a category is actually expanded — a sack can hold 100+
-      // items, no point bulk-fetching all of them before anyone's looked ("preise fehlen mir")
-      h+=`<div class="row" style="width:auto;cursor:pointer;margin:2px 0" onclick="const e=document.getElementById('${gid}');const show=e.style.display==='none';e.style.display=show?'flex':'none';if(show&&!e.dataset.loaded){e.dataset.loaded='1';annotateBulkPrices(e)}">${img(cat.iconId,24)}<span>${cat.items.length}x ${esc(cat.label)} ▾</span></div>`;
+      // price AND unlock badges load lazily, only once a category is actually expanded — a sack
+      // can hold 100+ items, no point bulk-fetching all of them before anyone's looked ("preise
+      // fehlen mir" / "soll auch stehen ob schon obtained")
+      h+=`<div class="row" style="width:auto;cursor:pointer;margin:2px 0" onclick="const e=document.getElementById('${gid}');const show=e.style.display==='none';e.style.display=show?'flex':'none';if(show&&!e.dataset.loaded){e.dataset.loaded='1';annotateBulkPrices(e);annotateBulkUnlocks(e)}">${img(cat.iconId,24)}<span>${cat.items.length}x ${esc(cat.label)} ▾</span></div>`;
       h+=`<div id="${gid}" style="display:none;flex-wrap:wrap;gap:8px;margin:4px 0 10px 28px">`;
-      for(const m of cat.items)h+=`<div class="row" data-item="${m.itemId}" style="width:auto" onclick="event.stopPropagation();${openFn}(${m.itemId})">${img(m.iconId,24)}${rowText(esc(m.name),m.itemId)}</div>`;
+      for(const m of cat.items)h+=`<div class="row" data-item="${m.itemId}" style="width:auto" onclick="event.stopPropagation();${openFn}(${m.itemId})">${unlockSlot(m.itemId)}${img(m.iconId,24)}${rowText(esc(m.name),m.itemId)}</div>`;
       h+='</div>';
     });
   }
@@ -1024,7 +1027,7 @@ async function openItem(id){
   const d=await fetch('/api/item/'+id+'?lang='+lang).then(r=>r.ok?r.json():null);
   if(el._reqToken!==myToken)return; // a newer click already superseded this one
   el.innerHTML=d?buildItemHtml(d):`<div class="empty">${t('not_found')}</div>`;
-  if(d){annotateInventory(el);annotateEvent(el,id,myToken);annotateMarket(el,id,d.isMarketable,myToken)}
+  if(d){annotateInventory(el);annotateEvent(el,id,myToken);annotateMarket(el,id,d.isMarketable,myToken);annotateContentsUnlocks(el,id)}
 }
 
 // group: one or more sources sharing the same description+cost (see buildItemHtml) — one card,
@@ -1128,6 +1131,29 @@ async function annotateBulkPrices(container){
     el.textContent=txt;
   }
 }
+// "da soll natürlich auch stehen ob schon 'obtained'" — same lazy bulk-fetch idea as prices,
+// for coffer/hoard-sack CONTENTS rows (13x Minion, Triple Triad cards, ...) which never got the
+// unlock badge every other item row already has. .unlockslot is an empty placeholder (see
+// unlockSlot() below) filled in once the bulk check resolves — null/undefined (not a mount/minion/
+// orchestrion/emote/hairstyle item) leaves it empty, same "no badge" convention as unlockBadge().
+async function annotateBulkUnlocks(container){
+  const rows=[...container.querySelectorAll('.row[data-item]')];
+  const ids=[...new Set(rows.map(r=>r.dataset.item))];
+  if(!ids.length)return;
+  const unlocks=await fetch('/api/unlock/bulk?ids='+ids.join(',')).then(r=>r.ok?r.json():{}).catch(()=>({}));
+  for(const el of container.querySelectorAll('.unlockslot[data-item]')){
+    const u=unlocks[el.dataset.item];
+    if(u==null)continue;
+    el.outerHTML=unlockBadge({unlocked:u});
+  }
+}
+// d.contents (a coffer/sack's own always-visible "can contain" list, NOT the collapsed
+// contentsSummary categories — those lazy-load their own via the expand click handler above, on
+// purpose, a hoard sack can list 100+ items) — annotate right after it lands in the DOM.
+function annotateContentsUnlocks(container,itemId){
+  const box=container.querySelector(`#contents_${itemId}`);
+  if(box)annotateBulkUnlocks(box);
+}
 async function annotateInventory(container){
   const rows=[...container.querySelectorAll('.matrow[data-item]')];
   const ids=[...new Set(rows.map(r=>r.dataset.item).filter(id=>id!=='0'))];
@@ -1221,7 +1247,7 @@ async function showItemPanel(id){
   const d=await fetch('/api/item/'+id+'?lang='+lang).then(r=>r.ok?r.json():null);
   if(box._reqToken!==myToken)return;
   box.innerHTML=d?buildItemHtml(d,'showItemPanel'):`<div class="empty">${t('not_found')}</div>`;
-  if(d){annotateInventory(box);annotateEvent(box,id,myToken);annotateMarket(box,id,d.isMarketable,myToken)}
+  if(d){annotateInventory(box);annotateEvent(box,id,myToken);annotateMarket(box,id,d.isMarketable,myToken);annotateContentsUnlocks(box,id)}
 }
 
 async function post(url){await fetch(url,{method:'POST'})}

@@ -1,5 +1,34 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Unlock badges in expanded coffer/hoard-sack contents (1.0.66.0)
+
+"da soll natürlich auch stehen ob schon 'obtained'" — clicking into a coffer/hoard-sack's "Can
+Contain" list (a Deep Dungeon sack's "13x Minion ▾", "3x Triple Triad Card ▾", etc.) showed name +
+icon + price, but never the green/red unlock badge every other item row already gets.
+
+New `GET /api/unlock/bulk?ids=` endpoint (mirrors the existing `/api/market/bulk` shape exactly —
+comma-separated ids, one `UnlockCheckService.CheckUnlocked` call per id, returned as an id→bool|null
+map), mirrored in `GlamSource.Mock`. Client: new `.unlockslot` empty placeholder (parallel to the
+existing `.rowprice` one), filled in by `annotateBulkUnlocks()` once resolved — `null` (not a
+mount/minion/orchestrion/emote/hairstyle item, e.g. Triple Triad cards, dyes, materials) leaves it
+empty, same convention `unlockBadge()` already uses everywhere else.
+
+Two different triggers, matching how prices already work there: the collapsed `contentsSummary`
+categories (Minion/Orchestrion Roll/Triple Triad Card/...) lazy-load on first expand, alongside the
+existing `annotateBulkPrices` call — deliberately still lazy, a hoard sack can list 100+ items, no
+point bulk-checking unlock status for a category nobody's opened. The always-visible `d.contents`
+list (a Coffer's own direct, non-summarized contents) annotates immediately after render via a new
+small `annotateContentsUnlocks(container, itemId)` wrapper — scoped to just that list's own
+container div (`#contents_{itemId}`), not the whole item-detail panel, so it can't accidentally
+also fire against a still-collapsed `contentsSummary` category sitting elsewhere in the same panel.
+
+Verified: `dotnet build` 0/0, `dotnet test` 54/54. Live-verified via the Browser pane: Heaven-on-High
+→ Gold-haloed Sack → "13x Minion" expanded shows a green/red check per minion (network-confirmed
+`/api/unlock/bulk` call, real per-item results); "3x Triple Triad Card" expanded correctly shows NO
+badges (Triple Triad isn't a type `UnlockCheckService.CheckUnlocked` covers at all — confirmed via
+the actual `{"23045":null,"23044":null,"23048":null}` response, not just an absence of visual
+evidence that could as easily have meant "broken").
+
 ## Item-source description text is now translatable — Web UI's own toggle (1.0.65.0)
 
 "übersetzung fehlt, weil umstellen ist gefühlt kaum was auf deutsch" — confirmed root cause: the
