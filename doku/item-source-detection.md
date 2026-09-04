@@ -1,5 +1,43 @@
 # Item Source Detection — Coverage, Fixes, New Lookups
 
+## Mog Station: 57 more real product links — outfit pieces, not container items (1.0.71.0)
+
+Follow-up to 1.0.70.0's 672-pair scrape. Re-scraped ids 1-1171 fresh (803 real products now vs 755
+before — store added more since) and diffed against the shipped CSV: 196 still unmatched. Rebuilt
+the matcher as a standalone tool (`tools/MogStationMatch`, scratch-only, deleted after use — same
+`new Lumina.GameData(@"D:\FF\game\sqpack", null)` + `ItemDetailService` pattern as `tools/
+CoverageAudit`) and ran a plain `Item.Name`/`ItemSeries.Name` exact match: 22 direct hits.
+
+Caught a real bug before shipping it: several hits (e.g. "Ramza's Attire" → item 47725) are
+**outfit-container** items — `ItemDetailService` itself reports them as source type "Other" with
+"Outfit — a glamour set made up of the pieces below. The outfit itself isn't sold or dropped", and
+never gates them as `MogStationType` at all, so a ProductId row keyed on the container id would
+never be read — dead data. Queried the Mock API for each of the 22 matches' own detail response;
+11 were containers. Resolved each via its own `materials` list (the real per-piece item ids, e.g.
+"Ramza's Coat/Gloves/Thighboots" → 47301/47302/47303) and mapped every piece to the product id
+instead of the container — verified live: item 47301 alone (previously wiki-fallback) now resolves
+`shopUrl` → `.../product/1107`. 11 containers × 3-5 pieces = 46 piece rows + 10 already-direct
+items = 56 new rows.
+
+User also flagged Barding and Parasols by name. Parasols were already covered (Archon Egg Parasol
+was one of the 22 direct hits). Barding: "Doman Barding" (product 237) didn't match because the
+in-game item (14860) was renamed to "Far Eastern Barding" at some point — the store never renamed
+its own listing. Cross-referenced the OLD static `MogstationItems.csv` (which still has the
+pre-rename name) and found the id there — added `14860,237`. Verified live: `store.finalfantasyxiv.
+com/ffxivstore/en-us/product/237` page title is still literally "Doman Barding", confirming the
+match. +57 rows total (672 → 729).
+
+The remaining ~174 unmatched are gendered bundle names ("Men's/Women's X Summer Set", "X Lord's/
+Lady's Yukata", "X's Attire" for characters whose named single-item doesn't exist) that grant
+several individually-named pieces with no single matching Item or ItemSeries name at all — would
+need fuzzy multi-item/theme+color matching with real risk of wrong links being shipped to users.
+Left on the wiki-page fallback, same as before — diminishing returns, unchanged from 1.0.70.0's
+assessment.
+
+Verified: `dotnet build` 0/0, `dotnet test` 54/54. Live: item 47301 ("Ramza's Coat") and 52656
+("Zero's Luminary Mail") now resolve real product shopUrls; item 14860 ("Far Eastern Barding")
+resolves to product 237, confirmed via the store's own page title ("Doman Barding").
+
 ## Mog Station: real store product links, not just the wiki page (1.0.70.0)
 
 "du sollst schauen wer die shoplinks hinterlegt hat, nicht die consolengameswiki link" — 1.0.69.0's
